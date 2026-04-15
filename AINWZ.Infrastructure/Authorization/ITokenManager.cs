@@ -9,7 +9,7 @@ namespace SpeakEase.Authorization.Authorization
     public interface ITokenManager
     {
         /// <summary>
-        /// 生成token
+        /// 生成JWT Token
         /// </summary>
         /// <param name="claims"></param>
         /// <returns></returns>
@@ -22,21 +22,44 @@ namespace SpeakEase.Authorization.Authorization
         string GenerateRefreshToken();
 
         /// <summary>
-        /// 解析token
+        /// 读取token
         /// </summary>
         /// <returns></returns>
-        void ValidateAccessToken();
+        JwtSecurityToken ReadCurrentToken();
 
         /// <summary>
-        /// 获取SecurityToken
+        /// 验证token有效性并返回 ClaimsPrincipal
         /// </summary>
         /// <returns></returns>
-        JwtSecurityToken GetSecurityToken();
+        ClaimsPrincipal ValidateCurrentToken();
 
         /// <summary>
-        /// 校验token
+        /// 验证token有效性并返回 ClaimsPrincipal
         /// </summary>
         /// <param name="token"></param>
-        void ValidateToken(string token);
+        /// <returns></returns>
+        ClaimsPrincipal ValidateToken(string token);
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="token"></param>
+        /// <param name="principal"></param>
+        /// <returns></returns>
+        bool TryValidateToken(string token, out ClaimsPrincipal principal);
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        JwtSecurityToken ReadJwtToken(string token);
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="token"></param>
+        /// <returns></returns>
+        TimeSpan? GetRemainingLifetime(string token);
     }
 }

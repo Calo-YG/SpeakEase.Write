@@ -1,9 +1,0 @@
-{
-  "skillName": "writer",
-  "messages": [
-    {
-      "role": "user",
-      "content": "写一段简洁的产品介绍，主题是 AI 小说创作平台。"
-    }
-  ]
-}

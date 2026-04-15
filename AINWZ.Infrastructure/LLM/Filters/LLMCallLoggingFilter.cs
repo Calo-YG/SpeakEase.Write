@@ -7,19 +7,12 @@ namespace AINWZ.Infrastructure.LLM.Filters;
 /// <summary>
 /// AI 调用日志持久化切片。
 /// </summary>
-public sealed class LLMCallLoggingFilter : ILLMServiceFilter
+/// <remarks>
+/// 初始化日志切片。
+/// </remarks>
+public sealed class LLMCallLoggingFilter(ILLMCallLogStore callLogStore) : ILLMServiceFilter
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web);
-
-    private readonly ILLMCallLogStore _callLogStore;
-
-    /// <summary>
-    /// 初始化日志切片。
-    /// </summary>
-    public LLMCallLoggingFilter(ILLMCallLogStore callLogStore)
-    {
-        _callLogStore = callLogStore;
-    }
 
     /// <inheritdoc />
     public async Task<LLMChatResponse> InvokeChatAsync(
@@ -112,7 +105,7 @@ public sealed class LLMCallLoggingFilter : ILLMServiceFilter
             ErrorMessage = exception?.Message
         };
 
-        await _callLogStore.SaveAsync(record, cancellationToken);
+        await callLogStore.SaveAsync(record, cancellationToken);
     }
 
     private async Task TrySaveStreamLogAsync(LLMChatRequest request, IReadOnlyList<LLMStreamEvent> events, Exception exception, CancellationToken cancellationToken)
@@ -140,7 +133,7 @@ public sealed class LLMCallLoggingFilter : ILLMServiceFilter
             ErrorMessage = exception?.Message ?? lastErrorEvent?.ErrorMessage
         };
 
-        await _callLogStore.SaveAsync(record, cancellationToken);
+        await callLogStore.SaveAsync(record, cancellationToken);
     }
 
     private static string BuildRequestSummary(LLMChatRequest request)

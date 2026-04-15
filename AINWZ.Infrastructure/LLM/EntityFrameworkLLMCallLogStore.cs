@@ -8,17 +8,11 @@ namespace AINWZ.Infrastructure.LLM;
 /// <summary>
 /// 基于 Entity Framework 的 LLM 调用日志存储实现。
 /// </summary>
-public sealed class EntityFrameworkLLMCallLogStore : ILLMCallLogStore
+/// <remarks>
+/// 初始化存储实现。
+/// </remarks>
+public sealed class EntityFrameworkLLMCallLogStore(AINWZDbContext dbContext) : ILLMCallLogStore
 {
-    private readonly AINWZDbContext _dbContext;
-
-    /// <summary>
-    /// 初始化存储实现。
-    /// </summary>
-    public EntityFrameworkLLMCallLogStore(AINWZDbContext dbContext)
-    {
-        _dbContext = dbContext;
-    }
 
     /// <inheritdoc />
     public async Task SaveAsync(LLMCallLogRecord record, CancellationToken cancellationToken = default)
@@ -42,8 +36,8 @@ public sealed class EntityFrameworkLLMCallLogStore : ILLMCallLogStore
             ErrorMessage = Truncate(record.ErrorMessage, 4000)
         };
 
-        _dbContext.LlmCallLogs.Add(entity);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        dbContext.LlmCallLogs.Add(entity);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private static string Truncate(string value, int maxLength)

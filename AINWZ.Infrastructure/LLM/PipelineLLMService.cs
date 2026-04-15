@@ -8,19 +8,13 @@ namespace AINWZ.Application.LLM;
 /// <summary>
 /// 基于 filter 管道的 LLM 服务实现。
 /// </summary>
-public sealed class PipelineLLMService : ILLMService
+/// <remarks>
+/// 初始化管道服务。
+/// </remarks>
+public sealed class PipelineLLMService(LLMService coreService, IEnumerable<ILLMServiceFilter> filters) : ILLMService
 {
-    private readonly LLMService _coreService;
-    private readonly IReadOnlyList<ILLMServiceFilter> _filters;
-
-    /// <summary>
-    /// 初始化管道服务。
-    /// </summary>
-    public PipelineLLMService(LLMService coreService, IEnumerable<ILLMServiceFilter> filters)
-    {
-        _coreService = coreService;
-        _filters = filters.ToList();
-    }
+    private readonly LLMService _coreService = coreService;
+    private readonly IReadOnlyList<ILLMServiceFilter> _filters = filters.ToList();
 
     /// <inheritdoc />
     public Task<LLMChatResponse> ChatAsync(LLMChatRequest request, CancellationToken cancellationToken = default)

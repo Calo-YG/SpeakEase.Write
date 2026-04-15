@@ -9,17 +9,12 @@ namespace AINWZ.Infrastructure.LLM.ToolHandlers;
 /// <summary>
 /// 读取 wwwroot 中文件并返回摘要的内置工具。
 /// </summary>
-public sealed class ReadFileSummaryToolHandler : ILLMToolHandler
+/// <remarks>
+/// 初始化处理器。
+/// </remarks>
+public sealed class ReadFileSummaryToolHandler(IHostEnvironment hostEnvironment) : ILLMToolHandler
 {
-    private readonly string _rootPath;
-
-    /// <summary>
-    /// 初始化处理器。
-    /// </summary>
-    public ReadFileSummaryToolHandler(IHostEnvironment hostEnvironment)
-    {
-        _rootPath = Path.Combine(hostEnvironment.ContentRootPath, "wwwroot");
-    }
+    private readonly string _rootPath = Path.Combine(hostEnvironment.ContentRootPath, "wwwroot");
 
     /// <inheritdoc />
     public string Name => "read_file_summary";

@@ -6,18 +6,13 @@ namespace AINWZ.Infrastructure.LLM;
 /// <summary>
 /// 默认 LLM 工具调用分发器。
 /// </summary>
-public sealed class LLMToolDispatcher : ILLMToolDispatcher
+/// <remarks>
+/// 初始化工具调用分发器。
+/// </remarks>
+/// <param name="toolHandlers">已注册的工具处理器。</param>
+public sealed class LLMToolDispatcher(IEnumerable<ILLMToolHandler> toolHandlers) : ILLMToolDispatcher
 {
-    private readonly IReadOnlyDictionary<string, ILLMToolHandler> _toolHandlers;
-
-    /// <summary>
-    /// 初始化工具调用分发器。
-    /// </summary>
-    /// <param name="toolHandlers">已注册的工具处理器。</param>
-    public LLMToolDispatcher(IEnumerable<ILLMToolHandler> toolHandlers)
-    {
-        _toolHandlers = toolHandlers.ToDictionary(handler => handler.Name, StringComparer.OrdinalIgnoreCase);
-    }
+    private readonly IReadOnlyDictionary<string, ILLMToolHandler> _toolHandlers = toolHandlers.ToDictionary(handler => handler.Name, StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
     public async Task<IReadOnlyList<LLMToolExecutionResult>> DispatchAsync(IReadOnlyList<LLMToolCall> toolCalls, CancellationToken cancellationToken = default)

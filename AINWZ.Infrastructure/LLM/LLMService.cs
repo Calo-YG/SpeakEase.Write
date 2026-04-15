@@ -262,7 +262,7 @@ public sealed class LLMService : ILLMService
         return new LLMChatRequest
         {
             Model = originalRequest.Model,
-            FallbackModels = new List<string>(originalRequest.FallbackModels),
+            FallbackModels = originalRequest.FallbackModels,
             SystemPrompt = originalRequest.SystemPrompt,
             Messages = secondRoundMessages,
             Temperature = originalRequest.Temperature,

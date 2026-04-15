@@ -14,24 +14,16 @@ namespace AINWZ.Infrastructure.LLM.Providers;
 /// <summary>
 /// 基于 OpenAI-compatible chat completions 协议的 LLM Provider。
 /// </summary>
-public sealed class OpenAICompatibleLLMProvider : ILLMProvider
+/// <remarks>
+/// 初始化 Provider。
+/// </remarks>
+public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<LLMOptions> options) : ILLMProvider
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-
-    private readonly HttpClient _httpClient;
-    private readonly LLMOptions _options;
-
-    /// <summary>
-    /// 初始化 Provider。
-    /// </summary>
-    public OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<LLMOptions> options)
-    {
-        _httpClient = httpClient;
-        _options = options.Value;
-    }
+    private readonly LLMOptions _options = options.Value;
 
     /// <inheritdoc />
     public async Task<LLMChatResponse> ChatAsync(LLMChatRequest request, CancellationToken cancellationToken = default)
@@ -48,7 +40,7 @@ public sealed class OpenAICompatibleLLMProvider : ILLMProvider
 
             try
             {
-                using var response = await _httpClient.PostAsJsonAsync("chat/completions", payload, JsonSerializerOptions, cancellationToken);
+                using var response = await httpClient.PostAsJsonAsync("chat/completions", payload, JsonSerializerOptions, cancellationToken);
                 var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (!response.IsSuccessStatusCode)
@@ -400,7 +392,7 @@ public sealed class OpenAICompatibleLLMProvider : ILLMProvider
             Content = JsonContent.Create(payload, options: JsonSerializerOptions)
         };
 
-        using var response = await _httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        using var response = await httpClient.SendAsync(httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {

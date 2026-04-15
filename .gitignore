@@ -373,3 +373,5 @@ FodyWeavers.xsd
 /AINWZ/tmp_time_request.json
 /AINWZ/tmp_writer_request.json
 /AINWZ.Domain/Entities/Users/UserEntity.cs
+/AINWZ.Infrastructure/Persistence/Migrations/20260415120755_InitialPostgreSql.cs
+/AINWZ.Infrastructure/Persistence/Migrations/AINWZDbContextModelSnapshot.cs

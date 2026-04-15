@@ -33,8 +33,6 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-app.UseHttpsRedirection();
-
 app.MapGet("/ai/skills", ([FromServices] ILLMSkillRegistry skillRegistry, [FromServices] IOptions<JsonOptions> options) =>
 {
     return Results.Json(skillRegistry.GetAll(), options.Value.SerializerOptions);

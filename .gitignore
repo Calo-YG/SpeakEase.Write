@@ -361,3 +361,15 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/AINWZ/start-dev.ps1
+/AINWZ/tmp_chat_file.json
+/AINWZ/tmp_chat_time.json
+/AINWZ/tmp_coder_request.json
+/AINWZ/tmp_skill_coder.json
+/AINWZ/tmp_skill_writer.json
+/AINWZ/tmp_stream_request.json
+/AINWZ/tmp_stream_tools.json
+/AINWZ/tmp_summary_request.json
+/AINWZ/tmp_time_request.json
+/AINWZ/tmp_writer_request.json
+/AINWZ.Domain/Entities/Users/UserEntity.cs

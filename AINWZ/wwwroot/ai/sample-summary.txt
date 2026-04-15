@@ -1,0 +1,10 @@
+AINWZ AI 接口示例文件
+
+- /ai/chat：非流式对话接口
+- /ai/chat/stream：流式 SSE 对话接口
+- /ai/skills：返回可用 skill 列表
+
+当前内置工具：
+- get_current_time
+- read_file_summary
+- echo

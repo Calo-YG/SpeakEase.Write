@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="AINWZ.Application/AINWZ.Application.csproj" />
+  <Project Path="AINWZ.Domain/AINWZ.Domain.csproj" />
+  <Project Path="AINWZ.Infrastructure/AINWZ.Infrastructure.csproj" />
+  <Project Path="AINWZ/AINWZ.csproj" />
+</Solution>

@@ -1,0 +1,10 @@
+{
+  "skillName": "coder",
+  "skillOverridePrompt": "你是专注于 C# Minimal API 的工程助手，回答必须贴近当前项目结构。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "解释一下当前 /ai/chat/stream 的职责。"
+    }
+  ]
+}

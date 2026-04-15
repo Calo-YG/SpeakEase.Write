@@ -1,0 +1,147 @@
+@AINWZ_HostAddress = http://localhost:5184
+
+### 非流式自动 tool dispatch：获取当前时间
+POST {{AINWZ_HostAddress}}/ai/chat
+Content-Type: application/json
+
+{
+  "systemPrompt": "你是后端写作助手。需要时主动调用工具。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "现在几点了？请用中文回答，并说明时区。"
+    }
+  ],
+  "enableAutoToolDispatch": true,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "获取当前系统时间",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    }
+  ],
+  "toolChoice": {
+    "type": "auto"
+  }
+}
+
+### 非流式自动 tool dispatch：读取文件摘要
+POST {{AINWZ_HostAddress}}/ai/chat
+Content-Type: application/json
+
+{
+  "systemPrompt": "你是代码助手，必要时调用工具读取文件摘要。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "请帮我概述 backend/AINWZ/AINWZ/Program.cs 的主要接口。"
+    }
+  ],
+  "enableAutoToolDispatch": true,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file_summary",
+        "description": "读取工作目录中的文件摘要",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "default": "ai/sample-summary.txt" }
+            "maxLines": { "type": "integer" },
+            "maxChars": { "type": "integer" }
+          },
+          "required": ["path"]
+        }
+      }
+    }
+  ],
+  "toolChoice": {
+    "type": "auto"
+  }
+}
+
+### 流式：工具调用协议事件
+POST {{AINWZ_HostAddress}}/ai/chat/stream
+Content-Type: application/json
+
+{
+  "systemPrompt": "你是后端助手，必要时主动调用工具。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "请先读取 ai/sample-summary.txt 摘要，再告诉我当前接口结构。"
+    }
+  ],
+  "enableAutoToolDispatch": true,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file_summary",
+        "description": "读取工作目录中的文件摘要",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string", "default": "ai/sample-summary.txt" }
+            "maxLines": { "type": "integer" },
+            "maxChars": { "type": "integer" }
+          },
+          "required": ["path"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "获取当前系统时间",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    }
+  ],
+  "toolChoice": {
+    "type": "auto"
+  }
+}
+
+### 查看可用 skills
+GET {{AINWZ_HostAddress}}/ai/skills
+
+### 使用 writer skill
+POST {{AINWZ_HostAddress}}/ai/chat
+Content-Type: application/json
+
+{
+  "skillName": "writer",
+  "messages": [
+    {
+      "role": "user",
+      "content": "写一段简洁的产品介绍，主题是 AI 小说创作平台。"
+    }
+  ]
+}
+
+### 使用 coder skill + 覆盖 skill prompt
+POST {{AINWZ_HostAddress}}/ai/chat
+Content-Type: application/json
+
+{
+  "skillName": "coder",
+  "skillOverridePrompt": "你是专注于 C# Minimal API 的工程助手，回答必须贴近当前项目结构。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "解释一下当前 /ai/chat/stream 的职责。"
+    }
+  ]
+}

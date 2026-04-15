@@ -1,0 +1,42 @@
+{
+  "systemPrompt": "你是后端助手，必要时主动调用工具。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "请先读取 ai/sample-summary.txt 摘要，再告诉我当前接口结构。"
+    }
+  ],
+  "enableAutoToolDispatch": true,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file_summary",
+        "description": "读取工作目录中的文件摘要",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "maxLines": { "type": "integer" },
+            "maxChars": { "type": "integer" }
+          },
+          "required": ["path"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "获取当前系统时间",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    }
+  ],
+  "toolChoice": {
+    "type": "auto"
+  }
+}

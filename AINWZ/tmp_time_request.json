@@ -1,0 +1,26 @@
+{
+  "systemPrompt": "你是后端写作助手。需要时主动调用工具。",
+  "messages": [
+    {
+      "role": "user",
+      "content": "现在几点了？请用中文回答，并说明时区。"
+    }
+  ],
+  "enableAutoToolDispatch": true,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_current_time",
+        "description": "获取当前系统时间",
+        "parameters": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    }
+  ],
+  "toolChoice": {
+    "type": "auto"
+  }
+}

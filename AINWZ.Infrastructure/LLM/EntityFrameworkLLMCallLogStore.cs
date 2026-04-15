@@ -1,5 +1,6 @@
 using AINWZ.Domain.Entities.AI;
-using AINWZ.Infrastructure.LLM.LLM.Contract;
+using AINWZ.Infrastructure.LLM.Contract;
+using AINWZ.Infrastructure.LLM.Models;
 using AINWZ.Infrastructure.Persistence;
 
 namespace AINWZ.Infrastructure.LLM;

@@ -1,4 +1,5 @@
-using AINWZ.Infrastructure.LLM.LLM.Contract;
+using AINWZ.Infrastructure.LLM.Contract;
+using AINWZ.Infrastructure.LLM.Models;
 
 namespace AINWZ.Infrastructure.LLM;
 

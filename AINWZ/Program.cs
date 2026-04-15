@@ -1,23 +1,21 @@
-using AINWZ.Contracts;
+using AINWZ.Application.Contracts.AI.Dto;
 using AINWZ.Infrastructure.JsonConverters;
 using AINWZ.Infrastructure.LLM;
-using AINWZ.Infrastructure.LLM.LLM.Contract;
+using AINWZ.Infrastructure.LLM.Contract;
+using AINWZ.Infrastructure.LLM.Models;
 using AINWZ.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Http.Json;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using System.Text;
 using System.Text.Json;
+using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 var builder = WebApplication.CreateSlimBuilder(args);
 
 builder.Services.AddOpenApi();
 builder.Services.AddInfrastructurePersistence(builder.Configuration);
 builder.Services.AddLLM(builder.Configuration);
-
-var app = builder.Build();
-
-
 builder.Services.ConfigureHttpJsonOptions(op =>
 {
     op.SerializerOptions.Converters.Add(new DateTimeConverter());
@@ -25,6 +23,9 @@ builder.Services.ConfigureHttpJsonOptions(op =>
     op.SerializerOptions.Converters.Add(new LongConverter());
     op.SerializerOptions.Converters.Add(new LongNullConverter());
 });
+
+var app = builder.Build();
+
 
 if (app.Environment.IsDevelopment())
 {
@@ -34,13 +35,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-app.MapGet("/ai/skills", (ILLMSkillRegistry skillRegistry,IOptions<JsonOptions> options) =>
+app.MapGet("/ai/skills", ([FromServices] ILLMSkillRegistry skillRegistry, [FromServices] IOptions<JsonOptions> options) =>
 {
     return Results.Json(skillRegistry.GetAll(), options.Value.SerializerOptions);
 })
 .WithName("GetLLMSkills");
 
-app.MapPost("/ai/chat", async (LLMChatRequestDto request,ILLMService llmService, IOptions<JsonOptions> options, CancellationToken cancellationToken) =>
+app.MapPost("/ai/chat", async (LLMChatRequestDto request, [FromServices] ILLMService llmService, [FromServices] IOptions<JsonOptions> options, CancellationToken cancellationToken) =>
 {
     var jsonOptions = options.Value.SerializerOptions;
 
@@ -79,7 +80,7 @@ app.MapPost("/ai/chat", async (LLMChatRequestDto request,ILLMService llmService,
 })
 .WithName("ChatWithLLM");
 
-app.MapPost("/ai/chat/stream", async (LLMChatRequestDto request,IHttpContextAccessor httpContextAccessor, ILLMService llmService, IOptions<JsonOptions> options, CancellationToken cancellationToken) =>
+app.MapPost("/ai/chat/stream", async (LLMChatRequestDto request, [FromServices] IHttpContextAccessor httpContextAccessor, [FromServices] ILLMService llmService, [FromServices] IOptions<JsonOptions> options, CancellationToken cancellationToken) =>
 {
     var jsonOptions = options.Value.SerializerOptions;
 

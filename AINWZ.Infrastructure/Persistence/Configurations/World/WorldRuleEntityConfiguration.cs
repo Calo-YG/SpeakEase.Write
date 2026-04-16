@@ -11,6 +11,7 @@ internal sealed class WorldRuleEntityConfiguration : IEntityTypeConfiguration<Wo
         builder.ToTable("world_rules");
         builder.ConfigureBaseEntity();
         builder.Property(x => x.WorldSettingId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.WorkId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.OwnerId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.RuleName).HasMaxLength(100).IsRequired();
         builder.Property(x => x.RuleType).HasMaxLength(64);

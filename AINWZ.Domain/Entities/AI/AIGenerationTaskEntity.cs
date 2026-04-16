@@ -59,5 +59,10 @@ namespace AINWZ.Domain.Entities.AI
         /// 任务参数 JSON。
         /// </summary>
         public string ParameterJson { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 任务最终输出摘要 JSON（异步任务完成后写入）。
+        /// </summary>
+        public string ResultJson { get; set; } = string.Empty;
     }
 }

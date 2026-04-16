@@ -11,6 +11,7 @@ internal sealed class FactionEntityConfiguration : IEntityTypeConfiguration<Fact
         builder.ToTable("factions");
         builder.ConfigureBaseEntity();
         builder.Property(x => x.WorldSettingId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.WorkId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.OwnerId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Name).HasMaxLength(100).IsRequired();
         builder.Property(x => x.FactionType).HasMaxLength(64);

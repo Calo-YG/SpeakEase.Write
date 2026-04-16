@@ -40,9 +40,9 @@ public class AINWZDbContext(DbContextOptions<AINWZDbContext> options) : DbContex
     public DbSet<AIModelDefinitionEntity> AIModelDefinitions => Set<AIModelDefinitionEntity>();
     public DbSet<AIGenerationTaskEntity> AIGenerationTasks => Set<AIGenerationTaskEntity>();
     public DbSet<AIGenerationResultEntity> AIGenerationResults => Set<AIGenerationResultEntity>();
+    public DbSet<ChapterAnalysisResultEntity> ChapterAnalysisResults => Set<ChapterAnalysisResultEntity>();
     public DbSet<LLMCallLogEntity> LlmCallLogs => Set<LLMCallLogEntity>();
     public DbSet<PromptTemplateEntity> PromptTemplates => Set<PromptTemplateEntity>();
-    public DbSet<MemoryChunkEntity> MemoryChunks => Set<MemoryChunkEntity>();
     public DbSet<MemorySnapshotEntity> MemorySnapshots => Set<MemorySnapshotEntity>();
     public DbSet<ContextAssemblyLogEntity> ContextAssemblyLogs => Set<ContextAssemblyLogEntity>();
     public DbSet<ReferenceWorkEntity> ReferenceWorks => Set<ReferenceWorkEntity>();

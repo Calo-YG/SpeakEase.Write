@@ -19,5 +19,7 @@ internal sealed class ChapterEntityConfiguration : IEntityTypeConfiguration<Chap
         builder.Property(x => x.Status).HasMaxLength(32);
         builder.Property(x => x.OutlineNodeIds).HasColumnType("text");
         builder.Property(x => x.OutlineNodeIds).ConfigureStringListProperty<ChapterEntity>();
+        builder.Property(x => x.LastContentSavedAt);
+        builder.Property(x => x.AuthorNotes).HasColumnType("text");
     }
 }

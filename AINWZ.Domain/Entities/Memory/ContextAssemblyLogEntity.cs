@@ -31,6 +31,16 @@ namespace AINWZ.Domain.Entities.Memory
         public string TaskId { get; set; } = string.Empty;
 
         /// <summary>
+        /// 上下文组装模式，例如 continue、polish、summary。
+        /// </summary>
+        public string ContextMode { get; set; } = string.Empty;
+
+        /// <summary>
+        /// 关联的记忆快照标识。
+        /// </summary>
+        public string SnapshotId { get; set; } = string.Empty;
+
+        /// <summary>
         /// 首选模型标识。
         /// </summary>
         public string PrimaryModelId { get; set; } = string.Empty;
@@ -44,6 +54,21 @@ namespace AINWZ.Domain.Entities.Memory
         /// 输入 token 数量。
         /// </summary>
         public int InputTokenCount { get; set; }
+
+        /// <summary>
+        /// 第一层（核心设定）消耗的 token 数量。
+        /// </summary>
+        public int CoreSettingTokens { get; set; }
+
+        /// <summary>
+        /// 第二层（近期上下文）消耗的 token 数量。
+        /// </summary>
+        public int RecentContextTokens { get; set; }
+
+        /// <summary>
+        /// 第三层（检索增强）消耗的 token 数量。
+        /// </summary>
+        public int RetrievedContextTokens { get; set; }
 
         /// <summary>
         /// 选中的记忆片段标识集合 JSON。

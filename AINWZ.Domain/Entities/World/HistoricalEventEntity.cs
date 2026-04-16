@@ -11,6 +11,11 @@ namespace AINWZ.Domain.Entities.World
         public string WorldSettingId { get; set; } = string.Empty;
 
         /// <summary>
+        /// 所属作品标识。
+        /// </summary>
+        public string WorkId { get; set; } = string.Empty;
+
+        /// <summary>
         /// 所有者标识。
         /// </summary>
         public string OwnerId { get; set; } = string.Empty;

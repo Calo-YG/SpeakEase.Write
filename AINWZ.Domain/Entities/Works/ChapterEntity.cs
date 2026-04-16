@@ -54,5 +54,15 @@ namespace AINWZ.Domain.Entities.Works
         /// 关联大纲节点标识列表。
         /// </summary>
         public List<string> OutlineNodeIds { get; set; } = new();
+
+        /// <summary>
+        /// 最后一次内容保存时间（UTC）。
+        /// </summary>
+        public DateTime? LastContentSavedAt { get; set; }
+
+        /// <summary>
+        /// 作者备注，用户自由记录本章要点/注意事项，AI续写时注入上下文。
+        /// </summary>
+        public string AuthorNotes { get; set; } = string.Empty;
     }
 }

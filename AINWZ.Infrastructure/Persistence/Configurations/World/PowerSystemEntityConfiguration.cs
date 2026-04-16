@@ -11,6 +11,7 @@ internal sealed class PowerSystemEntityConfiguration : IEntityTypeConfiguration<
         builder.ToTable("power_systems");
         builder.ConfigureBaseEntity();
         builder.Property(x => x.WorldSettingId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.WorkId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.OwnerId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Name).HasMaxLength(100).IsRequired();
         builder.Property(x => x.LevelDefinitionJson).HasColumnType("text");

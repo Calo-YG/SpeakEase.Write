@@ -11,6 +11,7 @@ internal sealed class HistoricalEventEntityConfiguration : IEntityTypeConfigurat
         builder.ToTable("historical_events");
         builder.ConfigureBaseEntity();
         builder.Property(x => x.WorldSettingId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.WorkId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.OwnerId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Title).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Description).HasColumnType("text");

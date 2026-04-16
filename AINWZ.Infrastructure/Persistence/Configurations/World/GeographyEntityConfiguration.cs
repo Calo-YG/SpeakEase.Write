@@ -11,6 +11,7 @@ internal sealed class GeographyEntityConfiguration : IEntityTypeConfiguration<Ge
         builder.ToTable("geographies");
         builder.ConfigureBaseEntity();
         builder.Property(x => x.WorldSettingId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.WorkId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.OwnerId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Name).HasMaxLength(100).IsRequired();
         builder.Property(x => x.GeographyType).HasMaxLength(64);

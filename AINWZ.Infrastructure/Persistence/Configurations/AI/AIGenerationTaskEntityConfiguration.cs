@@ -20,5 +20,6 @@ internal sealed class AIGenerationTaskEntityConfiguration : IEntityTypeConfigura
         builder.Property(x => x.FallbackModelId).HasMaxLength(64);
         builder.Property(x => x.Status).HasMaxLength(32);
         builder.Property(x => x.ParameterJson).HasColumnType("text");
+        builder.Property(x => x.ResultJson).HasColumnType("text");
     }
 }

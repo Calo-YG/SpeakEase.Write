@@ -14,6 +14,8 @@ internal sealed class ContextAssemblyLogEntityConfiguration : IEntityTypeConfigu
         builder.Property(x => x.WorkId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.ChapterId).HasMaxLength(64);
         builder.Property(x => x.TaskId).HasMaxLength(64);
+        builder.Property(x => x.ContextMode).HasMaxLength(32);
+        builder.Property(x => x.SnapshotId).HasMaxLength(64);
         builder.Property(x => x.PrimaryModelId).HasMaxLength(64);
         builder.Property(x => x.FallbackModelId).HasMaxLength(64);
         builder.Property(x => x.SelectedChunkIdsJson).HasColumnType("text");

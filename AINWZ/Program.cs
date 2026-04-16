@@ -1,18 +1,18 @@
-using AINWZ.Application.Contracts.AI.Dto;
+using AINWZ.Application.Applications;
+using AINWZ.Application.Contracts.AI;
+using AINWZ.Application.Contracts.Auth;
+using AINWZ.Application.Contracts.Users;
+using AINWZ.Infrastructure.Authorization;
 using AINWZ.Infrastructure.JsonConverters;
 using AINWZ.Infrastructure.LLM;
-using AINWZ.Infrastructure.LLM.Contract;
-using AINWZ.Infrastructure.LLM.Models;
 using AINWZ.Infrastructure.MutilCache;
 using AINWZ.Infrastructure.Persistence;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
+using AINWZ.MapRoute.AI;
+using AINWZ.MapRoute.Auth;
+using AINWZ.MapRoute.Users;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
-using System.Text;
-using System.Text.Json;
-using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 
 var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
@@ -82,6 +82,10 @@ try
         op.SerializerOptions.Converters.Add(new LongNullConverter());
     });
     builder.Services.AddMutilCache(builder.Configuration);
+    builder.Services.AddJwt(builder.Configuration);
+    builder.Services.AddScoped<ILLMCallLogApplication,LLMCallLogApplication>();
+    builder.Services.AddScoped<IAuthApplication, AuthApplication>();
+    builder.Services.AddScoped<IUserApplication, UserApplication>();
 
     var app = builder.Build();
 
@@ -98,104 +102,13 @@ try
         options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
     });
 
-    app.MapGet("/ai/skills", ([FromServices] ILLMSkillRegistry skillRegistry, [FromServices] IOptions<JsonOptions> options) =>
-    {
-        return Results.Json(skillRegistry.GetAll(), options.Value.SerializerOptions);
-    })
-    .WithName("GetLLMSkills");
+    app.UseAuthentication();
+    app.UseAuthorization();
 
-    app.MapPost("/ai/chat", async (LLMChatRequestDto request, [FromServices] ILLMService llmService, [FromServices] IOptions<JsonOptions> options, CancellationToken cancellationToken) =>
-    {
-        var jsonOptions = options.Value.SerializerOptions;
-
-        try
-        {
-            var response = await llmService.ChatAsync(new LLMChatRequest
-            {
-                Model = request.Model,
-                FallbackModels = request.FallbackModels,
-                SystemPrompt = request.SystemPrompt,
-                Messages = request.Messages,
-                Temperature = request.Temperature,
-                MaxTokens = request.MaxTokens,
-                UseJsonMode = request.UseJsonMode,
-                Tools = request.Tools,
-                ToolChoice = request.ToolChoice,
-                EnableAutoToolDispatch = request.EnableAutoToolDispatch,
-                SkillName = request.SkillName,
-                SkillOverridePrompt = request.SkillOverridePrompt
-            }, cancellationToken);
-
-            return Results.Json(response, jsonOptions);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            var detailMessage = exception.InnerException?.Message ?? exception.Message;
-
-            return Results.Json(new
-            {
-                code = "llm_chat_failed",
-                message = "LLM 对话调用失败。",
-                details = detailMessage,
-                requestId = string.Empty,
-            }, jsonOptions, statusCode: StatusCodes.Status502BadGateway);
-        }
-    })
-    .WithName("ChatWithLLM");
-
-    app.MapPost("/ai/chat/stream", async (LLMChatRequestDto request, [FromServices] IHttpContextAccessor httpContextAccessor, [FromServices] ILLMService llmService, [FromServices] IOptions<JsonOptions> options, CancellationToken cancellationToken) =>
-    {
-        var jsonOptions = options.Value.SerializerOptions;
-
-        var httpContext = httpContextAccessor.HttpContext;
-
-        httpContext.Response.StatusCode = StatusCodes.Status200OK;
-        httpContext.Response.Headers.ContentType = "text/event-stream";
-        httpContext.Response.Headers.CacheControl = "no-cache";
-
-        try
-        {
-            await foreach (var streamEvent in llmService.StreamAsync(new LLMChatRequest
-            {
-                Model = request.Model,
-                FallbackModels = request.FallbackModels,
-                SystemPrompt = request.SystemPrompt,
-                Messages = request.Messages,
-                Temperature = request.Temperature,
-                MaxTokens = request.MaxTokens,
-                UseJsonMode = request.UseJsonMode,
-                Tools = request.Tools,
-                ToolChoice = request.ToolChoice,
-                EnableAutoToolDispatch = request.EnableAutoToolDispatch,
-                SkillName = request.SkillName,
-                SkillOverridePrompt = request.SkillOverridePrompt
-            }, cancellationToken))
-            {
-                var eventName = string.IsNullOrWhiteSpace(streamEvent.Type) ? "message" : streamEvent.Type;
-                var eventPayload = JsonSerializer.Serialize(streamEvent, jsonOptions);
-
-                await httpContext.Response.WriteAsync($"event: {eventName}\n", Encoding.UTF8, cancellationToken);
-                await httpContext.Response.WriteAsync($"data: {eventPayload}\n\n", Encoding.UTF8, cancellationToken);
-                await httpContext.Response.Body.FlushAsync(cancellationToken);
-            }
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            var errorEvent = new LLMStreamEvent
-            {
-                Type = "error",
-                RequestId = null,
-                ErrorCode = "llm_stream_unhandled",
-                ErrorMessage = exception.Message
-            };
-
-            var errorPayload = JsonSerializer.Serialize(errorEvent, jsonOptions);
-            await httpContext.Response.WriteAsync("event: error\n", Encoding.UTF8, cancellationToken);
-            await httpContext.Response.WriteAsync($"data: {errorPayload}\n\n", Encoding.UTF8, cancellationToken);
-            await httpContext.Response.Body.FlushAsync(cancellationToken);
-        }
-    })
-    .WithName("StreamChatWithLLM");
+    app.MapLLMLogEndPoint();
+    app.MapLLMEndPoint();
+    app.MapAuthEndPoint();
+    app.MapUserEndPoint();
 
     Log.Information("AINWZ 已启动");
 

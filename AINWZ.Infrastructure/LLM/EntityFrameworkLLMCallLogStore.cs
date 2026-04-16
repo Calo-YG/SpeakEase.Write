@@ -1,7 +1,9 @@
 using AINWZ.Domain.Entities.AI;
+using AINWZ.Infrastructure.Ids;
 using AINWZ.Infrastructure.LLM.Contract;
 using AINWZ.Infrastructure.LLM.Models;
 using AINWZ.Infrastructure.Persistence;
+using SpeakEase.Authorization.Authorization;
 
 namespace AINWZ.Infrastructure.LLM;
 
@@ -11,7 +13,7 @@ namespace AINWZ.Infrastructure.LLM;
 /// <remarks>
 /// 初始化存储实现。
 /// </remarks>
-public sealed class EntityFrameworkLLMCallLogStore(AINWZDbContext dbContext) : ILLMCallLogStore
+public sealed class EntityFrameworkLLMCallLogStore(AINWZDbContext dbContext,ISnowflakeIdGenerator snowflakeIdGenerator,IUserContext userContext) : ILLMCallLogStore
 {
 
     /// <inheritdoc />
@@ -19,7 +21,7 @@ public sealed class EntityFrameworkLLMCallLogStore(AINWZDbContext dbContext) : I
     {
         var entity = new LLMCallLogEntity
         {
-            Id = Guid.NewGuid().ToString("N"),
+            Id = snowflakeIdGenerator.NextIdString(),
             CallType = record.CallType,
             SkillName = record.SkillName,
             RequestSummary = Truncate(record.RequestSummary, 4000) ?? string.Empty,
@@ -33,7 +35,8 @@ public sealed class EntityFrameworkLLMCallLogStore(AINWZDbContext dbContext) : I
             ToolCallsSummary = Truncate(record.ToolCallsSummary, 4000),
             ToolResultsSummary = Truncate(record.ToolResultsSummary, 4000),
             Success = record.Success,
-            ErrorMessage = Truncate(record.ErrorMessage, 4000)
+            ErrorMessage = Truncate(record.ErrorMessage, 4000),
+            OwnerId = userContext.UserId
         };
 
         dbContext.LlmCallLogs.Add(entity);

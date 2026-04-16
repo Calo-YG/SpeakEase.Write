@@ -5,7 +5,7 @@ namespace AINWZ.Domain.Entities.AI
     /// <summary>
     /// LLM 调用日志实体，用于记录 chat/stream 请求的摘要信息。
     /// </summary>
-    public class LLMCallLogEntity : AggregateRootEntity
+    public class LLMCallLogEntity : AggregateRootEntity,IOwner
     {
         /// <summary>
         /// 调用类型，如 chat 或 stream。
@@ -76,5 +76,10 @@ namespace AINWZ.Domain.Entities.AI
         /// 错误信息摘要。
         /// </summary>
         public string? ErrorMessage { get; set; }
+
+        /// <summary>
+        /// 
+        /// </summary>
+        public string? OwnerId { get; set; }
     }
 }

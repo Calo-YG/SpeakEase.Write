@@ -13,7 +13,7 @@ internal sealed class AIModelDefinitionEntityConfiguration : IEntityTypeConfigur
         builder.Property(x => x.Label).HasMaxLength(100).IsRequired();
         builder.Property(x => x.Provider).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Description).HasColumnType("text");
-        builder.Property(x => x.CapabilityTags).HasColumnType("text");
-        builder.Property(x => x.CapabilityTags).ConfigureStringListProperty<AIModelDefinitionEntity>();
+        builder.Property(x => x.ApiBaseUrl).HasMaxLength(512);
+        builder.HasIndex(x => x.Provider).IsUnique();
     }
 }

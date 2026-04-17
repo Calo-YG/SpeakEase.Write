@@ -71,6 +71,7 @@ try
 
     var builder = WebApplication.CreateSlimBuilder(args);
 
+    builder.Services.AddHttpClient();
     builder.Services.AddOpenApi();
     builder.Services.AddInfrastructurePersistence(builder.Configuration);
     builder.Services.AddLLM(builder.Configuration);
@@ -86,6 +87,8 @@ try
     builder.Services.AddScoped<ILLMCallLogApplication,LLMCallLogApplication>();
     builder.Services.AddScoped<IAuthApplication, AuthApplication>();
     builder.Services.AddScoped<IUserApplication, UserApplication>();
+    builder.Services.AddScoped<IModelApplication, ModelApplication>();
+    builder.Services.AddScoped<IUserModelConfigApplication, UserModelConfigApplication>();
 
     var app = builder.Build();
 
@@ -109,6 +112,7 @@ try
     app.MapLLMEndPoint();
     app.MapAuthEndPoint();
     app.MapUserEndPoint();
+    app.MapModelEndPoint();
 
     Log.Information("AINWZ 已启动");
 

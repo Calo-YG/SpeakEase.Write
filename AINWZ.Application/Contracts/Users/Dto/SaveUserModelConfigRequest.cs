@@ -1,4 +1,4 @@
-namespace AINWZ.Application.Contracts.AI.Dto;
+namespace AINWZ.Application.Contracts.Users.Dto;
 
 /// <summary>
 /// 保存用户模型配置请求 DTO。

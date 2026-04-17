@@ -153,9 +153,9 @@ namespace AINWZ.Application.Applications
             }
 
             // 校验备用提供商（如有）
-            var fallbackProvider = (string?)null;
-            var fallbackApiBaseUrl = (string?)null;
-            var fallbackApiKey = (string?)null;
+            string fallbackProvider = null;
+            string fallbackApiBaseUrl = null;
+            string fallbackApiKey = null;
             if (!string.IsNullOrWhiteSpace(request.FallbackProviderId))
             {
                 var fb = await dbContext.AIModelDefinitions

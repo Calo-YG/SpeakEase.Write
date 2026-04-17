@@ -1,6 +1,7 @@
 using AINWZ.Application.Contracts.AI;
 using AINWZ.Application.Contracts.AI.Dto;
 using AINWZ.Application.Contracts.Users;
+using AINWZ.Application.Contracts.Users.Dto;
 
 namespace AINWZ.MapRoute.AI
 {

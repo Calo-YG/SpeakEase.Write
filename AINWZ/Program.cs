@@ -113,6 +113,7 @@ try
     app.MapAuthEndPoint();
     app.MapUserEndPoint();
     app.MapModelEndPoint();
+    app.MapUserModelConfigEndPoint();
 
     Log.Information("AINWZ 已启动");
 

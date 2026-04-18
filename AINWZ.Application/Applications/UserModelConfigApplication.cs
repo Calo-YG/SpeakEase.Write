@@ -1,5 +1,5 @@
-using AINWZ.Application.Contracts.AI.Dto;
 using AINWZ.Application.Contracts.Users;
+using AINWZ.Application.Contracts.Users.Dto;
 using AINWZ.Domain.Entities.Users;
 using AINWZ.Infrastructure.Ids;
 using AINWZ.Infrastructure.Persistence;

@@ -1,4 +1,4 @@
-using AINWZ.Application.Contracts.AI.Dto;
+using AINWZ.Application.Contracts.Users.Dto;
 using AINWZ.Infrastructure.Shared;
 
 namespace AINWZ.Application.Contracts.Users

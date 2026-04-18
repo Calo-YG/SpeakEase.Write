@@ -34,8 +34,6 @@ namespace AINWZ.MapRoute.AI
                 {
                     var response = await llmService.ChatAsync(new LLMChatRequest
                     {
-                        Model = request.Model,
-                        FallbackModels = request.FallbackModels,
                         SystemPrompt = request.SystemPrompt,
                         Messages = request.Messages,
                         Temperature = request.Temperature,
@@ -44,6 +42,7 @@ namespace AINWZ.MapRoute.AI
                         Tools = request.Tools,
                         ToolChoice = request.ToolChoice,
                         EnableAutoToolDispatch = request.EnableAutoToolDispatch,
+                        MaxIterations = request.MaxIterations,
                         SkillName = request.SkillName,
                         SkillOverridePrompt = request.SkillOverridePrompt
                     }, cancellationToken);
@@ -80,8 +79,6 @@ namespace AINWZ.MapRoute.AI
                 {
                     await foreach (var streamEvent in llmService.StreamAsync(new LLMChatRequest
                     {
-                        Model = request.Model,
-                        FallbackModels = request.FallbackModels,
                         SystemPrompt = request.SystemPrompt,
                         Messages = request.Messages,
                         Temperature = request.Temperature,
@@ -90,6 +87,7 @@ namespace AINWZ.MapRoute.AI
                         Tools = request.Tools,
                         ToolChoice = request.ToolChoice,
                         EnableAutoToolDispatch = request.EnableAutoToolDispatch,
+                        MaxIterations = request.MaxIterations,
                         SkillName = request.SkillName,
                         SkillOverridePrompt = request.SkillOverridePrompt
                     }, cancellationToken))

@@ -11,19 +11,19 @@ namespace AINWZ.MapRoute.Auth
                .WithDescription("认证管理")
                .WithTags("auth");
 
-            app.MapPost("api/auth/register", (RegisterRequest request, IAuthApplication authApp, CancellationToken cancellationToken) =>
+            app.MapPost("api/auth/register", async (RegisterRequest request, IAuthApplication authApp, CancellationToken cancellationToken) =>
             {
-                return authApp.RegisterAsync(request, cancellationToken);
+                return await authApp.RegisterAsync(request, cancellationToken);
             }).WithName("register");
 
-            app.MapPost("api/auth/login", (LoginRequest request, IAuthApplication authApp, CancellationToken cancellationToken) =>
+            app.MapPost("api/auth/login", async (LoginRequest request, IAuthApplication authApp, CancellationToken cancellationToken) =>
             {
-                return authApp.LoginAsync(request, cancellationToken);
+                return await authApp.LoginAsync(request, cancellationToken);
             }).WithName("login");
 
-            app.MapPost("api/auth/refresh-token", (RefreshTokenRequest request, IAuthApplication authApp, CancellationToken cancellationToken) =>
+            app.MapPost("api/auth/refresh-token", async (RefreshTokenRequest request, IAuthApplication authApp, CancellationToken cancellationToken) =>
             {
-                return authApp.RefreshTokenAsync(request, cancellationToken);
+                return await authApp.RefreshTokenAsync(request, cancellationToken);
             }).WithName("refreshtoken");
         }
     }

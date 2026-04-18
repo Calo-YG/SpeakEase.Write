@@ -8,7 +8,7 @@ public sealed class SaveUserModelConfigRequest
     /// <summary>
     /// 配置标识。为空时创建新配置，非空时更新已有配置。
     /// </summary>
-    public string? Id { get; set; }
+    public string Id { get; set; }
 
     /// <summary>
     /// 配置名称，例如 "日常续写"、"深度分析"，同一用户下唯一。

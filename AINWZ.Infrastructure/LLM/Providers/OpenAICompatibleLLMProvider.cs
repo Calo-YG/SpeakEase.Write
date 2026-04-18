@@ -7,31 +7,46 @@ using System.Text.Json.Serialization;
 using AINWZ.Infrastructure.LLM.Contract;
 using AINWZ.Infrastructure.LLM.Models;
 using AINWZ.Infrastructure.LLM.Options;
-using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 namespace AINWZ.Infrastructure.LLM.Providers;
 
 /// <summary>
 /// 基于 OpenAI-compatible chat completions 协议的 LLM Provider。
+/// 每次请求从 ICurrentLLMOptions 动态获取 BaseUrl、ApiKey、Model 等信息，
+/// 支持按用户自定义配置路由到不同提供商。
 /// </summary>
-/// <remarks>
-/// 初始化 Provider。
-/// </remarks>
-public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<LLMOptions> options) : ILLMProvider
+public sealed class OpenAICompatibleLLMProvider : ILLMProvider
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-    private readonly LLMOptions _options = options.Value;
+
+    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly ICurrentLLMOptions _currentLLMOptions;
+    private readonly ILogger<OpenAICompatibleLLMProvider> _logger;
+
+    public OpenAICompatibleLLMProvider(
+        IHttpClientFactory httpClientFactory,
+        ICurrentLLMOptions currentLLMOptions,
+        ILogger<OpenAICompatibleLLMProvider> logger)
+    {
+        _httpClientFactory = httpClientFactory;
+        _currentLLMOptions = currentLLMOptions;
+        _logger = logger;
+    }
 
     /// <inheritdoc />
     public async Task<LLMChatResponse> ChatAsync(LLMChatRequest request, CancellationToken cancellationToken = default)
     {
         EnsureRequestIsValid(request);
 
+        var options = await _currentLLMOptions.GetCurrentOptionsAsync(cancellationToken);
+        using var httpClient = CreateConfiguredClient(options);
+
         Exception lastException = null;
-        var modelCandidates = ResolveModelCandidates(request);
+        var modelCandidates = ResolveModelCandidates(request, options);
         var messages = BuildMessages(request);
 
         foreach (var model in modelCandidates)
@@ -83,38 +98,25 @@ public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<
     }
 
     /// <inheritdoc />
-    public IAsyncEnumerable<LLMStreamEvent> StreamAsync(LLMChatRequest request, CancellationToken cancellationToken = default)
+    public async IAsyncEnumerable<LLMStreamEvent> StreamAsync(LLMChatRequest request, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         EnsureRequestIsValid(request);
-        return StreamInternalAsync(request, cancellationToken);
-    }
 
-    internal static void ConfigureHttpClient(HttpClient client, LLMOptions options)
-    {
-        client.BaseAddress = new Uri(options.BaseUrl.EndsWith('/') ? options.BaseUrl : options.BaseUrl + "/");
-        client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
-        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        var options = await _currentLLMOptions.GetCurrentOptionsAsync(cancellationToken);
+        using var httpClient = CreateConfiguredClient(options);
 
-        if (!string.IsNullOrWhiteSpace(options.ApiKeyHeaderName))
+        var modelCandidates = ResolveModelCandidates(request, options);
+        var messages = BuildMessages(request);
+
+        await foreach (var streamEvent in StreamInternalAsync(request, httpClient, modelCandidates, messages, cancellationToken).WithCancellation(cancellationToken))
         {
-            var headerValue = string.IsNullOrWhiteSpace(options.ApiKeyHeaderPrefix)
-                ? options.ApiKey
-                : $"{options.ApiKeyHeaderPrefix} {options.ApiKey}";
-
-            client.DefaultRequestHeaders.Remove(options.ApiKeyHeaderName);
-            client.DefaultRequestHeaders.Add(options.ApiKeyHeaderName, headerValue);
-        }
-        else if (!string.IsNullOrWhiteSpace(options.ApiKey))
-        {
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
+            yield return streamEvent;
         }
     }
 
-    private async IAsyncEnumerable<LLMStreamEvent> StreamInternalAsync(LLMChatRequest request, [EnumeratorCancellation] CancellationToken cancellationToken)
+    private async IAsyncEnumerable<LLMStreamEvent> StreamInternalAsync(LLMChatRequest request, HttpClient httpClient, IReadOnlyList<string> modelCandidates, List<OpenAICompatibleChatMessage> messages, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         Exception lastException = null;
-        var modelCandidates = ResolveModelCandidates(request);
-        var messages = BuildMessages(request);
         var primaryModel = modelCandidates[0];
 
         for (var index = 0; index < modelCandidates.Count; index++)
@@ -135,7 +137,7 @@ public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<
                 };
             }
 
-            var attempt = await TryStartStreamAttemptAsync(payload, cancellationToken);
+            var attempt = await TryStartStreamAttemptAsync(payload, httpClient, cancellationToken);
             if (!attempt.Started)
             {
                 lastException = attempt.Exception;
@@ -190,11 +192,11 @@ public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<
         }
     }
 
-    private async Task<StreamAttemptState> TryStartStreamAttemptAsync(OpenAICompatibleChatRequest payload, CancellationToken cancellationToken)
+    private async Task<StreamAttemptState> TryStartStreamAttemptAsync(OpenAICompatibleChatRequest payload, HttpClient httpClient, CancellationToken cancellationToken)
     {
         try
         {
-            var enumerator = ReadStreamEventsAsync(payload, cancellationToken).GetAsyncEnumerator(cancellationToken);
+            var enumerator = ReadStreamEventsAsync(payload, httpClient, cancellationToken).GetAsyncEnumerator(cancellationToken);
             return new StreamAttemptState(enumerator);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -341,17 +343,17 @@ public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<
         }
     }
 
-    private List<string> ResolveModelCandidates(LLMChatRequest request)
+    private List<string> ResolveModelCandidates(LLMChatRequest request, CurrentLLMOptions currentOptions)
     {
         var models = new List<string>();
-        var primaryModel = string.IsNullOrWhiteSpace(request.Model) ? _options.DefaultModel : request.Model!;
+        var primaryModel = string.IsNullOrWhiteSpace(request.Model) ? currentOptions.DefaultModel : request.Model!;
 
         if (!string.IsNullOrWhiteSpace(primaryModel))
         {
             models.Add(primaryModel);
         }
 
-        foreach (var model in request.FallbackModels.Concat(_options.FallbackModels))
+        foreach (var model in request.FallbackModels.Concat(currentOptions.FallbackModels))
         {
             if (!string.IsNullOrWhiteSpace(model) && !models.Contains(model, StringComparer.OrdinalIgnoreCase))
             {
@@ -385,7 +387,7 @@ public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<
         return messages;
     }
 
-    private async IAsyncEnumerable<LLMStreamEvent> ReadStreamEventsAsync(OpenAICompatibleChatRequest payload, [EnumeratorCancellation] CancellationToken cancellationToken)
+    private async IAsyncEnumerable<LLMStreamEvent> ReadStreamEventsAsync(OpenAICompatibleChatRequest payload, HttpClient httpClient, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
         using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
         {
@@ -401,7 +403,7 @@ public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var reader = new StreamReader(stream, Encoding.UTF8);
+        using var reader = new StreamReader(stream, encoding: Encoding.UTF8);
 
         while (true)
         {
@@ -776,5 +778,29 @@ public sealed class OpenAICompatibleLLMProvider(HttpClient httpClient, IOptions<
                 Arguments = toolCall.Function.Arguments
             }
         };
+    }
+
+    private HttpClient CreateConfiguredClient(CurrentLLMOptions options)
+    {
+        var client = _httpClientFactory.CreateClient();
+        client.BaseAddress = new Uri(options.BaseUrl.EndsWith('/') ? options.BaseUrl : options.BaseUrl + "/");
+        client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        if (!string.IsNullOrWhiteSpace(options.ApiKeyHeaderName))
+        {
+            var headerValue = string.IsNullOrWhiteSpace(options.ApiKeyHeaderPrefix)
+                ? options.ApiKey
+                : $"{options.ApiKeyHeaderPrefix} {options.ApiKey}";
+
+            client.DefaultRequestHeaders.Remove(options.ApiKeyHeaderName);
+            client.DefaultRequestHeaders.Add(options.ApiKeyHeaderName, headerValue);
+        }
+        else if (!string.IsNullOrWhiteSpace(options.ApiKey))
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", options.ApiKey);
+        }
+
+        return client;
     }
 }

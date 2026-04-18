@@ -78,6 +78,16 @@ namespace AINWZ.Domain.Entities.AI
         public string? ErrorMessage { get; set; }
 
         /// <summary>
+        /// Agent Loop 停止原因：completed / max_iterations / error / empty_final_response。
+        /// </summary>
+        public string? StopReason { get; set; }
+
+        /// <summary>
+        /// Agent Loop 总迭代次数。
+        /// </summary>
+        public int Iterations { get; set; }
+
+        /// <summary>
         /// 
         /// </summary>
         public string? OwnerId { get; set; }

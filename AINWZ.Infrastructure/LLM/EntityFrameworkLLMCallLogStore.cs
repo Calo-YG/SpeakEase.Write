@@ -36,6 +36,8 @@ public sealed class EntityFrameworkLLMCallLogStore(AINWZDbContext dbContext,ISno
             ToolResultsSummary = Truncate(record.ToolResultsSummary, 4000),
             Success = record.Success,
             ErrorMessage = Truncate(record.ErrorMessage, 4000),
+            StopReason = Truncate(record.StopReason, 64),
+            Iterations = record.Iterations,
             OwnerId = userContext.UserId
         };
 

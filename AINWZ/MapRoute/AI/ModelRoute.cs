@@ -14,56 +14,56 @@ namespace AINWZ.MapRoute.AI
                .WithTags("model")
                .RequireAuthorization();
 
-            app.MapGet("api/model/providers", (IModelApplication modelApp, CancellationToken cancellationToken) =>
+            app.MapGet("api/model/providers", async (IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
-                return modelApp.GetProvidersAsync(cancellationToken);
+                return await modelApp.GetProvidersAsync(cancellationToken);
             }).WithName("getproviders");
 
-            app.MapGet("api/model/providers/{id}", (string id, IModelApplication modelApp, CancellationToken cancellationToken) =>
+            app.MapGet("api/model/providers/{id}", async (string id, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
-                return modelApp.GetProviderByIdAsync(id, cancellationToken);
+                return await modelApp.GetProviderByIdAsync(id, cancellationToken);
             }).WithName("getproviderbyid");
 
-            app.MapPost("api/model/providers", (SaveProviderRequest request, IModelApplication modelApp, CancellationToken cancellationToken) =>
+            app.MapPost("api/model/providers", async (SaveProviderRequest request, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
-                return modelApp.CreateProviderAsync(request, cancellationToken);
+                return await modelApp.CreateProviderAsync(request, cancellationToken);
             }).WithName("createprovider");
 
-            app.MapPut("api/model/providers/{id}", (string id, SaveProviderRequest request, IModelApplication modelApp, CancellationToken cancellationToken) =>
+            app.MapPut("api/model/providers/{id}", async (string id, SaveProviderRequest request, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
-                return modelApp.UpdateProviderAsync(id, request, cancellationToken);
+                return await modelApp.UpdateProviderAsync(id, request, cancellationToken);
             }).WithName("updateprovider");
 
-            app.MapDelete("api/model/providers/{id}", (string id, IModelApplication modelApp, CancellationToken cancellationToken) =>
+            app.MapDelete("api/model/providers/{id}", async (string id, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
-                return modelApp.DeleteProviderAsync(id, cancellationToken);
+                return await modelApp.DeleteProviderAsync(id, cancellationToken);
             }).WithName("deleteprovider");
 
             // === 用户模型配置端点 ===
 
-            app.MapGet("api/model/configs", (IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
+            app.MapGet("api/model/configs", async (IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
             {
-                return configApp.GetMyConfigsAsync(cancellationToken);
+                return await configApp.GetMyConfigsAsync(cancellationToken);
             }).WithName("getmymodelconfigs");
 
-            app.MapGet("api/model/configs/active", (IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
+            app.MapGet("api/model/configs/active", async (IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
             {
-                return configApp.GetActiveConfigAsync(cancellationToken);
+                return await configApp.GetActiveConfigAsync(cancellationToken);
             }).WithName("getactivemodelconfig");
 
-            app.MapPost("api/model/configs", (SaveUserModelConfigRequest request, IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
+            app.MapPost("api/model/configs", async (SaveUserModelConfigRequest request, IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
             {
-                return configApp.SaveConfigAsync(request, cancellationToken);
+                return await configApp.SaveConfigAsync(request, cancellationToken);
             }).WithName("savemodelconfig");
 
-            app.MapPut("api/model/configs/{id}/activate", (string id, IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
+            app.MapPut("api/model/configs/{id}/activate", async (string id, IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
             {
-                return configApp.ActivateConfigAsync(id, cancellationToken);
+                return await configApp.ActivateConfigAsync(id, cancellationToken);
             }).WithName("activatemodelconfig");
 
-            app.MapDelete("api/model/configs/{id}", (string id, IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
+            app.MapDelete("api/model/configs/{id}", async (string id, IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>
             {
-                return configApp.DeleteConfigAsync(id, cancellationToken);
+                return await configApp.DeleteConfigAsync(id, cancellationToken);
             }).WithName("deletemodelconfig");
         }
     }

@@ -102,7 +102,9 @@ public sealed class LLMCallLoggingFilter(ILLMCallLogStore callLogStore) : ILLMSe
             ToolCallsSummary = SerializeSafely(response?.ToolCalls),
             ToolResultsSummary = SerializeSafely(response?.ToolResults),
             Success = exception is null,
-            ErrorMessage = exception?.Message
+            ErrorMessage = exception?.Message,
+            StopReason = response?.StopReason,
+            Iterations = response?.Iterations ?? 0
         };
 
         await callLogStore.SaveAsync(record, cancellationToken);
@@ -130,7 +132,9 @@ public sealed class LLMCallLoggingFilter(ILLMCallLogStore callLogStore) : ILLMSe
             ToolCallsSummary = SerializeSafely(toolResultEvent?.ToolCalls ?? lastDoneEvent?.ToolCalls),
             ToolResultsSummary = SerializeSafely(toolResultEvent?.ToolResults),
             Success = exception is null && lastErrorEvent is null,
-            ErrorMessage = exception?.Message ?? lastErrorEvent?.ErrorMessage
+            ErrorMessage = exception?.Message ?? lastErrorEvent?.ErrorMessage,
+            StopReason = lastDoneEvent?.StopReason ?? events.LastOrDefault(item => !string.IsNullOrWhiteSpace(item.StopReason))?.StopReason,
+            Iterations = events.Where(item => item.Iteration > 0).Select(item => item.Iteration).Append(0).Max()
         };
 
         await callLogStore.SaveAsync(record, cancellationToken);
@@ -209,6 +213,8 @@ public sealed class LLMCallLoggingFilter(ILLMCallLogStore callLogStore) : ILLMSe
                 }
             }).ToList(),
             FinishReason = streamEvent.FinishReason,
+            Iteration = streamEvent.Iteration,
+            StopReason = streamEvent.StopReason,
             ToolResults = streamEvent.ToolResults.Select(result => new LLMToolExecutionResult
             {
                 ToolCallId = result.ToolCallId,

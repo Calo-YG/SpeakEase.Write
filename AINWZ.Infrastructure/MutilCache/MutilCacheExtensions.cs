@@ -10,13 +10,24 @@ namespace AINWZ.Infrastructure.MutilCache
     {
         public static IServiceCollection AddMutilCache(this IServiceCollection services,IConfiguration configuration)
         {
+            services.AddMemoryCache();
             services.AddSingleton<IMultiCacheService, MultiCacheService>();
 
-            services.AddStackExchangeRedisCache(options =>
+            var redisConfig = configuration.GetConnectionString("Redis") ?? configuration["Redis"];
+
+            if (!string.IsNullOrWhiteSpace(redisConfig))
             {
-                options.Configuration = configuration.GetConnectionString("Redis");
-                options.InstanceName = "AINWZ:";
-            });
+                services.AddStackExchangeRedisCache(options =>
+                {
+                    options.Configuration = redisConfig;
+                    options.InstanceName = "AINWZ:";
+                });
+            }
+            else
+            {
+                // 无 Redis 配置时使用内存分布式缓存作为降级
+                services.AddDistributedMemoryCache();
+            }
 
             services.AddDistributedMemoryCache();
 

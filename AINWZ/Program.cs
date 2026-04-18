@@ -69,9 +69,13 @@ try
 {
     Log.Information("AINWZ 启动中...");
 
-    var builder = WebApplication.CreateSlimBuilder(args);
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.Host.UseSerilog();
 
     builder.Services.AddHttpClient();
+    builder.Services.AddHttpContextAccessor();
+    builder.Services.AddAuthorization();
     builder.Services.AddOpenApi();
     builder.Services.AddInfrastructurePersistence(builder.Configuration);
     builder.Services.AddLLM(builder.Configuration);
@@ -113,7 +117,6 @@ try
     app.MapAuthEndPoint();
     app.MapUserEndPoint();
     app.MapModelEndPoint();
-    app.MapUserModelConfigEndPoint();
 
     Log.Information("AINWZ 已启动");
 

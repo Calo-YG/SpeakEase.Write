@@ -4,7 +4,9 @@ using AINWZ.Infrastructure.LLM.Models;
 namespace AINWZ.Infrastructure.LLM;
 
 /// <summary>
-/// 默认 LLM 服务实现，负责技能注入、自动工具分发和二轮补全。
+/// Agent Loop LLM 服务实现，负责技能注入与自动工具循环。
+/// 参考 nanobot Agent Loop 模式：LLM 作为决策核心，在每轮迭代中决定是继续调用工具还是输出最终答案，
+/// 实现真正的"思考-行动-观察"闭环（ReAct 模式），直到任务完成或达到最大迭代次数。
 /// </summary>
 public sealed class LLMService : ILLMService
 {
@@ -26,64 +28,206 @@ public sealed class LLMService : ILLMService
     public async Task<LLMChatResponse> ChatAsync(LLMChatRequest request, CancellationToken cancellationToken = default)
     {
         var preparedRequest = PrepareRequest(request);
-        var firstResponse = await _provider.ChatAsync(preparedRequest, cancellationToken);
+        var messages = preparedRequest.Messages.Select(CloneMessage).ToList();
+        var allToolResults = new List<LLMToolExecutionResult>();
+        var maxIterations = preparedRequest.MaxIterations <= 0 ? 1 : preparedRequest.MaxIterations;
+        var iteration = 0;
+        var stopReason = "completed";
 
-        if (!preparedRequest.EnableAutoToolDispatch || firstResponse.ToolCalls.Count == 0)
+        for (var i = 1; i <= maxIterations; i++)
         {
-            return firstResponse;
+            iteration = i;
+            preparedRequest.Messages = messages;
+
+            var response = await _provider.ChatAsync(preparedRequest, cancellationToken);
+
+            // 安全门控：判断是否应该执行工具
+            if (!ShouldExecuteTools(preparedRequest, response))
+            {
+                // 无工具调用 → 正常完成
+                response.StopReason = stopReason;
+                response.Iterations = iteration;
+                response.ConversationHistory = messages;
+                response.ToolResults = allToolResults;
+                return response;
+            }
+
+            // 执行工具
+            var toolResults = await _toolDispatcher.DispatchAsync(response.ToolCalls, cancellationToken);
+            allToolResults.AddRange(toolResults);
+
+            // 追加 assistant 消息（含 tool_calls）
+            messages.Add(new LLMChatMessage(
+                "assistant",
+                response.Content,
+                null,
+                null,
+                response.ToolCalls.Select(CloneToolCall).ToList()));
+
+            // 追加 tool result 消息
+            foreach (var toolCall in response.ToolCalls)
+            {
+                var toolResult = toolResults.FirstOrDefault(r => string.Equals(r.ToolCallId, toolCall.Id, StringComparison.OrdinalIgnoreCase));
+                var toolContent = toolResult?.Content ?? "工具未返回结果。";
+                messages.Add(new LLMChatMessage(
+                    "tool",
+                    toolContent,
+                    toolCall.Function.Name,
+                    toolCall.Id));
+            }
         }
 
-        var toolResults = await _toolDispatcher.DispatchAsync(firstResponse.ToolCalls, cancellationToken);
-        var secondRequest = BuildSecondRoundRequest(preparedRequest, firstResponse.Content, firstResponse.ToolCalls, toolResults);
-        var secondResponse = await _provider.ChatAsync(secondRequest, cancellationToken);
-        secondResponse.ToolResults = toolResults.ToList();
-        return secondResponse;
+        // 循环耗尽 → 达到最大迭代次数，再做一次无工具调用来获取最终回复
+        stopReason = "max_iterations";
+        preparedRequest.Messages = messages;
+        preparedRequest.EnableAutoToolDispatch = false;
+        preparedRequest.ToolChoice = new LLMToolChoice { Type = "none" };
+
+        var finalResponse = await _provider.ChatAsync(preparedRequest, cancellationToken);
+        finalResponse.StopReason = stopReason;
+        finalResponse.Iterations = iteration;
+        finalResponse.ConversationHistory = messages;
+        finalResponse.ToolResults = allToolResults;
+        return finalResponse;
     }
 
     /// <inheritdoc />
     public async IAsyncEnumerable<LLMStreamEvent> StreamAsync(LLMChatRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var preparedRequest = PrepareRequest(request);
-        var toolCalls = new Dictionary<int, StreamToolCallBuffer>();
-        string finishReason = null;
+        var messages = preparedRequest.Messages.Select(CloneMessage).ToList();
+        var maxIterations = preparedRequest.MaxIterations <= 0 ? 1 : preparedRequest.MaxIterations;
 
-        await foreach (var streamEvent in _provider.StreamAsync(preparedRequest, cancellationToken).WithCancellation(cancellationToken))
+        for (var iteration = 1; iteration <= maxIterations; iteration++)
         {
-            if (streamEvent.ToolCallDelta is not null)
+            preparedRequest.Messages = messages;
+            var toolCalls = new Dictionary<int, StreamToolCallBuffer>();
+            string finishReason = null;
+
+            await foreach (var streamEvent in _provider.StreamAsync(preparedRequest, cancellationToken).WithCancellation(cancellationToken))
             {
-                MergeToolCallDelta(toolCalls, streamEvent.ToolCallDelta);
+                if (streamEvent.ToolCallDelta is not null)
+                {
+                    MergeToolCallDelta(toolCalls, streamEvent.ToolCallDelta);
+                }
+
+                if (!string.IsNullOrWhiteSpace(streamEvent.FinishReason))
+                {
+                    finishReason = streamEvent.FinishReason;
+                }
+
+                streamEvent.Iteration = iteration;
+                yield return streamEvent;
             }
 
-            if (!string.IsNullOrWhiteSpace(streamEvent.FinishReason))
+            // 安全门控：判断是否应该执行工具
+            var hasToolCalls = toolCalls.Count > 0;
+            var shouldExecute = preparedRequest.EnableAutoToolDispatch
+                && hasToolCalls
+                && ShouldExecuteToolsByFinishReason(finishReason);
+
+            if (!shouldExecute)
             {
-                finishReason = streamEvent.FinishReason;
+                // 无工具调用 → 正常完成
+                if (iteration == maxIterations && hasToolCalls)
+                {
+                    yield return new LLMStreamEvent
+                    {
+                        Type = "iteration_end",
+                        Iteration = iteration,
+                        StopReason = "max_iterations",
+                        FinishReason = finishReason
+                    };
+                }
+                else
+                {
+                    yield return new LLMStreamEvent
+                    {
+                        Type = "iteration_end",
+                        Iteration = iteration,
+                        StopReason = "completed",
+                        FinishReason = finishReason
+                    };
+                }
+
+                yield break;
             }
 
-            yield return streamEvent;
+            // 执行工具
+            var completedToolCalls = BuildCompletedToolCalls(toolCalls);
+            var toolResults = await _toolDispatcher.DispatchAsync(completedToolCalls, cancellationToken);
+
+            yield return new LLMStreamEvent
+            {
+                Type = "tool_results",
+                Iteration = iteration,
+                ToolCalls = completedToolCalls,
+                ToolResults = toolResults.ToList(),
+                FinishReason = "tool_calls"
+            };
+
+            // 追加 assistant 消息（含 tool_calls）
+            // 流式模式下 assistant 内容已通过 content delta 发送，这里追加空内容的 assistant 消息携带 tool_calls
+            messages.Add(new LLMChatMessage(
+                "assistant",
+                string.Empty,
+                null,
+                null,
+                completedToolCalls.Select(CloneToolCall).ToList()));
+
+            // 追加 tool result 消息
+            foreach (var toolCall in completedToolCalls)
+            {
+                var toolResult = toolResults.FirstOrDefault(r => string.Equals(r.ToolCallId, toolCall.Id, StringComparison.OrdinalIgnoreCase));
+                var toolContent = toolResult?.Content ?? "工具未返回结果。";
+                messages.Add(new LLMChatMessage(
+                    "tool",
+                    toolContent,
+                    toolCall.Function.Name,
+                    toolCall.Id));
+            }
+
+            // 达到最大迭代次数，下一轮禁用工具调用
+            if (iteration == maxIterations - 1)
+            {
+                preparedRequest.EnableAutoToolDispatch = false;
+                preparedRequest.ToolChoice = new LLMToolChoice { Type = "none" };
+            }
+        }
+    }
+
+    /// <summary>
+    /// 判断是否应该执行工具调用（安全门控）。
+    /// 仅当 EnableAutoToolDispatch=true、有 tool_calls、且 finish_reason 为 tool_calls 或 stop 时才执行，
+    /// 防止在内容审查拒绝(refusal/content_filter)等异常情况下仍执行工具。
+    /// </summary>
+    private static bool ShouldExecuteTools(LLMChatRequest request, LLMChatResponse response)
+    {
+        if (!request.EnableAutoToolDispatch)
+        {
+            return false;
         }
 
-        if (!preparedRequest.EnableAutoToolDispatch || !string.Equals(finishReason, "tool_calls", StringComparison.OrdinalIgnoreCase) || toolCalls.Count == 0)
+        if (response.ToolCalls is null || response.ToolCalls.Count == 0)
         {
-            yield break;
+            return false;
         }
 
-        var completedToolCalls = BuildCompletedToolCalls(toolCalls);
-        var toolResults = await _toolDispatcher.DispatchAsync(completedToolCalls, cancellationToken);
+        return ShouldExecuteToolsByFinishReason(response.FinishReason);
+    }
 
-        yield return new LLMStreamEvent
+    /// <summary>
+    /// 根据 finish_reason 判断是否应执行工具。
+    /// </summary>
+    private static bool ShouldExecuteToolsByFinishReason(string finishReason)
+    {
+        if (string.IsNullOrWhiteSpace(finishReason))
         {
-            Type = "tool_results",
-            ToolCalls = completedToolCalls,
-            ToolResults = toolResults.ToList(),
-            FinishReason = "tool_calls"
-        };
-
-        var secondRequest = BuildSecondRoundRequest(preparedRequest, string.Empty, completedToolCalls, toolResults);
-
-        await foreach (var streamEvent in _provider.StreamAsync(secondRequest, cancellationToken).WithCancellation(cancellationToken))
-        {
-            yield return streamEvent;
+            return false;
         }
+
+        return string.Equals(finishReason, "tool_calls", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(finishReason, "stop", StringComparison.OrdinalIgnoreCase);
     }
 
     private LLMChatRequest PrepareRequest(LLMChatRequest request)
@@ -107,6 +251,7 @@ public sealed class LLMService : ILLMService
                 }
             },
             EnableAutoToolDispatch = request.EnableAutoToolDispatch,
+            MaxIterations = request.MaxIterations,
             SkillName = request.SkillName,
             SkillOverridePrompt = request.SkillOverridePrompt
         };
@@ -233,48 +378,7 @@ public sealed class LLMService : ILLMService
             .ToList();
     }
 
-    private static LLMChatRequest BuildSecondRoundRequest(
-        LLMChatRequest originalRequest,
-        string assistantContent,
-        IReadOnlyList<LLMToolCall> toolCalls,
-        IReadOnlyList<LLMToolExecutionResult> toolResults)
-    {
-        var secondRoundMessages = originalRequest.Messages.Select(CloneMessage).ToList();
 
-        secondRoundMessages.Add(new LLMChatMessage(
-            "assistant",
-            assistantContent,
-            null,
-            null,
-            toolCalls.Select(CloneToolCall).ToList()));
-
-        foreach (var toolCall in toolCalls)
-        {
-            var toolResult = toolResults.FirstOrDefault(result => string.Equals(result.ToolCallId, toolCall.Id, StringComparison.OrdinalIgnoreCase));
-            var toolContent = toolResult?.Content ?? "工具未返回结果。";
-            secondRoundMessages.Add(new LLMChatMessage(
-                "tool",
-                toolContent,
-                toolCall.Function.Name,
-                toolCall.Id));
-        }
-
-        return new LLMChatRequest
-        {
-            Model = originalRequest.Model,
-            FallbackModels = originalRequest.FallbackModels,
-            SystemPrompt = originalRequest.SystemPrompt,
-            Messages = secondRoundMessages,
-            Temperature = originalRequest.Temperature,
-            MaxTokens = originalRequest.MaxTokens,
-            UseJsonMode = originalRequest.UseJsonMode,
-            Tools = originalRequest.Tools.Select(CloneToolDefinition).ToList(),
-            ToolChoice = new LLMToolChoice { Type = "none" },
-            EnableAutoToolDispatch = false,
-            SkillName = originalRequest.SkillName,
-            SkillOverridePrompt = originalRequest.SkillOverridePrompt
-        };
-    }
 
     private sealed class StreamToolCallBuffer
     {

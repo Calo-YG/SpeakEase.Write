@@ -7,7 +7,6 @@ using AINWZ.Infrastructure.LLM.Providers;
 using AINWZ.Infrastructure.LLM.ToolHandlers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace AINWZ.Infrastructure.LLM;
 
@@ -32,11 +31,9 @@ public static class ServiceCollectionExtensions
         services.AddOptions<LLMLoggingOptions>()
             .Bind(configuration.GetSection("LLM:Logging"));
 
-        services.AddHttpClient<ILLMProvider, OpenAICompatibleLLMProvider>((serviceProvider, client) =>
-        {
-            var options = serviceProvider.GetRequiredService<IOptions<LLMOptions>>().Value;
-            OpenAICompatibleLLMProvider.ConfigureHttpClient(client, options);
-        });
+        services.AddScoped<ICurrentLLMOptions, CurrentLLMOptionsResolver>();
+        services.AddHttpClient(); // 注册 IHttpClientFactory
+        services.AddScoped<ILLMProvider, OpenAICompatibleLLMProvider>();
 
         services.AddSingleton<ILLMSkillRegistry, InMemoryLLMSkillRegistry>();
         services.AddScoped<ILLMToolHandler, EchoToolHandler>();

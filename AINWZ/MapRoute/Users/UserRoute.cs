@@ -12,19 +12,19 @@ namespace AINWZ.MapRoute.Users
                .WithTags("user")
                .RequireAuthorization();
 
-            app.MapGet("api/user/profile", (IUserApplication userApp, CancellationToken cancellationToken) =>
+            app.MapGet("api/user/profile", async (IUserApplication userApp, CancellationToken cancellationToken) =>
             {
-                return userApp.GetProfileAsync(cancellationToken);
+                return await userApp.GetProfileAsync(cancellationToken);
             }).WithName("getprofile");
 
-            app.MapPut("api/user/profile", (UpdateProfileRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
+            app.MapPut("api/user/profile", async (UpdateProfileRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
             {
-                return userApp.UpdateProfileAsync(request, cancellationToken);
+                return await userApp.UpdateProfileAsync(request, cancellationToken);
             }).WithName("updateprofile");
 
-            app.MapPut("api/user/password", (ChangePasswordRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
+            app.MapPut("api/user/password", async (ChangePasswordRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
             {
-                return userApp.ChangePasswordAsync(request, cancellationToken);
+                return await userApp.ChangePasswordAsync(request, cancellationToken);
             }).WithName("changepassword");
         }
     }

@@ -25,6 +25,13 @@ public sealed class LLMChatRequest
 
     public bool EnableAutoToolDispatch { get; set; } = true;
 
+    /// <summary>
+    /// Agent Loop 最大迭代次数。
+    /// 默认 20，即 LLM 可自动调用工具最多 20 轮。
+    /// 设为 0 或 1 表示仅单轮（不自动执行工具）。
+    /// </summary>
+    public int MaxIterations { get; set; } = 20;
+
     public string SkillName { get; set; }
 
     public string SkillOverridePrompt { get; set; }

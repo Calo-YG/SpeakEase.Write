@@ -14,12 +14,12 @@ namespace AINWZ.MapRoute.AI
 
             app.MapPost("api/llmlog/query", async (LLMCallLogQueryRequest request, ILLMCallLogApplication logApp, CancellationToken cancellationToken) =>
             {
-                return logApp.GetPagedAsync(request, cancellationToken);
+                return await logApp.GetPagedAsync(request, cancellationToken);
             }).WithName("query");
 
-            app.MapGet("api/llmlog/{id}", async (string id,ILLMCallLogApplication logApp, CancellationToken cancellationToken) =>
+            app.MapGet("api/llmlog/{id}", async (string id, ILLMCallLogApplication logApp, CancellationToken cancellationToken) =>
             {
-                return logApp.GetByIdAsync(id, cancellationToken);
+                return await logApp.GetByIdAsync(id, cancellationToken);
             }).WithName("getbyid");
         }
     }

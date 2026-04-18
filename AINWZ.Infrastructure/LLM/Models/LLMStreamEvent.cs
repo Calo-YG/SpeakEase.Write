@@ -32,4 +32,14 @@ public sealed class LLMStreamEvent
     public string FinishReason { get; set; }
 
     public List<LLMToolExecutionResult> ToolResults { get; set; } = new();
+
+    /// <summary>
+    /// 当前迭代序号（1-based）。
+    /// </summary>
+    public int Iteration { get; set; }
+
+    /// <summary>
+    /// 当前迭代的停止原因：completed / max_iterations / error / empty_final_response。
+    /// </summary>
+    public string StopReason { get; set; }
 }

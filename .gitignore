@@ -379,3 +379,6 @@ FodyWeavers.xsd
 /AINWZ.Infrastructure/Persistence/Migrations/20260416193112_AddChapterAnalysisAndExtendEntities.cs
 /AINWZ.Infrastructure/Persistence/Migrations/20260416194641_RemoveMemoryChunkAddAuthorNotes.cs
 /AINWZ.Infrastructure/Persistence/Migrations/20260417184823_AddUserAiModelConfig.cs
+/AINWZ/tmp_ps_test.json
+/AINWZ/tmp_tools_test.json
+/AINWZ.Infrastructure/Persistence/Migrations/20260418114502_AddAgentLoopFields.cs

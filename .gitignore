@@ -375,3 +375,7 @@ FodyWeavers.xsd
 /AINWZ.Domain/Entities/Users/UserEntity.cs
 /AINWZ.Infrastructure/Persistence/Migrations/20260415120755_InitialPostgreSql.cs
 /AINWZ.Infrastructure/Persistence/Migrations/AINWZDbContextModelSnapshot.cs
+/AINWZ.Infrastructure/Persistence/Migrations/20260415120755_InitialPostgreSql.cs
+/AINWZ.Infrastructure/Persistence/Migrations/20260416193112_AddChapterAnalysisAndExtendEntities.cs
+/AINWZ.Infrastructure/Persistence/Migrations/20260416194641_RemoveMemoryChunkAddAuthorNotes.cs
+/AINWZ.Infrastructure/Persistence/Migrations/20260417184823_AddUserAiModelConfig.cs

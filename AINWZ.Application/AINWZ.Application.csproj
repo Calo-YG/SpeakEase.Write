@@ -12,7 +12,6 @@
 
   <ItemGroup>
     <Folder Include="Contracts\Auth\Dto\" />
-    <Folder Include="Contracts\Users\Dto\" />
   </ItemGroup>
 
 </Project>

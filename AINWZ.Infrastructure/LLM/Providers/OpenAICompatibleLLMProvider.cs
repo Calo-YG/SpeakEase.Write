@@ -16,33 +16,22 @@ namespace AINWZ.Infrastructure.LLM.Providers;
 /// 每次请求从 ICurrentLLMOptions 动态获取 BaseUrl、ApiKey、Model 等信息，
 /// 支持按用户自定义配置路由到不同提供商。
 /// </summary>
-public sealed class OpenAICompatibleLLMProvider : ILLMProvider
+public sealed class OpenAICompatibleLLMProvider(
+    IHttpClientFactory httpClientFactory,
+    ICurrentLLMOptions currentLLMOptions,
+    ILogger<OpenAICompatibleLLMProvider> logger) : ILLMProvider
 {
     private static readonly JsonSerializerOptions JsonSerializerOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly ICurrentLLMOptions _currentLLMOptions;
-    private readonly ILogger<OpenAICompatibleLLMProvider> _logger;
-
-    public OpenAICompatibleLLMProvider(
-        IHttpClientFactory httpClientFactory,
-        ICurrentLLMOptions currentLLMOptions,
-        ILogger<OpenAICompatibleLLMProvider> logger)
-    {
-        _httpClientFactory = httpClientFactory;
-        _currentLLMOptions = currentLLMOptions;
-        _logger = logger;
-    }
-
     /// <inheritdoc />
     public async Task<LLMChatResponse> ChatAsync(LLMChatRequest request, CancellationToken cancellationToken = default)
     {
         EnsureRequestIsValid(request);
 
-        var options = await _currentLLMOptions.GetCurrentOptionsAsync(cancellationToken);
+        var options = await currentLLMOptions.GetCurrentOptionsAsync(cancellationToken);
         using var httpClient = CreateConfiguredClient(options);
 
         Exception lastException = null;
@@ -102,7 +91,7 @@ public sealed class OpenAICompatibleLLMProvider : ILLMProvider
     {
         EnsureRequestIsValid(request);
 
-        var options = await _currentLLMOptions.GetCurrentOptionsAsync(cancellationToken);
+        var options = await currentLLMOptions.GetCurrentOptionsAsync(cancellationToken);
         using var httpClient = CreateConfiguredClient(options);
 
         var modelCandidates = ResolveModelCandidates(request, options);
@@ -782,7 +771,7 @@ public sealed class OpenAICompatibleLLMProvider : ILLMProvider
 
     private HttpClient CreateConfiguredClient(CurrentLLMOptions options)
     {
-        var client = _httpClientFactory.CreateClient();
+        var client = httpClientFactory.CreateClient();
         client.BaseAddress = new Uri(options.BaseUrl.EndsWith('/') ? options.BaseUrl : options.BaseUrl + "/");
         client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));

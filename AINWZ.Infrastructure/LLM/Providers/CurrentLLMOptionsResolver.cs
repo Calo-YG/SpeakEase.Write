@@ -13,32 +13,20 @@ namespace AINWZ.Infrastructure.LLM.Providers;
 /// 若用户无配置则回退到 appsettings.json 中的 LLMOptions 默认值。
 /// 结果按用户维度通过 IMultiCacheService 缓存，避免每次请求查库。
 /// </summary>
-public sealed class CurrentLLMOptionsResolver : ICurrentLLMOptions
+public sealed class CurrentLLMOptionsResolver(
+    AINWZDbContext dbContext,
+    IUserContext userContext,
+    IOptions<LLMOptions> fallbackOptions,
+    IMultiCacheService cache) : ICurrentLLMOptions
 {
-    private readonly AINWZDbContext _dbContext;
-    private readonly IUserContext _userContext;
-    private readonly IOptions<LLMOptions> _fallbackOptions;
-    private readonly IMultiCacheService _cache;
-
-    public CurrentLLMOptionsResolver(
-        AINWZDbContext dbContext,
-        IUserContext userContext,
-        IOptions<LLMOptions> fallbackOptions,
-        IMultiCacheService cache)
-    {
-        _dbContext = dbContext;
-        _userContext = userContext;
-        _fallbackOptions = fallbackOptions;
-        _cache = cache;
-    }
 
     /// <inheritdoc />
     public async Task<CurrentLLMOptions> GetCurrentOptionsAsync(CancellationToken cancellationToken = default)
     {
-        var userId = _userContext.UserId;
+        var userId = userContext.UserId;
         var cacheKey = CurrentLLMOptions.BuildCacheKey(userId);
 
-        return await _cache.GetOrSetAsync<CurrentLLMOptions>(
+        return await cache.GetOrSetAsync<CurrentLLMOptions>(
             cacheKey,
             () => ResolveFromDatabaseAsync(userId, cancellationToken),
             memoryExpiry: TimeSpan.FromMinutes(5),
@@ -48,9 +36,9 @@ public sealed class CurrentLLMOptionsResolver : ICurrentLLMOptions
     /// <inheritdoc />
     public async Task InvalidateAsync(string userId = null, CancellationToken cancellationToken = default)
     {
-        userId ??= _userContext.UserId;
+        userId ??= userContext.UserId;
         var cacheKey = CurrentLLMOptions.BuildCacheKey(userId);
-        await _cache.RemoveAsync(cacheKey);
+        await cache.RemoveAsync(cacheKey);
     }
 
     /// <summary>
@@ -59,7 +47,7 @@ public sealed class CurrentLLMOptionsResolver : ICurrentLLMOptions
     private async Task<CurrentLLMOptions> ResolveFromDatabaseAsync(string userId, CancellationToken cancellationToken)
     {
         // 查询用户激活的模型配置
-        var activeConfig = await _dbContext.UserAiModelConfigs
+        var activeConfig = await dbContext.UserAiModelConfigs
             .AsNoTracking()
             .Where(x => x.UserId == userId && x.IsActive)
             .FirstOrDefaultAsync(cancellationToken);
@@ -71,7 +59,7 @@ public sealed class CurrentLLMOptionsResolver : ICurrentLLMOptions
         }
 
         // 查询首选提供商
-        var provider = await _dbContext.AIModelDefinitions
+        var provider = await dbContext.AIModelDefinitions
             .AsNoTracking()
             .Where(x => x.Id == activeConfig.ProviderId)
             .FirstOrDefaultAsync(cancellationToken);
@@ -86,7 +74,7 @@ public sealed class CurrentLLMOptionsResolver : ICurrentLLMOptions
         string fallbackModelName = null;
         if (!string.IsNullOrWhiteSpace(activeConfig.FallbackProviderId) && activeConfig.UseFallback)
         {
-            var fallbackProvider = await _dbContext.AIModelDefinitions
+            var fallbackProvider = await dbContext.AIModelDefinitions
                 .AsNoTracking()
                 .Where(x => x.Id == activeConfig.FallbackProviderId)
                 .FirstOrDefaultAsync(cancellationToken);
@@ -98,7 +86,7 @@ public sealed class CurrentLLMOptionsResolver : ICurrentLLMOptions
             }
         }
 
-        var fallback = _fallbackOptions.Value;
+        var fallback = fallbackOptions.Value;
         var fallbackModels = new List<string>();
 
         // 如果备用提供商与首选提供商相同，直接加备用模型名
@@ -127,7 +115,7 @@ public sealed class CurrentLLMOptionsResolver : ICurrentLLMOptions
 
     private CurrentLLMOptions FromFallbackOptions()
     {
-        var fallback = _fallbackOptions.Value;
+        var fallback = fallbackOptions.Value;
         return new CurrentLLMOptions
         {
             BaseUrl = fallback.BaseUrl,

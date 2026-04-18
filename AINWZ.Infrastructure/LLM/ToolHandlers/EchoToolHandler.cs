@@ -12,6 +12,26 @@ public sealed class EchoToolHandler : ILLMToolHandler
     public string Name => "echo";
 
     /// <inheritdoc />
+    public LLMToolDefinition ToolDefinition => new()
+    {
+        Type = "function",
+        Function = new LLMToolFunctionDefinition
+        {
+            Name = Name,
+            Description = "回显输入内容，用于验证工具调用闭环。",
+            Parameters = new
+            {
+                type = "object",
+                properties = new
+                {
+                    message = new { type = "string", description = "要回显的消息内容" }
+                },
+                required = new[] { "message" }
+            }
+        }
+    };
+
+    /// <inheritdoc />
     public Task<LLMToolExecutionResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         return Task.FromResult(new LLMToolExecutionResult

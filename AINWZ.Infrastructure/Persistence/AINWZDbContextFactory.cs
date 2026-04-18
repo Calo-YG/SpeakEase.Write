@@ -1,8 +1,7 @@
-using AINWZ.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 
-namespace AINWZ.Infrastructure;
+namespace AINWZ.Infrastructure.Persistence;
 
 /// <summary>
 /// EF Core 设计时 DbContext 工厂，供 dotnet ef migrations 命令使用。

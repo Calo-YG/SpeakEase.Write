@@ -1,6 +1,7 @@
 using AINWZ.Infrastructure.LLM;
 using AINWZ.Infrastructure.LLM.Contract;
 using AINWZ.Infrastructure.LLM.Models;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace AINWZ.Tests.LLM;
@@ -10,8 +11,13 @@ public class LLMServiceTests
     private readonly Mock<ILLMProvider> _provider = new();
     private readonly Mock<ILLMToolDispatcher> _dispatcher = new();
     private readonly Mock<ILLMSkillRegistry> _skillRegistry = new();
+    private readonly Mock<ILogger<LLMService>> _logger = new();
 
-    private LLMService CreateSut() => new(_provider.Object, _dispatcher.Object, _skillRegistry.Object);
+    private LLMService CreateSut()
+    {
+        _skillRegistry.Setup(r => r.GetAll()).Returns(new List<LLMSkillDefinition>());
+        return new LLMService(_provider.Object, _dispatcher.Object, _skillRegistry.Object, _logger.Object);
+    }
 
     private static LLMChatRequest SimpleRequest(string userMessage, bool enableAutoToolDispatch = true, int maxIterations = 20)
     {

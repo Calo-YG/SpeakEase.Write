@@ -56,4 +56,20 @@ public sealed class LLMToolDispatcher(IEnumerable<ILLMToolHandler> toolHandlers)
 
         return results;
     }
+
+    /// <summary>
+    /// 获取指定名称的工具完整定义（含 parameters JSON Schema）。
+    /// </summary>
+    public LLMToolDefinition GetToolDefinition(string toolName)
+    {
+        return _toolHandlers.TryGetValue(toolName, out var handler) ? handler.ToolDefinition : null;
+    }
+
+    /// <summary>
+    /// 获取所有已注册工具的完整定义。
+    /// </summary>
+    public IReadOnlyList<LLMToolDefinition> GetAllToolDefinitions()
+    {
+        return _toolHandlers.Values.Select(h => h.ToolDefinition).Where(d => d is not null).ToList();
+    }
 }

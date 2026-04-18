@@ -14,6 +14,22 @@ public sealed class GetCurrentTimeToolHandler : ILLMToolHandler
     public string Name => "get_current_time";
 
     /// <inheritdoc />
+    public LLMToolDefinition ToolDefinition => new()
+    {
+        Type = "function",
+        Function = new LLMToolFunctionDefinition
+        {
+            Name = Name,
+            Description = "获取当前系统时间，返回 ISO 格式、本地时间、Unix 时间戳和时区信息。",
+            Parameters = new
+            {
+                type = "object",
+                properties = (object)null
+            }
+        }
+    };
+
+    /// <inheritdoc />
     public Task<LLMToolExecutionResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.Now;

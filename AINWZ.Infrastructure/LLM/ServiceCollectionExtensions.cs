@@ -4,6 +4,7 @@ using AINWZ.Infrastructure.LLM.Filters;
 using AINWZ.Infrastructure.LLM.Models;
 using AINWZ.Infrastructure.LLM.Options;
 using AINWZ.Infrastructure.LLM.Providers;
+using AINWZ.Infrastructure.LLM.Skills;
 using AINWZ.Infrastructure.LLM.ToolHandlers;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,14 +32,30 @@ public static class ServiceCollectionExtensions
         services.AddOptions<LLMLoggingOptions>()
             .Bind(configuration.GetSection("LLM:Logging"));
 
+        services.AddOptions<ToolSearchOptions>()
+            .Bind(configuration.GetSection(ToolSearchOptions.SectionName))
+            .ValidateDataAnnotations();
+
+        services.AddOptions<PowerShellToolOptions>()
+            .Bind(configuration.GetSection(PowerShellToolOptions.SectionName));
+
+        services.AddOptions<SkillOptions>()
+            .Bind(configuration.GetSection(SkillOptions.SectionName));
+
         services.AddScoped<ICurrentLLMOptions, CurrentLLMOptionsResolver>();
         services.AddHttpClient(); // 注册 IHttpClientFactory
         services.AddScoped<ILLMProvider, OpenAICompatibleLLMProvider>();
 
-        services.AddSingleton<ILLMSkillRegistry, InMemoryLLMSkillRegistry>();
+        services.AddSingleton<ILLMSkillRegistry, FileSystemLLMSkillRegistry>();
         services.AddScoped<ILLMToolHandler, EchoToolHandler>();
         services.AddScoped<ILLMToolHandler, GetCurrentTimeToolHandler>();
         services.AddScoped<ILLMToolHandler, ReadFileSummaryToolHandler>();
+        services.AddScoped<ILLMToolHandler, CalculateToolHandler>();
+        services.AddScoped<ILLMToolHandler, TextAnalyzerToolHandler>();
+        services.AddScoped<ILLMToolHandler, RandomGeneratorToolHandler>();
+        services.AddScoped<ILLMToolHandler, CharacterNameGeneratorToolHandler>();
+        services.AddScoped<ILLMToolHandler, PowerShellToolHandler>();
+        services.AddHttpClient<ILLMToolHandler, WebSearchToolHandler>();
         services.AddScoped<ILLMToolDispatcher, LLMToolDispatcher>();
         services.AddScoped<ILLMCallLogStore, EntityFrameworkLLMCallLogStore>();
         services.AddScoped<LLMService>();

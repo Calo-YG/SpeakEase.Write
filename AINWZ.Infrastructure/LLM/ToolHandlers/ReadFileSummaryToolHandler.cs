@@ -20,6 +20,28 @@ public sealed class ReadFileSummaryToolHandler(IHostEnvironment hostEnvironment)
     public string Name => "read_file_summary";
 
     /// <inheritdoc />
+    public LLMToolDefinition ToolDefinition => new()
+    {
+        Type = "function",
+        Function = new LLMToolFunctionDefinition
+        {
+            Name = Name,
+            Description = "读取 wwwroot 目录内文件并返回摘要，支持行数和字符数限制。",
+            Parameters = new
+            {
+                type = "object",
+                properties = new
+                {
+                    path = new { type = "string", description = "相对于 wwwroot 的文件路径" },
+                    maxLines = new { type = "integer", description = "最大读取行数，默认30，上限200" },
+                    maxChars = new { type = "integer", description = "最大返回字符数，默认2000，上限12000" }
+                },
+                required = new[] { "path" }
+            }
+        }
+    };
+
+    /// <inheritdoc />
     public async Task<LLMToolExecutionResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var input = JsonSerializer.Deserialize<ReadFileSummaryArguments>(arguments, new JsonSerializerOptions(JsonSerializerDefaults.Web))

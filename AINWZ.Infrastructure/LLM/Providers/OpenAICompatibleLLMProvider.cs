@@ -38,12 +38,17 @@ public sealed class OpenAICompatibleLLMProvider(
         var modelCandidates = ResolveModelCandidates(request, options);
         var messages = BuildMessages(request);
 
-        foreach (var model in modelCandidates)
+        logger.LogDebug("ChatAsync: BaseUrl={BaseUrl}, ModelCandidates=[{Models}], Messages={MsgCount}",
+            options.BaseUrl, string.Join(", ", modelCandidates), messages.Count);
+
+        foreach (var (model, index) in modelCandidates.Select((m, i) => (m, i)))
         {
             var payload = BuildRequestPayload(request, messages, model, stream: false);
 
             try
             {
+                logger.LogDebug("ChatAsync 尝试模型: {Model} (attempt {Index}/{Total})", model, index + 1, modelCandidates.Count);
+
                 using var response = await httpClient.PostAsJsonAsync("chat/completions", payload, JsonSerializerOptions, cancellationToken);
                 var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
 
@@ -59,6 +64,10 @@ public sealed class OpenAICompatibleLLMProvider(
                                   ?? throw new InvalidOperationException("LLM 响应中未包含可用结果。");
 
                 var finalModel = result.Model ?? payload.Model;
+
+                logger.LogInformation("ChatAsync 模型 {Model} 调用成功: FinishReason={FinishReason}, Tokens={PromptTokens}+{CompletionTokens}={TotalTokens}",
+                    finalModel, firstChoice.FinishReason ?? "(null)",
+                    result.Usage?.PromptTokens, result.Usage?.CompletionTokens, result.Usage?.TotalTokens);
 
                 return new LLMChatResponse
                 {
@@ -80,9 +89,11 @@ public sealed class OpenAICompatibleLLMProvider(
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 lastException = exception;
+                logger.LogWarning(exception, "ChatAsync 模型 {Model} 调用失败: {Message}", model, exception.Message);
             }
         }
 
+        logger.LogError(lastException, "ChatAsync 所有模型均调用失败: Models=[{Models}]", string.Join(", ", modelCandidates));
         throw new InvalidOperationException("所有 LLM 模型均调用失败。", lastException);
     }
 
@@ -96,6 +107,9 @@ public sealed class OpenAICompatibleLLMProvider(
 
         var modelCandidates = ResolveModelCandidates(request, options);
         var messages = BuildMessages(request);
+
+        logger.LogDebug("StreamAsync: BaseUrl={BaseUrl}, ModelCandidates=[{Models}], Messages={MsgCount}",
+            options.BaseUrl, string.Join(", ", modelCandidates), messages.Count);
 
         await foreach (var streamEvent in StreamInternalAsync(request, httpClient, modelCandidates, messages, cancellationToken).WithCancellation(cancellationToken))
         {
@@ -116,6 +130,8 @@ public sealed class OpenAICompatibleLLMProvider(
 
             if (usedFallback)
             {
+                logger.LogWarning("StreamAsync 主模型 {PrimaryModel} 失败，回退到 {FallbackModel}", primaryModel, model);
+
                 yield return new LLMStreamEvent
                 {
                     Type = "fallback",
@@ -130,6 +146,7 @@ public sealed class OpenAICompatibleLLMProvider(
             if (!attempt.Started)
             {
                 lastException = attempt.Exception;
+                logger.LogWarning(attempt.Exception, "StreamAsync 模型 {Model} 启动流失败: {Message}", model, attempt.Exception?.Message);
 
                 if (index == modelCandidates.Count - 1)
                 {
@@ -146,6 +163,9 @@ public sealed class OpenAICompatibleLLMProvider(
 
             if (attempt.CompletedSuccessfully)
             {
+                logger.LogDebug("StreamAsync 模型 {Model} 流式完成: FinishReason={FinishReason}, ToolCallCount={ToolCallCount}",
+                    model, attempt.FinishReason ?? "(null)", attempt.ToolCalls.Count);
+
                 yield return new LLMStreamEvent
                 {
                     Type = "done",
@@ -162,6 +182,7 @@ public sealed class OpenAICompatibleLLMProvider(
             }
 
             lastException = attempt.Exception;
+                logger.LogWarning(attempt.Exception, "StreamAsync 模型 {Model} 流中断: EmittedChunk={EmittedChunk}", model, attempt.EmittedChunk);
 
             if (index == modelCandidates.Count - 1)
             {

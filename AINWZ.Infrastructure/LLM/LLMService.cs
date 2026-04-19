@@ -214,6 +214,11 @@ public sealed class LLMService : ILLMService
             foreach (var toolCall in completedToolCalls)
             {
                 var toolResult = toolResults.FirstOrDefault(r => string.Equals(r.ToolCallId, toolCall.Id, StringComparison.OrdinalIgnoreCase));
+
+                _logger.LogInformation("StreamAsync 迭代 {Iter}/{MaxIter} 工具结果: ToolCall={ToolCall}, Success={Success}, ContentLen={ContentLen}",
+                    iteration, maxIterations, $"{toolCall.Function.Name}({Truncate(toolCall.Function.Arguments, 80)})",
+                    toolResult?.Success == true, toolResult?.Content?.Length ?? 0);
+
                 var toolContent = toolResult?.Content ?? "工具未返回结果。";
                 messages.Add(new LLMChatMessage(
                     "tool",

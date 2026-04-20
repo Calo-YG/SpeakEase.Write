@@ -46,16 +46,6 @@ namespace SpeakEase.AI.Lib
         }
 
         /// <summary>
-        /// 注册skills
-        /// </summary>
-        /// <param name="skill"></param>
-        /// <exception cref="NotImplementedException"></exception>
-        public void RegisterSkill(SkillDefinition skill)
-        {
-            skillCapable.RegisterSkill(skill);
-        }
-
-        /// <summary>
         /// 注册工具
         /// </summary>
         /// <param name="tool"></param>

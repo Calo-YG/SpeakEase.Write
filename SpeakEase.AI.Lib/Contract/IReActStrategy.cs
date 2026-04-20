@@ -8,20 +8,6 @@ namespace SpeakEase.AI.Lib.Contract
     /// </summary>
     public interface IReActStrategy
     {
-        /// <summary>
-        /// 执行 Agent Loop 的非流式模式。
-        /// </summary>
-        /// <param name="context">Agent 上下文能力，策略通过它与 Agent 交互。</param>
-        /// <param name="request">原始请求。</param>
-        /// <param name="cancellationToken">取消令牌。</param>
-        Task<AgentResponse> ExecuteAsync(IAgentLoopContext context, AgentRequest request, CancellationToken cancellationToken);
 
-        /// <summary>
-        /// 执行 Agent Loop 的流式模式。
-        /// </summary>
-        /// <param name="context">Agent 上下文能力，策略通过它与 Agent 交互。</param>
-        /// <param name="request">原始请求。</param>
-        /// <param name="cancellationToken">取消令牌。</param>
-        IAsyncEnumerable<AgentStreamChunk> StreamAsync(IAgentLoopContext context, AgentRequest request, CancellationToken cancellationToken);
     }
 }

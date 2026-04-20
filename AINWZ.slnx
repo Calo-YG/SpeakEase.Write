@@ -4,5 +4,7 @@
   <Project Path="AINWZ.Infrastructure/AINWZ.Infrastructure.csproj" />
   <Project Path="AINWZ.Tests/AINWZ.Tests.csproj" />
   <Project Path="AINWZ/AINWZ.csproj" />
-  <Project Path="SpeakEase.AI.Lib/SpeakEase.AI.Lib.csproj" />
+  <Project Path="SpeakEase.AI.Lib/SpeakEase.AI.Lib.csproj">
+    <Build Solution="Debug|*" Project="false" />
+  </Project>
 </Solution>

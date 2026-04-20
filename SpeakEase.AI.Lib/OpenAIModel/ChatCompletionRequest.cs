@@ -1,9 +1,7 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
-    #region 请求模型
-
     public class ChatCompletionRequest
     {
         [JsonPropertyName("model")]
@@ -83,6 +81,4 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool Strict { get; set; }
     }
-
-    #endregion
 }

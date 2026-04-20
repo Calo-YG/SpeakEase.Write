@@ -1,5 +1,4 @@
 using SpeakEase.AI.Lib.Models;
-
 namespace SpeakEase.AI.Lib.Contract
 {
     /// <summary>
@@ -12,11 +11,6 @@ namespace SpeakEase.AI.Lib.Contract
         /// 该 Agent 已注册的技能列表。
         /// </summary>
         IReadOnlyList<SkillDefinition> Skills { get; }
-
-        /// <summary>
-        /// 注册一个技能到该 Agent。
-        /// </summary>
-        void RegisterSkill(SkillDefinition skill);
 
         /// <summary>
         /// 按名称获取技能。

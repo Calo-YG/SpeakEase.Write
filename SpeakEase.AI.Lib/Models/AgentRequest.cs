@@ -16,11 +16,6 @@ namespace SpeakEase.AI.Lib.Models
         public string SystemPrompt { get; set; }
 
         /// <summary>
-        /// 对话消息列表。
-        /// </summary>
-        public List<> Messages { get; set; } = new();
-
-        /// <summary>
         /// 生成温度。
         /// </summary>
         public decimal? Temperature { get; set; }

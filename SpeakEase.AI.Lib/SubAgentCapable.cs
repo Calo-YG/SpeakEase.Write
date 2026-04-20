@@ -42,12 +42,12 @@ namespace SpeakEase.AI.Lib
         /// <summary>
         /// 主 Agent 的 LLM 后端，子 Agent 复用此实例。
         /// </summary>
-        private readonly IAgentLLMBackend _llmBackend;
+        private readonly IChatCompatible _llmBackend;
 
         /// <summary>
         /// 子 Agent 使用的 Loop 策略工厂。默认创建 ReActLoopStrategy。
         /// </summary>
-        private readonly Func<IAgentLoopStrategy> _loopStrategyFactory;
+        private readonly Func<IReActStrategy> _loopStrategyFactory;
 
         /// <summary>
         /// 主 Agent 的工具定义列表引用，用于为子 Agent 筛选可用工具。
@@ -106,10 +106,10 @@ namespace SpeakEase.AI.Lib
         /// <param name="parentToolExecutorProvider">主 Agent 的工具执行器（按名称 + 参数执行）。</param>
         /// <param name="loopStrategyFactory">子 Agent 的 Loop 策略工厂。默认创建 ReActLoopStrategy。</param>
         public SubAgentCapable(
-            IAgentLLMBackend llmBackend,
+            IChatCompatible llmBackend,
             Func<IReadOnlyList<ToolDefinition>> parentToolsProvider,
             Func<string, string, CancellationToken, Task<ToolResult>> parentToolExecutorProvider,
-            Func<IAgentLoopStrategy> loopStrategyFactory = null)
+            Func<IReActStrategy> loopStrategyFactory = null)
         {
             _llmBackend = llmBackend ?? throw new ArgumentNullException(nameof(llmBackend));
             _parentToolsProvider = parentToolsProvider ?? throw new ArgumentNullException(nameof(parentToolsProvider));
@@ -326,7 +326,7 @@ namespace SpeakEase.AI.Lib
         {
             private readonly ToolCapableBase _toolCapable = new();
 
-            public SubAgentInstance(IAgentLLMBackend llmBackend, IAgentLoopStrategy loopStrategy)
+            public SubAgentInstance(IChatCompatible llmBackend, IReActStrategy loopStrategy)
                 : base(llmBackend, loopStrategy)
             {
             }

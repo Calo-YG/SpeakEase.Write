@@ -18,7 +18,7 @@ namespace SpeakEase.AI.Lib.Models
         /// <summary>
         /// 对话消息列表。
         /// </summary>
-        public List<AgentMessage> Messages { get; set; } = new();
+        public List<> Messages { get; set; } = new();
 
         /// <summary>
         /// 生成温度。

@@ -11,7 +11,7 @@ namespace SpeakEase.AI.Lib.Contract
         /// <summary>
         /// LLM 后端，策略通过它发起 LLM 调用。
         /// </summary>
-        IAgentLLMBackend LLMBackend { get; }
+        IChatCompatible LLMBackend { get; }
 
         /// <summary>
         /// 预处理请求：注入工具定义、技能提示词等。

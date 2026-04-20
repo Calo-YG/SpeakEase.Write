@@ -7,9 +7,12 @@ namespace SpeakEase.AI.Lib.Tools;
 /// <summary>
 /// 获取当前系统时间的内置工具。
 /// </summary>
-public static class GetCurrentTimeTool
+public sealed class GetCurrentTimeTool:IToolExecutor
 {
-    public static ToolDefinition Definition => new()
+    /// <summary>
+    /// 工具定义：工具类型为 "function"，函数名称为 "get_current_time"，描述说明工具的功能，参数定义为空对象。
+    /// </summary>
+    private static ToolDefinition Definition => new()
     {
         Type = "function",
         Function = new ToolFunctionDefinition
@@ -25,7 +28,18 @@ public static class GetCurrentTimeTool
         }
     };
 
-    public static Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 
+    /// </summary>
+    public ToolDefinition ToolDefinition => Definition;
+
+    /// <summary>
+    /// 工具执行逻辑：获取当前系统时间，并返回包含 ISO 格式、本地时间、Unix 时间戳和时区信息的 JSON 字符串。
+    /// </summary>
+    /// <param name="arguments"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var now = DateTimeOffset.Now;
         var payload = JsonSerializer.Serialize(new
@@ -42,13 +56,5 @@ public static class GetCurrentTimeTool
             Success = true,
             Content = payload
         });
-    }
-
-    /// <summary>
-    /// 注册到 Agent。
-    /// </summary>
-    public static void RegisterTo(ToolCapableBase agent)
-    {
-        agent.RegisterTool(Definition, ExecuteAsync);
     }
 }

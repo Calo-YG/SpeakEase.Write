@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 
@@ -7,17 +9,14 @@ namespace SpeakEase.AI.Lib
     /// IToolCapable 的基础实现。
     /// 管理工具定义注册与工具执行，通过 RegisterTool 同时注册定义与执行器。
     /// </summary>
-    public class ToolCapableBase : IToolCapable
+    /// <param name="serviceProvider"></param>
+    /// <param name="logger"></param>
+    public class ToolCapableBase(IServiceProvider serviceProvider,ILogger<IToolCapable> logger): IToolCapable
     {
         /// <summary>
         /// 工具定义注册表（工具名 → 定义），大小写不敏感。
         /// </summary>
         private readonly Dictionary<string, ToolDefinition> _definitions = new(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// 工具执行器注册表（工具名 → 执行委托），大小写不敏感。
-        /// </summary>
-        private readonly Dictionary<string, Func<string, CancellationToken, Task<ToolResult>>> _executors = new(StringComparer.OrdinalIgnoreCase);
 
         /// <inheritdoc />
         public IReadOnlyList<ToolDefinition> Tools => _definitions.Values.ToList().AsReadOnly();
@@ -26,11 +25,16 @@ namespace SpeakEase.AI.Lib
         /// 注册一个工具，包含定义与执行器。
         /// 同名工具会覆盖已有注册。
         /// </summary>
-        public void RegisterTool(ToolDefinition definition, Func<string, CancellationToken, Task<ToolResult>> executor)
+        public void RegisterTool(ToolDefinition definition)
         {
             var name = definition.Function?.Name ?? throw new ArgumentException("工具定义的 Function.Name 不能为空。");
-            _definitions[name] = definition;
-            _executors[name] = executor;
+
+            if(!_definitions.TryGetValue(name, out var toolDefinition))
+            {
+                _definitions[name] = definition;
+            }
+
+            logger.LogInformation("Registered tool: {ToolName} (Type: {ToolType})", name, definition.Type);
         }
 
         /// <summary>
@@ -38,7 +42,7 @@ namespace SpeakEase.AI.Lib
         /// </summary>
         public bool UnregisterTool(string name)
         {
-            return _definitions.Remove(name) | _executors.Remove(name);
+            return _definitions.Remove(name);
         }
 
         /// <inheritdoc />
@@ -55,7 +59,7 @@ namespace SpeakEase.AI.Lib
                 };
             }
 
-            if (!_executors.TryGetValue(call.Function.Name, out var executor))
+            if (!_definitions.TryGetValue(call.Function.Name, out var definition))
             {
                 return new ToolResult
                 {
@@ -69,7 +73,11 @@ namespace SpeakEase.AI.Lib
 
             try
             {
-                var result = await executor(call.Function.Arguments ?? string.Empty, cancellationToken);
+                using var scope = serviceProvider.CreateScope();
+
+                var executor = scope.ServiceProvider.GetRequiredKeyedService<IToolExecutor>(call.Function.Name);
+
+                var result = await executor.ExecuteAsync(call.Function.Arguments ?? string.Empty, cancellationToken);
                 result.ToolCallId ??= call.Id;
                 result.ToolName ??= call.Function.Name;
                 return result;

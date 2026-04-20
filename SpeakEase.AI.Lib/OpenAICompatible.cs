@@ -4,8 +4,10 @@ using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.Options;
 
 namespace SpeakEase.AI.Lib
 {
@@ -13,7 +15,7 @@ namespace SpeakEase.AI.Lib
     /// 基于 OpenAI-compatible chat completions 协议的 IAgentLLMBackend 实现。
     /// 支持：模型回退、流式/非流式、工具调用、自定义鉴权头。
     /// </summary>
-    public sealed class OpenAICompatibleLLMBackend : IAgentLLMBackend
+    public sealed class OpenAICompatible: IChatCompatible
     {
         /// <summary>
         /// JSON 序列化选项，Web 默认 + 忽略 null 值。
@@ -31,23 +33,14 @@ namespace SpeakEase.AI.Lib
         /// <summary>
         /// 配置解析委托，支持动态刷新 LLM 配置（如模型切换、密钥轮换）。
         /// </summary>
-        private readonly Func<Task<LLMBackendOptions>> _optionsResolver;
+        private readonly Func<Task<OpenAIOptions>> _optionsResolver;
 
         /// <summary>
         /// 通过 IHttpClientFactory + 配置解析委托创建。
         /// </summary>
-        public OpenAICompatibleLLMBackend(IHttpClientFactory httpClientFactory, Func<Task<LLMBackendOptions>> optionsResolver)
+        public OpenAICompatible(IHttpClientFactory httpClientFactory)
         {
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-            _optionsResolver = optionsResolver ?? throw new ArgumentNullException(nameof(optionsResolver));
-        }
-
-        /// <summary>
-        /// 通过 IHttpClientFactory + 固定配置创建。
-        /// </summary>
-        public OpenAICompatibleLLMBackend(IHttpClientFactory httpClientFactory, LLMBackendOptions options)
-            : this(httpClientFactory, () => Task.FromResult(options ?? throw new ArgumentNullException(nameof(options))))
-        {
         }
 
         /// <inheritdoc />
@@ -68,6 +61,7 @@ namespace SpeakEase.AI.Lib
                 try
                 {
                     using var httpResponse = await httpClient.PostAsJsonAsync("chat/completions", payload, JsonOptions, cancellationToken);
+
                     var rawResponse = await httpResponse.Content.ReadAsStringAsync(cancellationToken);
 
                     if (!httpResponse.IsSuccessStatusCode)
@@ -127,7 +121,7 @@ namespace SpeakEase.AI.Lib
         /// <summary>
         /// 根据配置创建 HttpClient，设置 BaseAddress、超时、鉴权头。
         /// </summary>
-        private HttpClient CreateConfiguredClient(LLMBackendOptions options)
+        private HttpClient CreateConfiguredClient(OpenAIOptions options)
         {
             var client = _httpClientFactory.CreateClient();
             client.BaseAddress = new Uri(options.BaseUrl.EndsWith('/') ? options.BaseUrl : options.BaseUrl + "/");
@@ -154,7 +148,7 @@ namespace SpeakEase.AI.Lib
         /// <summary>
         /// 解析模型候选列表：请求级 Model 优先，其次默认模型，最后追加备用模型。
         /// </summary>
-        private static List<string> ResolveModelCandidates(AgentRequest request, LLMBackendOptions options)
+        private static List<string> ResolveModelCandidates(AgentRequest request, OpenAIOptions options)
         {
             var models = new List<string>();
             var primaryModel = string.IsNullOrWhiteSpace(request.Model) ? options.DefaultModel : request.Model!;

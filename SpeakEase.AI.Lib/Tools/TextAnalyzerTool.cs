@@ -9,7 +9,7 @@ namespace SpeakEase.AI.Lib.Tools;
 /// 文本分析工具，支持字数统计、词频统计、文本摘要提取。
 /// 适用于小说写作场景中的文本审阅与统计需求。
 /// </summary>
-public static class TextAnalyzerTool
+public sealed class TextAnalyzerTool:IToolExecutor
 {
     public static ToolDefinition Definition => new()
     {
@@ -33,7 +33,18 @@ public static class TextAnalyzerTool
         }
     };
 
-    public static Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 
+    /// </summary>
+    public ToolDefinition ToolDefinition => Definition;
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="arguments"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var input = JsonSerializer.Deserialize<TextAnalyzerArguments>(arguments, new JsonSerializerOptions(JsonSerializerDefaults.Web))
                     ?? new TextAnalyzerArguments();
@@ -214,14 +225,6 @@ public static class TextAnalyzerTool
             ErrorCode = errorCode,
             Content = message
         };
-    }
-
-    /// <summary>
-    /// 注册到 Agent。
-    /// </summary>
-    public static void RegisterTo(ToolCapableBase agent)
-    {
-        agent.RegisterTool(Definition, ExecuteAsync);
     }
 
     private sealed class TextAnalyzerArguments

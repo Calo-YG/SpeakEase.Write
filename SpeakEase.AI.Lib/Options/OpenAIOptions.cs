@@ -1,10 +1,10 @@
-namespace SpeakEase.AI.Lib.Models
+namespace SpeakEase.AI.Lib.Options
 {
     /// <summary>
     /// LLM 后端配置选项。
     /// 可由消费方通过 IOptions 模式注入，也可由代码直接构造。
     /// </summary>
-    public sealed class LLMBackendOptions
+    public sealed class OpenAIOptions
     {
         /// <summary>
         /// 配置节名称。

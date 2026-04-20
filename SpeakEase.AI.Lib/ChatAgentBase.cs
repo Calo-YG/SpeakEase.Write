@@ -4,56 +4,31 @@ using SpeakEase.AI.Lib.Models;
 namespace SpeakEase.AI.Lib
 {
     /// <summary>
-    /// IChatAgent 的瘦基类，实现 IAgentLoopContext。
     /// 
-    /// 职责：
-    /// - 持有 IAgentLLMBackend 和 IAgentLoopStrategy
-    /// - 管理 IChatAgentFilter 管道
-    /// - 提供 PrepareRequestAsync / ShouldExecuteTools / ExecuteToolsAsync 等虚方法供策略调用
-    /// - 将 ChatAsync / StreamAsync 委托给 IAgentLoopStrategy
     /// </summary>
-    public abstract class ChatAgentBase : IChatAgent, IAgentLoopContext
+    /// <remarks>
+    /// 构造 ChatAgentBase。
+    /// </remarks>
+    /// <param name="llmBackend">LLM 后端，用于发起推理请求。</param>
+    /// <param name="loopStrategy">Loop 执行策略，决定 Agent 的迭代行为。</param>
+    /// <param name="filters">可选的 Filter 中间件列表，按传入顺序依次拦截 ChatAsync 调用。</param>
+    public abstract class ChatAgentBase(
+        IChatCompatible chatCompatible,
+        IEnumerable<IChatAgentFilter> filters = null) : IChatAgent
     {
         /// <summary>
         /// LLM 后端实例，IAgentLoopContext 的一部分，供 Loop 策略发起 LLM 调用。
         /// </summary>
-        public IAgentLLMBackend LLMBackend { get; }
-
-        /// <summary>
-        /// Loop 执行策略，决定 Agent 如何迭代（如 ReAct 循环、单轮调用等）。
-        /// </summary>
-        private readonly IAgentLoopStrategy _loopStrategy;
+        public IChatCompatible LLMBackend { get; } = chatCompatible ?? throw new ArgumentNullException(nameof(chatCompatible));
 
         /// <summary>
         /// Filter 管道列表，ChatAsync 时按逆序聚合为中间件链。
         /// </summary>
-        private readonly List<IChatAgentFilter> _filters;
-
-        /// <summary>
-        /// 构造 ChatAgentBase。
-        /// </summary>
-        /// <param name="llmBackend">LLM 后端，用于发起推理请求。</param>
-        /// <param name="loopStrategy">Loop 执行策略，决定 Agent 的迭代行为。</param>
-        /// <param name="filters">可选的 Filter 中间件列表，按传入顺序依次拦截 ChatAsync 调用。</param>
-        protected ChatAgentBase(
-            IAgentLLMBackend llmBackend,
-            IAgentLoopStrategy loopStrategy,
-            IEnumerable<IChatAgentFilter> filters = null)
-        {
-            LLMBackend = llmBackend ?? throw new ArgumentNullException(nameof(llmBackend));
-            _loopStrategy = loopStrategy ?? throw new ArgumentNullException(nameof(loopStrategy));
-            _filters = filters?.ToList() ?? new List<IChatAgentFilter>();
-        }
+        private readonly List<IChatAgentFilter> _filters = filters?.ToList() ?? new List<IChatAgentFilter>();
 
         /// <inheritdoc />
         public virtual Task<AgentResponse> ChatAsync(AgentRequest request, CancellationToken cancellationToken = default)
         {
-            // 无 Filter → 直接委托给策略
-            if (_filters.Count == 0)
-            {
-                return _loopStrategy.ExecuteAsync(this, request, cancellationToken);
-            }
-
             // 构建 Filter 管道
             var context = new AgentContext
             {
@@ -63,7 +38,7 @@ namespace SpeakEase.AI.Lib
 
             Task<AgentResponse> InnerNext(AgentContext ctx, CancellationToken ct)
             {
-                return _loopStrategy.ExecuteAsync(this, ctx.Request, ct);
+                return chatCompatible.ExecuteAsync(this, ctx.Request, ct);
             }
 
             var pipeline = _filters

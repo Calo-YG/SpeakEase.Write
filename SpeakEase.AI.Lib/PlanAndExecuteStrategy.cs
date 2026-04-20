@@ -22,7 +22,7 @@ namespace SpeakEase.AI.Lib
     /// - 多步骤分析（先搜索 → 再整理 → 最后总结）
     /// - 需要"先想清楚再做"的长链推理
     /// </summary>
-    public class PlanAndExecuteStrategy : IAgentLoopStrategy
+    public class PlanAndExecuteStrategy : IReActStrategy
     {
         /// <summary>
         /// 执行阶段每步的最大迭代次数（含工具调用循环）。

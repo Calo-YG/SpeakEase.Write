@@ -2,6 +2,7 @@
   <Project Path="AINWZ.Application/AINWZ.Application.csproj" />
   <Project Path="AINWZ.Domain/AINWZ.Domain.csproj" />
   <Project Path="AINWZ.Infrastructure/AINWZ.Infrastructure.csproj" />
-  <Project Path="AINWZ/AINWZ.csproj" />
   <Project Path="AINWZ.Tests/AINWZ.Tests.csproj" />
+  <Project Path="AINWZ/AINWZ.csproj" />
+  <Project Path="SpeakEase.AI.Lib/SpeakEase.AI.Lib.csproj" />
 </Solution>

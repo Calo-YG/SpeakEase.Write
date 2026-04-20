@@ -13,7 +13,7 @@ namespace SpeakEase.AI.Lib
     /// 4. 若有工具调用 → 执行工具 → 追加结果到消息 → 回到步骤 2
     /// 5. 达到最大迭代次数 → 做一次无工具调用获取最终回复
     /// </summary>
-    public class ReActLoopStrategy : IAgentLoopStrategy
+    public class ReActLoopStrategy : IReActStrategy
     {
         /// <summary>
         /// 默认最大迭代次数。

@@ -6,7 +6,7 @@ namespace SpeakEase.AI.Lib.Contract
     /// Agent Loop 执行策略抽象。
     /// 不同的策略决定 Agent 如何迭代：ReAct 循环、单轮调用、Plan-and-Execute 等。
     /// </summary>
-    public interface IAgentLoopStrategy
+    public interface IReActStrategy
     {
         /// <summary>
         /// 执行 Agent Loop 的非流式模式。

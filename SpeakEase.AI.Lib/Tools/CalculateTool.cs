@@ -9,7 +9,7 @@ namespace SpeakEase.AI.Lib.Tools;
 /// 数学表达式计算器，支持四则运算、幂、取模等基础数学运算。
 /// 使用 DataTable.Compute 安全求值，仅支持数值运算，无代码注入风险。
 /// </summary>
-public static class CalculateTool
+public  class CalculateTool:IToolExecutor
 {
     public static ToolDefinition Definition => new()
     {
@@ -30,7 +30,15 @@ public static class CalculateTool
         }
     };
 
-    public static Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
+    public ToolDefinition ToolDefinition => Definition;
+
+    /// <summary>
+    /// 工具执行入口，接收 JSON 格式的参数，解析后计算表达式结果，并返回 JSON 格式的结果。
+    /// </summary>
+    /// <param name="arguments"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var input = JsonSerializer.Deserialize<CalculateArguments>(arguments, new JsonSerializerOptions(JsonSerializerDefaults.Web))
                     ?? new CalculateArguments();
@@ -106,14 +114,6 @@ public static class CalculateTool
             ErrorCode = errorCode,
             Content = message
         };
-    }
-
-    /// <summary>
-    /// 注册到 Agent。
-    /// </summary>
-    public static void RegisterTo(ToolCapableBase agent)
-    {
-        agent.RegisterTool(Definition, ExecuteAsync);
     }
 
     private sealed class CalculateArguments

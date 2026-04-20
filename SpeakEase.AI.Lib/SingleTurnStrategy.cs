@@ -16,7 +16,7 @@ namespace SpeakEase.AI.Lib
     /// - 不走 Loop 逻辑中的工具检查、迭代追踪等开销
     /// - 始终设置 Iterations=1、StopReason="completed"
     /// </summary>
-    public class SingleTurnStrategy : IAgentLoopStrategy
+    public class SingleTurnStrategy : IReActStrategy
     {
         /// <inheritdoc />
         public async Task<AgentResponse> ExecuteAsync(

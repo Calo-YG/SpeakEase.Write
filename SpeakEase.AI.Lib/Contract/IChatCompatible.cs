@@ -7,7 +7,7 @@ namespace SpeakEase.AI.Lib.Contract
     /// Agent 不关心 HTTP 请求、模型切换、Fallback 等 Infrastructure 细节，
     /// 只关心"我给你上下文，你给我回复"。
     /// </summary>
-    public interface IAgentLLMBackend
+    public interface IChatCompatible
     {
         /// <summary>
         /// 请求 LLM 完成一次推理，返回完整响应。

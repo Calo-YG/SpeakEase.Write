@@ -8,7 +8,7 @@ namespace SpeakEase.AI.Lib.Tools;
 /// 角色姓名生成器，支持中文姓名、英文名、奇幻风格名、日文名等多种风格。
 /// 适用于小说创作中的角色命名需求。
 /// </summary>
-public static class CharacterNameGeneratorTool
+public class CharacterNameGeneratorTool:IToolExecutor
 {
     private static readonly Random Random = Random.Shared;
 
@@ -32,6 +32,8 @@ public static class CharacterNameGeneratorTool
             """
         }
     };
+    
+    public ToolDefinition ToolDefinition => Definition;
 
     // 常见中文姓氏（百家姓前100）
     private static readonly string[] ChineseSurnames =
@@ -118,7 +120,13 @@ public static class CharacterNameGeneratorTool
         "桜", "杏", "美咲", "花", "結", "葵", "柚希", "美優", "桃花", "雫"
     ];
 
-    public static Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 工具执行入口，接收 JSON 格式的参数，解析后根据指定的风格、性别和数量生成角色姓名列表，并返回结果。
+    /// </summary>
+    /// <param name="arguments"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var input = JsonSerializer.Deserialize<NameArguments>(arguments, new JsonSerializerOptions(JsonSerializerDefaults.Web))
                     ?? new NameArguments();
@@ -224,14 +232,6 @@ public static class CharacterNameGeneratorTool
             ErrorCode = errorCode,
             Content = message
         };
-    }
-
-    /// <summary>
-    /// 注册到 Agent。
-    /// </summary>
-    public static void RegisterTo(ToolCapableBase agent)
-    {
-        agent.RegisterTool(Definition, ExecuteAsync);
     }
 
     private sealed class NameArguments

@@ -19,10 +19,5 @@ namespace SpeakEase.AI.Lib.Models
         /// 技能系统提示词，激活该技能时注入到对话中。
         /// </summary>
         public string SystemPrompt { get; set; }
-
-        /// <summary>
-        /// 该技能默认启用的工具名称列表。
-        /// </summary>
-        public List<string> DefaultToolNames { get; set; } = new();
     }
 }

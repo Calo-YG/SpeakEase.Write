@@ -8,7 +8,7 @@ namespace SpeakEase.AI.Lib.Tools;
 /// 随机生成器工具，支持随机整数、随机选择、掷骰子、UUID 生成、随机打乱。
 /// 适用于小说创作中的随机情节、掷骰判定、随机选择等场景。
 /// </summary>
-public static class RandomGeneratorTool
+public sealed class RandomGeneratorTool:IToolExecutor
 {
     private static readonly Random Random = Random.Shared;
 
@@ -38,7 +38,18 @@ public static class RandomGeneratorTool
         }
     };
 
-    public static Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 
+    /// </summary>
+    public ToolDefinition ToolDefinition => Definition;
+
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="arguments"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         var input = JsonSerializer.Deserialize<RandomArguments>(arguments, new JsonSerializerOptions(JsonSerializerDefaults.Web))
                     ?? new RandomArguments();
@@ -159,13 +170,8 @@ public static class RandomGeneratorTool
     }
 
     /// <summary>
-    /// 注册到 Agent。
+    /// 方法参数定义
     /// </summary>
-    public static void RegisterTo(ToolCapableBase agent)
-    {
-        agent.RegisterTool(Definition, ExecuteAsync);
-    }
-
     private sealed class RandomArguments
     {
         public string Mode { get; set; }

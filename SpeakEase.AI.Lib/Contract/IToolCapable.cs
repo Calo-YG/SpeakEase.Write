@@ -14,6 +14,12 @@ namespace SpeakEase.AI.Lib.Contract
         IReadOnlyList<ToolDefinition> Tools { get; }
 
         /// <summary>
+        /// 注册工具定义。Agent 可以通过此方法声明自己支持的工具，供 AgentExecutor 在执行过程中调用。
+        /// </summary>
+        /// <param name="tool"></param>
+        void RegisterTool(ToolDefinition tool);
+
+        /// <summary>
         /// 执行一次工具调用。
         /// </summary>
         Task<ToolResult> ExecuteToolAsync(ToolCall call, CancellationToken cancellationToken = default);

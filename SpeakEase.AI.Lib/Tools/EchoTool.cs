@@ -34,8 +34,6 @@ public sealed class EchoTool : IToolExecutor
     };
 
     /// <inheritdoc />
-
-    /// <inheritdoc />
     public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
         string message = string.Empty;

@@ -12,7 +12,7 @@ namespace AINWZ.Infrastructure.Persistence;
 /// <summary>
 /// AINWZ 应用数据库上下文。
 /// </summary>
-public class AINWZDbContext(DbContextOptions<AINWZDbContext> options) : DbContext(options)
+public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : DbContext(options)
 {
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
@@ -52,6 +52,6 @@ public class AINWZDbContext(DbContextOptions<AINWZDbContext> options) : DbContex
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AINWZDbContext).Assembly);
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(SpeakEaseDbContext).Assembly);
     }
 }

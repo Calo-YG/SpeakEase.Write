@@ -21,7 +21,7 @@ public static class ServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("AINWZ")
             ?? "Host=localhost;Port=7452;Database=ainwz;Username=blog;Password=blog123";
 
-        services.AddDbContext<AINWZDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddDbContext<SpeakEaseDbContext>(options => options.UseNpgsql(connectionString));
 
         services.AddOptions<SnowflakeIdOptions>()
             .Bind(configuration.GetSection(SnowflakeIdOptions.SectionName));

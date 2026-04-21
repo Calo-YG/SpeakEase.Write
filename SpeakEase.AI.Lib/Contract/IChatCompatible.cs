@@ -1,36 +1,40 @@
+using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 
 namespace SpeakEase.AI.Lib.Contract
 {
     /// <summary>
-    /// Agent 视角的 LLM 后端接口。
-    /// Agent 不关心 HTTP 请求、模型切换、Fallback 等 Infrastructure 细节，
-    /// 只关心"我给你 OpenAI-compatible 请求，你给我标准响应"。
-    /// 此接口仅负责单次 LLM 调用（含模型回退），
-    /// 不包含工具调度 / 技能注入 / Agent Loop 等策略逻辑。
+    /// LLM 单轮交互策略：封装与 LLM 的一次请求/响应交互，
+    /// 使 ReActAgent 只关注循环编排逻辑，不感知底层协议细节。
     /// </summary>
     public interface IChatCompatible
     {
         /// <summary>
-        /// 非流式调用：发送 OpenAI-compatible chat completions 请求，返回完整响应。
-        /// 内部自动处理模型回退逻辑。  
+        /// 非流式单轮交互
         /// </summary>
-        /// <param name="request">OpenAI 格式的请求体。</param>
-        /// <param name="cancellationToken">取消令牌。</param>
-        /// <returns>完整的 OpenAI 格式响应。</returns>
-        Task<ChatCompletionResponse> ChatAsync(
-            ChatCompletionRequest request,
+        /// <param name="context">LLM 交互上下文（模型、温度等不变配置）</param>
+        /// <param name="messages">当前消息列表</param>
+        /// <param name="tools">可用工具定义列表，无工具时传 null</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        /// <returns>本轮 LLM 交互结果</returns>
+        Task<LLMTurnResult> ChatAsync(
+            LLMTurnContext context,
+            List<ChatMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
             CancellationToken cancellationToken = default);
 
         /// <summary>
-        /// 流式调用：发送 OpenAI-compatible chat completions 请求，逐片段返回响应增量。
-        /// 内部自动处理模型回退逻辑。
+        /// 流式单轮交互：实时输出增量片段，轮次结束时输出最终结果
         /// </summary>
-        /// <param name="request">OpenAI 格式的请求体（内部会强制设置 stream=true）。</param>
-        /// <param name="cancellationToken">取消令牌。</param>
-        /// <returns>流式响应片段的异步枚举。</returns>
-        IAsyncEnumerable<ChatCompletionStreamChunk> StreamAsync(
-            ChatCompletionRequest request,
+        /// <param name="context">LLM 交互上下文（模型、温度等不变配置）</param>
+        /// <param name="messages">当前消息列表</param>
+        /// <param name="tools">可用工具定义列表，无工具时传 null</param>
+        /// <param name="cancellationToken">取消令牌</param>
+        /// <returns>流式增量片段的异步枚举</returns>
+        IAsyncEnumerable<LLMTurnChunk> StreamAsync(
+            LLMTurnContext context,
+            List<ChatMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
             CancellationToken cancellationToken = default);
     }
 }

@@ -11,7 +11,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace AINWZ.Infrastructure.Persistence.Migrations
 {
-    [DbContext(typeof(AINWZDbContext))]
+    [DbContext(typeof(SpeakEaseDbContext))]
     [Migration("20260417184823_AddUserAiModelConfig")]
     partial class AddUserAiModelConfig
     {

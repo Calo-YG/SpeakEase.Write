@@ -1,4 +1,5 @@
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.OpenAIModel;
 
 namespace SpeakEase.AI.Lib.Contract
 {
@@ -22,6 +23,11 @@ namespace SpeakEase.AI.Lib.Contract
         /// <summary>
         /// 执行一次工具调用。
         /// </summary>
-        Task<ToolResult> ExecuteToolAsync(ToolCall call, CancellationToken cancellationToken = default);
+        /// <param name="toolCall"></param>
+        /// <param name="cancellationToken"></param>
+        /// <returns></returns>
+        Task<ToolResult> ExecuteAsync(ToolCall toolCall, CancellationToken cancellationToken);
+
+
     }
 }

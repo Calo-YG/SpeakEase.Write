@@ -1,3 +1,5 @@
+using SpeakEase.AI.Lib.OpenAIModel;
+
 namespace SpeakEase.AI.Lib.Models;
 
 /// <summary>

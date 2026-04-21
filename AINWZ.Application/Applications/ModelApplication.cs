@@ -13,7 +13,7 @@ namespace AINWZ.Application.Applications
     /// 模型提供商管理应用服务实现（单表：AIModelDefinitionEntity）。
     /// </summary>
     public class ModelApplication(
-        AINWZDbContext dbContext,
+        SpeakEaseDbContext dbContext,
         ISnowflakeIdGenerator idGenerator,
         IHttpClientFactory httpClientFactory,
         ILogger<ModelApplication> logger) : IModelApplication

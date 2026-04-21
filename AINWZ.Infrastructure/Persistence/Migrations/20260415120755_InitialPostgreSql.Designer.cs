@@ -11,7 +11,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace AINWZ.Infrastructure.Persistence.Migrations
 {
-    [DbContext(typeof(AINWZDbContext))]
+    [DbContext(typeof(SpeakEaseDbContext))]
     [Migration("20260415120755_InitialPostgreSql")]
     partial class InitialPostgreSql
     {

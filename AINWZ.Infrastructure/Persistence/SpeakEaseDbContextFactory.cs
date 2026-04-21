@@ -6,13 +6,13 @@ namespace AINWZ.Infrastructure.Persistence;
 /// <summary>
 /// EF Core 设计时 DbContext 工厂，供 dotnet ef migrations 命令使用。
 /// </summary>
-internal sealed class AINWZDbContextFactory : IDesignTimeDbContextFactory<AINWZDbContext>
+internal sealed class SpeakEaseDbContextFactory : IDesignTimeDbContextFactory<SpeakEaseDbContext>
 {
-    public AINWZDbContext CreateDbContext(string[] args)
+    public SpeakEaseDbContext CreateDbContext(string[] args)
     {
-        var optionsBuilder = new DbContextOptionsBuilder<AINWZDbContext>();
+        var optionsBuilder = new DbContextOptionsBuilder<SpeakEaseDbContext>();
         optionsBuilder.UseNpgsql("Host=localhost;Port=7452;Database=ainwz;Username=blog;Password=blog123");
 
-        return new AINWZDbContext(optionsBuilder.Options);
+        return new SpeakEaseDbContext(optionsBuilder.Options);
     }
 }

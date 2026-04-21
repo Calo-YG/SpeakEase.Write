@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
+using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -13,7 +14,7 @@ namespace SpeakEase.AI.Lib
     /// <summary>
     /// 基于 OpenAI-compatible chat completions 协议的 <see cref="IChatCompatible"/> 实现。
     /// 支持：流式/非流式、工具调用、自定义鉴权头。
-    /// 仅依赖 <see cref="OpenAIModel"/> 线路格式模型，不耦合任何 Agent 域模型。
+    /// 直接实现 ILLMStrategy，封装 HTTP 通信 + 协议解析 + 流式 delta 累积全部逻辑。
     /// </summary>
     public sealed class OpenAICompatible : IChatCompatible
     {
@@ -38,13 +39,15 @@ namespace SpeakEase.AI.Lib
         }
 
         /// <inheritdoc />
-        public async Task<ChatCompletionResponse> ChatAsync(
-            ChatCompletionRequest request,
+        public async Task<LLMTurnResult> ChatAsync(
+            LLMTurnContext context,
+            List<ChatMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
             CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(request);
-            if (string.IsNullOrWhiteSpace(request.Model))
-                request.Model = _context.Model;
+            ArgumentNullException.ThrowIfNull(context);
+
+            var request = BuildRequest(context, messages, tools, stream: false);
 
             _logger.LogDebug(
                 "ChatAsync 开始: Model={Model}, Messages={MsgCount}, Tools={ToolCount}",
@@ -82,18 +85,25 @@ namespace SpeakEase.AI.Lib
                 result.Usage?.CompletionTokens,
                 result.Usage?.TotalTokens);
 
-            return result;
+            return new LLMTurnResult
+            {
+                Content = firstChoice?.Message?.Content ?? string.Empty,
+                ToolCalls = firstChoice?.Message?.ToolCalls,
+                Model = result.Model,
+                Usage = result.Usage
+            };
         }
 
         /// <inheritdoc />
-        public async IAsyncEnumerable<ChatCompletionStreamChunk> StreamAsync(
-            ChatCompletionRequest request,
+        public async IAsyncEnumerable<LLMTurnChunk> StreamAsync(
+            LLMTurnContext context,
+            List<ChatMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(request);
-            if (string.IsNullOrWhiteSpace(request.Model))
-                request.Model = _context.Model;
-            request.Stream = true;
+            ArgumentNullException.ThrowIfNull(context);
+
+            var request = BuildRequest(context, messages, tools, stream: true);
 
             _logger.LogDebug(
                 "StreamAsync 开始: Model={Model}, Messages={MsgCount}, Tools={ToolCount}",
@@ -122,8 +132,13 @@ namespace SpeakEase.AI.Lib
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream, Encoding.UTF8);
-            var emittedAny = false;
+
+            // 累积流式内容
+            var contentBuilder = new StringBuilder();
             var toolCallAccumulators = new Dictionary<int, ToolCallAccumulator>();
+            string finishReason = null;
+            string responseModel = context.Model;
+            UsageInfo usage = null;
 
             while (true)
             {
@@ -142,42 +157,84 @@ namespace SpeakEase.AI.Lib
                 if (chunk is null)
                     continue;
 
-                if (string.IsNullOrWhiteSpace(chunk.Model))
-                    chunk.Model = request.Model;
+                if (!string.IsNullOrEmpty(chunk.Model))
+                    responseModel = chunk.Model;
 
-                // 累积 function call 增量
-                var deltas = chunk.Choices?.FirstOrDefault()?.Delta?.ToolCalls;
-                if (deltas is not null)
+                if (chunk.Usage != null)
                 {
-                    foreach (var delta in deltas)
+                    usage ??= new UsageInfo();
+                    usage.PromptTokens += chunk.Usage.PromptTokens;
+                    usage.CompletionTokens += chunk.Usage.CompletionTokens;
+                    usage.TotalTokens += chunk.Usage.TotalTokens;
+                }
+
+                var choice = chunk.Choices?.FirstOrDefault();
+                if (choice == null)
+                    continue;
+
+                if (!string.IsNullOrEmpty(choice.FinishReason))
+                    finishReason = choice.FinishReason;
+
+                var delta = choice.Delta;
+                if (delta == null)
+                    continue;
+
+                // 内容增量
+                if (!string.IsNullOrEmpty(delta.Content))
+                {
+                    contentBuilder.Append(delta.Content);
+                    yield return new LLMTurnChunk
                     {
-                        StreamToolCallHelper.MergeDelta(toolCallAccumulators, delta);
+                        Type = "content",
+                        Content = delta.Content
+                    };
+                }
+
+                // 工具调用增量
+                if (delta.ToolCalls != null)
+                {
+                    foreach (var toolCallDelta in delta.ToolCalls)
+                    {
+                        StreamToolCallHelper.MergeDelta(toolCallAccumulators, toolCallDelta);
+
+                        yield return new LLMTurnChunk
+                        {
+                            Type = "tool_call",
+                            ToolCallDelta = new ToolCallDelta
+                            {
+                                Index = toolCallDelta.Index,
+                                Id = toolCallDelta.Id,
+                                Type = toolCallDelta.Type,
+                                Function = new FunctionCallDelta
+                                {
+                                    Name = toolCallDelta.Function?.Name,
+                                    Arguments = toolCallDelta.Function?.Arguments
+                                }
+                            }
+                        };
                     }
                 }
-
-                // 当 finish_reason 为 tool_calls 时，回填完整的 tool calls
-                var finishReason = chunk.Choices?.FirstOrDefault()?.FinishReason;
-                if (finishReason == "tool_calls" && toolCallAccumulators.Count > 0)
-                {
-                    var fullToolCalls = StreamToolCallHelper.ToStreamToolCallDeltas(toolCallAccumulators);
-                    var firstChoice = chunk.Choices.First();
-                    if (firstChoice.Delta is null)
-                        firstChoice.Delta = new StreamDelta();
-                    firstChoice.Delta.ToolCalls = fullToolCalls;
-
-                    _logger.LogInformation(
-                        "StreamAsync 工具调用完成: ToolCount={ToolCount}, Names={Names}",
-                        fullToolCalls.Count,
-                        string.Join(", ", fullToolCalls.Select(t => t.Function?.Name).Where(n => !string.IsNullOrEmpty(n))));
-                }
-
-                emittedAny = true;
-                yield return chunk;
             }
 
+            // 流结束，输出本轮完整结果
+            var hasToolCalls = toolCallAccumulators.Count > 0 &&
+                (finishReason == "tool_calls" || finishReason == null && toolCallAccumulators.Count > 0);
+
             _logger.LogInformation(
-                "StreamAsync 流式结束: Model={Model}, EmittedAny={EmittedAny}, AccumulatedTools={AccumulatedTools}",
-                request.Model, emittedAny, toolCallAccumulators.Count);
+                "StreamAsync 流式结束: Model={Model}, HasToolCalls={HasToolCalls}, AccumulatedTools={AccumulatedTools}",
+                responseModel, hasToolCalls, toolCallAccumulators.Count);
+
+            yield return new LLMTurnChunk
+            {
+                Type = "done",
+                TurnResult = new LLMTurnResult
+                {
+                    Content = contentBuilder.ToString(),
+                    ToolCalls = hasToolCalls ? StreamToolCallHelper.ToToolCalls(toolCallAccumulators) : null,
+                    Model = responseModel,
+                    Usage = usage
+                }
+            };
         }
 
 
@@ -207,5 +264,23 @@ namespace SpeakEase.AI.Lib
 
             return client;
         }
+
+        /// <summary>
+        /// 构造 OpenAI ChatCompletionRequest
+        /// </summary>
+        private ChatCompletionRequest BuildRequest(
+            LLMTurnContext context,
+            List<ChatMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
+            bool stream) => new()
+        {
+            Model = string.IsNullOrWhiteSpace(context.Model) ? _context.Model : context.Model,
+            Messages = messages,
+            Tools = tools?.Count > 0 ? tools.ToList() : null,
+            ToolChoice = context.ToolChoice,
+            Temperature = context.Temperature,
+            MaxTokens = context.MaxTokens,
+            Stream = stream
+        };
     }
 }

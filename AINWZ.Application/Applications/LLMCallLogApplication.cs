@@ -1,7 +1,5 @@
-using System.Security.Cryptography.X509Certificates;
 using AINWZ.Application.Contracts.AI;
 using AINWZ.Application.Contracts.AI.Dto;
-using AINWZ.Domain.Entities.AI;
 using AINWZ.Infrastructure.Persistence;
 using AINWZ.Infrastructure.Shared;
 using Microsoft.EntityFrameworkCore;
@@ -12,7 +10,7 @@ namespace AINWZ.Application.Applications;
 /// <summary>
 /// LLM 调用日志查询应用服务实现。
 /// </summary>
-public class LLMCallLogApplication(AINWZDbContext dbContext,IUserContext userContext) : ILLMCallLogApplication
+public class LLMCallLogApplication(SpeakEaseDbContext dbContext,IUserContext userContext) : ILLMCallLogApplication
 {
     /// <inheritdoc />
     public async Task<ApiResult<PageResult<LLMCallLogDto>>> GetPagedAsync(LLMCallLogQueryRequest request, CancellationToken cancellationToken = default)

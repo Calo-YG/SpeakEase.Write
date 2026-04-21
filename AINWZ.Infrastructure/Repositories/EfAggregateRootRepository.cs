@@ -8,10 +8,10 @@ namespace AINWZ.Infrastructure.Repositories;
 /// <summary>
 /// EF Core 聚合根仓储基础实现。
 /// </summary>
-public class EfAggregateRootRepository<TAggregateRoot>(AINWZDbContext dbContext) : IAggregateRootRepository<TAggregateRoot>
+public class EfAggregateRootRepository<TAggregateRoot>(SpeakEaseDbContext dbContext) : IAggregateRootRepository<TAggregateRoot>
     where TAggregateRoot : AggregateRootEntity
 {
-    protected readonly AINWZDbContext DbContext = dbContext;
+    protected readonly SpeakEaseDbContext DbContext = dbContext;
 
     public async Task<TAggregateRoot> GetByIdAsync(string id, CancellationToken cancellationToken = default)
         => await DbContext.Set<TAggregateRoot>().FirstOrDefaultAsync(x => x.Id == id, cancellationToken);

@@ -1,44 +1,32 @@
-﻿namespace SpeakEase.AI.Lib;
-using System.Runtime.CompilerServices;
-using System.Text.Json;
-using SpeakEase.AI.Lib.Contract;
+﻿using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using OAI = SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Tools;
+using System.Runtime.CompilerServices;
+using System.Text;
+
+
+namespace SpeakEase.AI.Lib;
 
 /// <summary>
-/// ReAct 模式 Agent 实现，支持 Tool 注册、Skill 注册、Pipeline Filter 和流式/非流式执行。
+/// ReAct 模式 Agent 实现，支持 Tool 注册、Skill 注册和流式/非流式执行。
+/// 通过 ILLMStrategy 与 LLM 交互，自身只关注对话轮次编排逻辑。
 /// </summary>
-public sealed class ReActAgent : IReActAgent
+public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapable, IChatCompatible llmStrategy) : IReActAgent
 {
-    private readonly IChatCompatible _chatCompatible;
-    private readonly Dictionary<string, IToolExecutor> _tools = new();
-    private readonly Dictionary<string, SkillDefinition> _skills = new();
-    private readonly List<IAgentPipelineFilter> _filters = new();
-
-    public ReActAgent(IChatCompatible chatCompatible)
+    /// <summary>
+    /// 手动注册工具和技能：ToolDefinition
+    /// </summary>
+    public void Init()
     {
-        _chatCompatible = chatCompatible ?? throw new ArgumentNullException(nameof(chatCompatible));
-    }
-
-    /// <inheritdoc />
-    public void RegisterTool(IToolExecutor tool)
-    {
-        ArgumentNullException.ThrowIfNull(tool);
-        _tools[tool.ToolDefinition.Function.Name] = tool;
-    }
-
-    /// <inheritdoc />
-    public void RegisterSkill(SkillDefinition skill)
-    {
-        ArgumentNullException.ThrowIfNull(skill);
-        _skills[skill.Name] = skill;
-    }
-
-    /// <inheritdoc />
-    public void UsePipelineFilter(IAgentPipelineFilter filter)
-    {
-        ArgumentNullException.ThrowIfNull(filter);
-        _filters.Add(filter);
+        // 手动注册工具和技能：IToolExecutor 的实现本身需要构建一个静态常量 ToolDefinition 后续这里只要通过 IToolExecutor.ToolDefinition 获取并注册
+        toolCapable.RegisterTool(EchoTool.ToolDefinition);
+        toolCapable.RegisterTool(CharacterNameGeneratorTool.ToolDefinition);
+        toolCapable.RegisterTool(CalculateTool.ToolDefinition);
+        toolCapable.RegisterTool(GetCurrentTimeTool.ToolDefinition);
+        toolCapable.RegisterTool(PowerShellTool.ToolDefinition);
+        toolCapable.RegisterTool(RandomGeneratorTool.ToolDefinition);
+        toolCapable.RegisterTool(TextAnalyzerTool.ToolDefinition);
     }
 
     /// <inheritdoc />
@@ -48,83 +36,57 @@ public sealed class ReActAgent : IReActAgent
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // 1. 构建初始消息列表
-        var messages = BuildInitialMessages(request);
-
-        // 2. 转换工具定义
-        var oaiTools = BuildOaiTools();
-
-        // 累积 usage
-        var totalUsage = new OAI.UsageInfo();
+        var totalUsage = new UsageInfo();
         var allToolResults = new List<ToolResult>();
         int iteration = 0;
 
-        // 3. ReAct 循环
+        Init();
+
+        // 构建消息列表：SystemPrompt + Skill 摘要 + UserMessage + 历史对话
+        var messages = BuildMessages(request);
+
+        // 构建不变上下文
+        var turnContext = new LLMTurnContext
+        {
+            Model = request.Model,
+            Temperature = request.Temperature,
+            MaxTokens = request.MaxTokens
+        };
+
+        // ReAct 循环
         for (; iteration < request.MaxIterations; iteration++)
         {
-            var oaiRequest = new OAI.ChatCompletionRequest
-            {
-                Model = request.Model,
-                Messages = new List<OAI.ChatMessage>(messages),
-                Tools = oaiTools.Count > 0 ? oaiTools : null,
-                ToolChoice = oaiTools.Count > 0 ? OAI.ToolChoice.Auto : null,
-                Temperature = request.Temperature,
-                MaxTokens = request.MaxTokens
-            };
-
-            var pipelineContext = new AgentPipelineContext
-            {
-                CurrentIteration = iteration,
-                MaxIterations = request.MaxIterations,
-                ExecutedToolResults = allToolResults
-            };
-
-            var pipeline = BuildPipeline(pipelineContext, cancellationToken);
-            var response = await pipeline(oaiRequest);
+            var turnResult = await llmStrategy.ChatAsync(turnContext, messages, toolCapable.Tools, cancellationToken);
 
             // 累加 usage
-            if (response.Usage != null)
-            {
-                totalUsage.PromptTokens += response.Usage.PromptTokens;
-                totalUsage.CompletionTokens += response.Usage.CompletionTokens;
-                totalUsage.TotalTokens += response.Usage.TotalTokens;
-            }
+            AccumulateUsage(totalUsage, turnResult.Usage);
 
-            var firstChoice = response.Choices?.FirstOrDefault();
-            if (firstChoice == null)
-                break;
-
-            // 4. 检查 FinishReason
-            var hasToolCalls = firstChoice.Message?.ToolCalls?.Any() ?? false;
-
-            if (hasToolCalls)
+            if (turnResult.HasToolCalls)
             {
                 // 追加 AssistantMessage（含 tool_calls）
-                messages.Add(new OAI.AssistantMessage
+                messages.Add(new AssistantMessage
                 {
-                    Content = firstChoice.Message?.Content,
-                    ToolCalls = firstChoice.Message!.ToolCalls
+                    Content = turnResult.Content,
+                    ToolCalls = turnResult.ToolCalls
                 });
 
                 // 执行每个工具调用并追加 ToolMessage
-                foreach (var toolCall in firstChoice.Message.ToolCalls!)
+                foreach (var toolCall in turnResult.ToolCalls)
                 {
-                    var toolResult = await ExecuteToolCallAsync(toolCall, cancellationToken);
+                    var toolResult = await toolCapable.ExecuteAsync(toolCall, cancellationToken);
                     allToolResults.Add(toolResult);
-
-                    messages.Add(OAI.ChatMessage.Tool(toolCall.Id, toolResult.Content ?? string.Empty));
+                    messages.Add(ChatMessage.Tool(toolCall.Id, toolResult.Content ?? string.Empty));
                 }
             }
             else
             {
                 // 无 tool_calls，循环结束
-                var finalContent = firstChoice.Message?.Content ?? string.Empty;
-                messages.Add(OAI.ChatMessage.Assistant(finalContent));
+                messages.Add(ChatMessage.Assistant(turnResult.Content));
 
                 return new AgentResponse
                 {
-                    Content = finalContent,
-                    Model = response.Model,
+                    Content = turnResult.Content,
+                    Model = turnResult.Model,
                     ToolResults = allToolResults,
                     ConversationHistory = messages,
                     Iterations = iteration + 1,
@@ -154,115 +116,72 @@ public sealed class ReActAgent : IReActAgent
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var messages = BuildInitialMessages(request);
-        var oaiTools = BuildOaiTools();
-        var totalUsage = new OAI.UsageInfo();
+        Init();
+
+        // 构建消息列表：SystemPrompt + Skill 摘要 + UserMessage + 历史对话
+        var messages = BuildMessages(request);
+
+        // 构建不变上下文
+        var turnContext = new LLMTurnContext
+        {
+            Model = request.Model,
+            Temperature = request.Temperature,
+            MaxTokens = request.MaxTokens
+        };
+
+        var totalUsage = new UsageInfo();
         var allToolResults = new List<ToolResult>();
         int iteration = 0;
 
         for (; iteration < request.MaxIterations; iteration++)
         {
-            var oaiRequest = new OAI.ChatCompletionRequest
+            LLMTurnResult turnResult = null;
+
+            await foreach (var turnChunk in llmStrategy.StreamAsync(turnContext, messages, toolCapable.Tools, cancellationToken))
             {
-                Model = request.Model,
-                Messages = new List<OAI.ChatMessage>(messages),
-                Tools = oaiTools.Count > 0 ? oaiTools : null,
-                ToolChoice = oaiTools.Count > 0 ? OAI.ToolChoice.Auto : null,
-                Temperature = request.Temperature,
-                MaxTokens = request.MaxTokens,
-                Stream = true
-            };
-
-            var pipelineContext = new AgentPipelineContext
-            {
-                CurrentIteration = iteration,
-                MaxIterations = request.MaxIterations,
-                ExecutedToolResults = allToolResults
-            };
-
-            // 累积流式内容
-            var contentBuilder = new System.Text.StringBuilder();
-            var toolCallAccumulators = new Dictionary<int, OAI.ToolCallAccumulator>();
-            string finishReason = null;
-            string responseModel = request.Model;
-
-            await foreach (var chunk in _chatCompatible.StreamAsync(oaiRequest, cancellationToken))
-            {
-                if (!string.IsNullOrEmpty(chunk.Model))
-                    responseModel = chunk.Model;
-
-                if (chunk.Usage != null)
+                switch (turnChunk.Type)
                 {
-                    totalUsage.PromptTokens += chunk.Usage.PromptTokens;
-                    totalUsage.CompletionTokens += chunk.Usage.CompletionTokens;
-                    totalUsage.TotalTokens += chunk.Usage.TotalTokens;
-                }
+                    case "content":
+                        yield return new AgentStreamChunk
+                        {
+                            Type = "content",
+                            Content = turnChunk.Content
+                        };
+                        break;
 
-                var choice = chunk.Choices?.FirstOrDefault();
-                if (choice == null)
-                    continue;
-
-                if (!string.IsNullOrEmpty(choice.FinishReason))
-                    finishReason = choice.FinishReason;
-
-                var delta = choice.Delta;
-                if (delta == null)
-                    continue;
-
-                // 内容增量
-                if (!string.IsNullOrEmpty(delta.Content))
-                {
-                    contentBuilder.Append(delta.Content);
-                    yield return new AgentStreamChunk
-                    {
-                        Type = "content",
-                        Content = delta.Content
-                    };
-                }
-
-                // 工具调用增量
-                if (delta.ToolCalls != null)
-                {
-                    foreach (var toolCallDelta in delta.ToolCalls)
-                    {
-                        OAI.StreamToolCallHelper.MergeDelta(toolCallAccumulators, toolCallDelta);
-
+                    case "tool_call":
                         yield return new AgentStreamChunk
                         {
                             Type = "tool_call",
-                            ToolCallDelta = new ToolCallDelta
-                            {
-                                Index = toolCallDelta.Index,
-                                Id = toolCallDelta.Id,
-                                Type = toolCallDelta.Type,
-                                Name = toolCallDelta.Function?.Name,
-                                Arguments = toolCallDelta.Function?.Arguments
-                            }
+                            ToolCallDelta = turnChunk.ToolCallDelta
                         };
-                    }
+                        break;
+
+                    case "done":
+                        turnResult = turnChunk.TurnResult;
+                        break;
                 }
             }
 
-            // 流结束后判断是否有工具调用
-            var hasToolCalls = toolCallAccumulators.Count > 0 &&
-                (finishReason == "tool_calls" || finishReason == null && toolCallAccumulators.Count > 0);
+            // 累加 usage
+            AccumulateUsage(totalUsage, turnResult?.Usage);
 
-            if (hasToolCalls)
+            if (turnResult is null)
+                continue;
+
+            if (turnResult.HasToolCalls)
             {
-                var completedToolCalls = OAI.StreamToolCallHelper.ToToolCalls(toolCallAccumulators);
-
                 // 追加 AssistantMessage（含 tool_calls）
-                var assistantContent = contentBuilder.Length > 0 ? contentBuilder.ToString() : null;
-                messages.Add(new OAI.AssistantMessage
+                messages.Add(new AssistantMessage
                 {
-                    Content = assistantContent,
-                    ToolCalls = completedToolCalls
+                    Content = turnResult.Content,
+                    ToolCalls = turnResult.ToolCalls
                 });
 
                 // 执行工具调用
-                foreach (var toolCall in completedToolCalls)
+                foreach (var toolCall in turnResult.ToolCalls)
                 {
-                    var toolResult = await ExecuteToolCallAsync(toolCall, cancellationToken);
+                    var toolResult = await toolCapable.ExecuteAsync(toolCall, cancellationToken);
                     allToolResults.Add(toolResult);
 
                     yield return new AgentStreamChunk
@@ -271,7 +190,7 @@ public sealed class ReActAgent : IReActAgent
                         ToolResult = toolResult
                     };
 
-                    messages.Add(OAI.ChatMessage.Tool(toolCall.Id, toolResult.Content ?? string.Empty));
+                    messages.Add(ChatMessage.Tool(toolCall.Id, toolResult.Content ?? string.Empty));
                 }
 
                 // 继续下一轮循环
@@ -279,13 +198,12 @@ public sealed class ReActAgent : IReActAgent
             else
             {
                 // 无工具调用，流式结束
-                var finalContent = contentBuilder.ToString();
-                messages.Add(OAI.ChatMessage.Assistant(finalContent));
+                messages.Add(ChatMessage.Assistant(turnResult.Content));
 
                 var finalResponse = new AgentResponse
                 {
-                    Content = finalContent,
-                    Model = responseModel,
+                    Content = turnResult.Content,
+                    Model = turnResult.Model,
                     ToolResults = allToolResults,
                     ConversationHistory = messages,
                     Iterations = iteration + 1,
@@ -322,144 +240,65 @@ public sealed class ReActAgent : IReActAgent
         };
     }
 
-    // ------------------------------------------------------------------ //
-    //  Private helpers
-    // ------------------------------------------------------------------ //
-
     /// <summary>
-    /// 构建 Pipeline 责任链（从后向前包裹 filter）
+    /// 累加 Token 用量
     /// </summary>
-    private Func<OAI.ChatCompletionRequest, Task<OAI.ChatCompletionResponse>> BuildPipeline(
-        AgentPipelineContext context, CancellationToken ct)
+    private static void AccumulateUsage(UsageInfo total, UsageInfo increment)
     {
-        Func<OAI.ChatCompletionRequest, Task<OAI.ChatCompletionResponse>> pipeline =
-            req => _chatCompatible.ChatAsync(req, ct);
-
-        for (int i = _filters.Count - 1; i >= 0; i--)
-        {
-            var filter = _filters[i];
-            var next = pipeline;
-            pipeline = req => filter.InvokeAsync(req, context, next, ct);
-        }
-
-        return pipeline;
+        if (increment is null) return;
+        total.PromptTokens += increment.PromptTokens;
+        total.CompletionTokens += increment.CompletionTokens;
+        total.TotalTokens += increment.TotalTokens;
     }
 
     /// <summary>
-    /// 构建初始消息列表（SystemMessage + ConversationHistory + UserMessage）
+    /// 构建初始消息列表：SystemPrompt（含 Skill 摘要）+ 历史对话 + UserMessage
     /// </summary>
-    private List<OAI.ChatMessage> BuildInitialMessages(AgentRequest request)
+    private List<ChatMessage> BuildMessages(AgentRequest request)
     {
-        var messages = new List<OAI.ChatMessage>();
+        var messages = new List<ChatMessage>();
 
-        // 构建 system prompt
-        var systemPrompt = request.SystemPrompt ?? string.Empty;
-        if (!string.IsNullOrEmpty(request.SkillName) &&
-            _skills.TryGetValue(request.SkillName, out var skill) &&
-            !string.IsNullOrEmpty(skill.SystemPrompt))
+        // 合并 SystemPrompt：请求级 + Skill 摘要
+        var systemPrompt = BuildSystemPrompt(request);
+        if (!string.IsNullOrEmpty(systemPrompt))
         {
-            systemPrompt = string.IsNullOrEmpty(systemPrompt)
-                ? skill.SystemPrompt
-                : systemPrompt + "\n\n" + skill.SystemPrompt;
+            messages.Add(ChatMessage.System(systemPrompt));
         }
 
-        if (!string.IsNullOrEmpty(systemPrompt))
-            messages.Add(OAI.ChatMessage.System(systemPrompt));
-
-        // 追加对话历史
+        // 追加历史对话
         if (request.ConversationHistory?.Count > 0)
+        {
             messages.AddRange(request.ConversationHistory);
+        }
 
-        // 追加用户消息
+        // 追加当前用户消息
         if (!string.IsNullOrEmpty(request.UserMessage))
-            messages.Add(OAI.ChatMessage.User(request.UserMessage));
+        {
+            messages.Add(ChatMessage.User(request.UserMessage));
+        }
 
         return messages;
     }
 
     /// <summary>
-    /// 将 Models.ToolDefinition 列表转换为 OAI.ToolDefinition 列表
+    /// 合并系统提示词：请求 SystemPrompt + Skill 摘要
     /// </summary>
-    private List<OAI.ToolDefinition> BuildOaiTools()
+    private string BuildSystemPrompt(AgentRequest request)
     {
-        var result = new List<OAI.ToolDefinition>();
+        var sb = new StringBuilder();
 
-        foreach (var executor in _tools.Values)
+        if (!string.IsNullOrEmpty(request.SystemPrompt))
         {
-            var modelDef = executor.ToolDefinition;
-            OAI.FunctionParameters parameters = null;
-
-            if (!string.IsNullOrEmpty(modelDef.Function?.Parameters))
-            {
-                try
-                {
-                    parameters = JsonSerializer.Deserialize<OAI.FunctionParameters>(
-                        modelDef.Function.Parameters,
-                        new JsonSerializerOptions(JsonSerializerDefaults.Web));
-                }
-                catch
-                {
-                    // 解析失败则保留 null（不传 parameters）
-                }
-            }
-
-            result.Add(new OAI.ToolDefinition
-            {
-                Type = modelDef.Type ?? "function",
-                Function = new OAI.FunctionDefinition
-                {
-                    Name = modelDef.Function?.Name ?? string.Empty,
-                    Description = modelDef.Function?.Description,
-                    Parameters = parameters
-                }
-            });
+            sb.Append(request.SystemPrompt);
         }
 
-        return result;
-    }
-
-    /// <summary>
-    /// 执行单个 OAI.ToolCall，返回 ToolResult
-    /// </summary>
-    private async Task<ToolResult> ExecuteToolCallAsync(
-        OAI.ToolCall toolCall,
-        CancellationToken cancellationToken)
-    {
-        var functionName = toolCall.Function?.Name ?? string.Empty;
-
-        if (!_tools.TryGetValue(functionName, out var executor))
+        var skillPrompt = skilCapable.BuildSkillPropmt();
+        if (!string.IsNullOrEmpty(skillPrompt))
         {
-            return new ToolResult
-            {
-                ToolCallId = toolCall.Id,
-                ToolName = functionName,
-                Success = false,
-                Content = $"未找到工具：{functionName}",
-                ErrorCode = "TOOL_NOT_FOUND"
-            };
+            if (sb.Length > 0) sb.AppendLine();
+            sb.Append(skillPrompt);
         }
 
-        try
-        {
-            var result = await executor.ExecuteAsync(
-                toolCall.Function?.Arguments ?? string.Empty,
-                cancellationToken);
-
-            // 确保关联 ID 和名称
-            result.ToolCallId ??= toolCall.Id;
-            result.ToolName ??= functionName;
-            return result;
-        }
-        catch (Exception ex)
-        {
-            return new ToolResult
-            {
-                ToolCallId = toolCall.Id,
-                ToolName = functionName,
-                Success = false,
-                Content = ex.Message,
-                ErrorCode = "TOOL_EXECUTION_ERROR"
-            };
-        }
+        return sb.ToString();
     }
 }

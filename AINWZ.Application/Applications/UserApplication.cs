@@ -13,7 +13,7 @@ namespace AINWZ.Application.Applications
     /// 用户管理应用服务实现。
     /// </summary>
     public class UserApplication(
-        AINWZDbContext dbContext,
+        SpeakEaseDbContext dbContext,
         IUserContext userContext) : IUserApplication
     {
         /// <inheritdoc />

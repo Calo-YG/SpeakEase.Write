@@ -13,15 +13,15 @@ namespace AINWZ.Tests.LLM;
 
 public class CurrentLLMOptionsResolverTests
 {
-    private static (CurrentLLMOptionsResolver resolver, AINWZDbContext db) CreateSut(
+    private static (CurrentLLMOptionsResolver resolver, SpeakEaseDbContext db) CreateSut(
         string userId = "user123",
-        Action<AINWZDbContext> seed = null)
+        Action<SpeakEaseDbContext> seed = null)
     {
-        var options = new DbContextOptionsBuilder<AINWZDbContext>()
+        var options = new DbContextOptionsBuilder<SpeakEaseDbContext>()
             .UseInMemoryDatabase($"test_{Guid.NewGuid()}")
             .Options;
 
-        var db = new AINWZDbContext(options);
+        var db = new SpeakEaseDbContext(options);
         seed?.Invoke(db);
         db.SaveChanges();
 
@@ -179,7 +179,7 @@ public class CurrentLLMOptionsResolverTests
     {
         // Arrange
         var cache = new Mock<IMultiCacheService>();
-        var db = new AINWZDbContext(new DbContextOptionsBuilder<AINWZDbContext>()
+        var db = new SpeakEaseDbContext(new DbContextOptionsBuilder<SpeakEaseDbContext>()
             .UseInMemoryDatabase($"test_{Guid.NewGuid()}").Options);
 
         var userContext = new Mock<IUserContext>();

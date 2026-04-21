@@ -5,7 +5,18 @@ namespace SpeakEase.AI.Lib.Models;
 /// </summary>
 public sealed class SkillDefinition
 {
+    /// <summary>
+    /// 技能名称
+    /// </summary>
     public string Name { get; set; }
+
+    /// <summary>
+    /// 
+    /// </summary>
     public string Description { get; set; }
-    public string SystemPrompt { get; set; }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    public string Path { get; set; }
 }

@@ -4,7 +4,6 @@ using AINWZ.Application.Contracts.Auth;
 using AINWZ.Application.Contracts.Users;
 using AINWZ.Infrastructure.Authorization;
 using AINWZ.Infrastructure.JsonConverters;
-using AINWZ.Infrastructure.LLM;
 using AINWZ.Infrastructure.MutilCache;
 using AINWZ.Infrastructure.Persistence;
 using AINWZ.MapRoute.AI;
@@ -78,7 +77,6 @@ try
     builder.Services.AddAuthorization();
     builder.Services.AddOpenApi();
     builder.Services.AddInfrastructurePersistence(builder.Configuration);
-    builder.Services.AddLLM(builder.Configuration);
     builder.Services.ConfigureHttpJsonOptions(op =>
     {
         op.SerializerOptions.Converters.Add(new DateTimeConverter());

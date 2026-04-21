@@ -17,9 +17,7 @@ namespace SpeakEase.AI.Lib.Contract
         /// <param name="cancellationToken">取消令牌</param>
         /// <returns>聊天完成响应</returns>
         Task<ChatCompletionResponse> InvokeAsync(
-            ChatCompletionRequest request,
-            AgentPipelineContext context,
-            Func<ChatCompletionRequest, Task<ChatCompletionResponse>> next,
+            Func<AgentPipelineContext,Task> next,
             CancellationToken cancellationToken = default);
     }
 }

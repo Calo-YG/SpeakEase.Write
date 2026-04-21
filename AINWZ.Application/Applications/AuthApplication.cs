@@ -18,7 +18,7 @@ namespace AINWZ.Application.Applications;
 /// 认证应用服务实现。
 /// </summary>
 public class AuthApplication(
-    AINWZDbContext dbContext,
+    SpeakEaseDbContext dbContext,
     ITokenManager tokenManager,
     IMultiCacheService cacheService,
     ISnowflakeIdGenerator snowflakeIdGenerator,

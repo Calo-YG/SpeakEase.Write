@@ -36,9 +36,19 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
 # 工具使用原则
 - 工具通过 Function Calling 机制调用，你只需选择工具并填写参数
 - 禁止在回复中虚构文本格式的工具调用（如 `Action: tool_call xxx`）
-- 需要的能力不在已有工具中时，调用 findskill 查找更多技能
+- 需要的能力不在已有工具中时，调用 find_skill 查找更多技能
 - 多步任务可依次调用工具，后一步可依赖前一步结果
 - 工具失败时，向用户说明情况并给出基于现有信息的最佳回答
+
+# 技能调用方式
+技能（如 Agent Browser）是 CLI 工具，通过 run_powershell 执行其命令来调用：
+1. 先用 find_skill 获取技能的完整使用文档
+2. 然后通过 run_powershell 执行技能的 CLI 命令
+
+示例：使用 Agent Browser 打开网页
+- 调用 find_skill，传入 skillName=""Agent Browser""，获取完整命令参考
+- 调用 run_powershell，传入 command=""agent-browser open https://example.com""
+- 调用 run_powershell，传入 command=""agent-browser snapshot -i"" 获取页面元素
 
 # 输出规范
 - 直接用自然语言回答用户，无需输出 Thought/Action/Observation 等格式

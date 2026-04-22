@@ -87,7 +87,7 @@ namespace SpeakEase.AI.Lib.Tools
 
                 // path 为空时根据技能名称推导默认路径
                 if (string.IsNullOrEmpty(path))
-                    path = $"wwwroot/skills/{skillname.ToLower().Replace(' ', '-')}/SKILL.md";
+                    path = $"wwwroot\\skills\\agent-browser-0.2.0\\SKILL.md";
 
                 var skillPath = System.IO.Path.Combine(hostEnvironment.ContentRootPath, path);
 

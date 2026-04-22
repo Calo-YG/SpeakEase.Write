@@ -45,7 +45,7 @@ public sealed class PowerShellToolOptions
         "Remove-Item", "rm ", "del ", "rd ", "rmdir ",
         "Remove-Service", "Stop-Computer", "Restart-Computer",
         "Format-Volume", "Clear-EventLog", "Set-ExecutionPolicy",
-        "Invoke-WebRequest", "Invoke-RestMethod", "Start-Process",
+        "Invoke-RestMethod", "Start-Process",
         "New-Service", "Set-Service", "sc ", "net user",
         "net localgroup", "reg ", "regedit"
     ];

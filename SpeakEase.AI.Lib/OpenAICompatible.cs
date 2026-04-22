@@ -16,27 +16,20 @@ namespace SpeakEase.AI.Lib
     /// 支持：流式/非流式、工具调用、自定义鉴权头。
     /// 直接实现 ILLMStrategy，封装 HTTP 通信 + 协议解析 + 流式 delta 累积全部逻辑。
     /// </summary>
-    public sealed class OpenAICompatible : IChatCompatible
+    public sealed class OpenAICompatible(
+        IHttpClientFactory httpClientFactory,
+        IOpenAIContext context,
+        ILogger<OpenAICompatible> logger) : IChatCompatible
     {
-        private readonly IHttpClientFactory _httpClientFactory;
-        private readonly IOpenAIContext _context;
-        private readonly ILogger<OpenAICompatible> _logger;
+        private readonly IHttpClientFactory _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        private readonly IOpenAIContext _context = context ?? throw new ArgumentNullException(nameof(context));
+        private readonly ILogger<OpenAICompatible> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
             Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
         };
-
-        public OpenAICompatible(
-            IHttpClientFactory httpClientFactory,
-            IOpenAIContext context,
-            ILogger<OpenAICompatible> logger)
-        {
-            _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
-            _context = context ?? throw new ArgumentNullException(nameof(context));
-            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        }
 
         /// <inheritdoc />
         public async Task<LLMTurnResult> ChatAsync(
@@ -220,8 +213,7 @@ namespace SpeakEase.AI.Lib
             var hasToolCalls = toolCallAccumulators.Count > 0 &&
                 (finishReason == "tool_calls" || finishReason == null && toolCallAccumulators.Count > 0);
 
-            _logger.LogInformation(
-                "StreamAsync 流式结束: Model={Model}, HasToolCalls={HasToolCalls}, AccumulatedTools={AccumulatedTools}",
+            _logger.LogInformation("StreamAsync 流式结束: Model={Model}, HasToolCalls={HasToolCalls}, AccumulatedTools={AccumulatedTools}",
                 responseModel, hasToolCalls, toolCallAccumulators.Count);
 
             yield return new LLMTurnChunk
@@ -241,7 +233,7 @@ namespace SpeakEase.AI.Lib
 
         private HttpClient CreateConfiguredClient()
         {
-            var client = _httpClientFactory.CreateClient();
+            using var client = _httpClientFactory.CreateClient();
             var baseUrl = _context.Url;
 
             if (!baseUrl.EndsWith('/'))
@@ -259,8 +251,7 @@ namespace SpeakEase.AI.Lib
             }
 
             _logger.LogDebug(
-                "HttpClient 已配置: BaseAddress={BaseAddress}, Timeout={Timeout}s",
-                client.BaseAddress, client.Timeout.TotalSeconds);
+                "HttpClient 已配置: BaseAddress={BaseAddress}, Timeout={Timeout}s",client.BaseAddress, client.Timeout.TotalSeconds);
 
             return client;
         }

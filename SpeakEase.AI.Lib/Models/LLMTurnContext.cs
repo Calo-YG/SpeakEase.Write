@@ -1,5 +1,3 @@
-using SpeakEase.AI.Lib.OpenAIModel;
-
 namespace SpeakEase.AI.Lib.Models;
 
 /// <summary>
@@ -7,9 +5,21 @@ namespace SpeakEase.AI.Lib.Models;
 /// </summary>
 public sealed class LLMTurnContext
 {
+    /// <summary>
+    /// 当前模型
+    /// </summary>
     public string Model { get; set; }
+
+    /// <summary>
+    /// 温度
+    /// </summary>
     public double? Temperature { get; set; }
+
+    /// <summary>
+    /// 最大tokens
+    /// </summary>
     public int? MaxTokens { get; set; }
+
     /// <summary>
     /// 工具选择策略，默认 auto。参见 <see cref="OpenAIModel.ToolChoice"/> 的静态常量。
     /// </summary>

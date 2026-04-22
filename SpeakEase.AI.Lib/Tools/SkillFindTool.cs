@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
@@ -11,7 +12,7 @@ namespace SpeakEase.AI.Lib.Tools
     /// Skill正文内容查询工具
     /// </summary>
     /// <param name="hostEnvironment"></param>
-    public sealed class SkillFindTool(IHostEnvironment hostEnvironment): IToolExecutor
+    public sealed class SkillFindTool(IHostEnvironment hostEnvironment,ILogger<SkillFindTool> logger): IToolExecutor
     {
         /// <summary>
         /// 技能描述
@@ -63,7 +64,7 @@ namespace SpeakEase.AI.Lib.Tools
         /// <param name="cancellationToken"></param>
         /// <returns></returns>
         /// <exception cref="NotImplementedException"></exception>
-        public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
+        public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
         {
             var path = string.Empty;
             var skillname = string.Empty;
@@ -80,10 +81,12 @@ namespace SpeakEase.AI.Lib.Tools
 
                 if(string.IsNullOrEmpty(path) || string.IsNullOrEmpty(skillname))
                 {
-                    //return new ToolResult
-                    //{
-
-                    //}
+                    return new ToolResult
+                    {
+                        Content = "检查Skill 名称 和 文件路径是否传入",
+                        Success = false,
+                        ToolName = "findskill"
+                    };
                 }
 
                 var skillPath = Path.Combine(hostEnvironment.ContentRootPath, path);
@@ -92,16 +95,39 @@ namespace SpeakEase.AI.Lib.Tools
 
                 if (!fileinfo.Exists)
                 {
-
+                    return new ToolResult
+                    {
+                        Content = "获取Skill失败，skill 文件不存在",
+                        Success = false,
+                        ToolName = "findskill"
+                    };
                 }
 
-                //var file = 
+                using var fileStream = fileinfo.OpenRead();
 
+                using var reader = new StreamReader(fileStream);
+
+                string content = await reader.ReadToEndAsync();
+
+                return new ToolResult
+                {
+                    Content = content,
+                    Success = true,
+                    ToolName = "findskill"
+                };
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                var error = $"获取Skill 内容出错:{ex.Message}";
 
-                throw;
+                logger.LogError(error);
+
+                return new ToolResult
+                {
+                    Content = error,
+                    Success = true,
+                    ToolName = "findskill"
+                };
             }
         }
     }

@@ -1,4 +1,4 @@
-﻿namespace AINWZ.Domain
+﻿namespace SpeakEase.Write.Domain
 {
     /// <summary>
     /// 所有领域实体的基础抽象，统一提供标识与审计字段。

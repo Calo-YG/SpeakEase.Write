@@ -15,42 +15,41 @@ namespace SpeakEase.AI.Lib;
 public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapable, IChatCompatible llmStrategy) : IReActAgent
 {
     /// <summary>
-    /// 
+    /// ReAct Agent 默认系统提示词。
+    /// 对齐 Function Calling 机制，引导 LLM 通过工具调用与直接回答协作完成任务。
     /// </summary>
     private const string SystemPropmt = @"# 角色
-你是 ReAct Agent，通过""思考→行动→观察""循环解决问题。
+你是 AI 智能助手，具备工具调用能力。通过 Function Calling 调用工具获取外部信息，也可基于自身知识直接回答。
 
-# 循环格式
-每轮必须输出：
+# 决策流程
+面对每个请求，按以下步骤决策：
 
-Thought: [现状分析] → [还缺什么] → [下一步策略] → [是否已能回答]
-Action: [tool_call/calculate/reasoning/ask_user/final_answer] [具体内容]
-Observation: [行动结果与评估]
+1. **分析需求** — 用户想要什么？我的知识是否足以直接回答？
+2. **选择行动** —
+   - 需要实时信息、计算或外部操作 → 调用对应工具
+   - 已有足够信息 → 直接回答
+3. **评估结果** — 工具返回后：
+   - 满足需求 → 组织最终回答
+   - 信息不足 → 补充调用其他工具
+   - 调用失败 → 分析原因，换一种方式，不要重复相同调用
 
-# 行动类型
-- **tool_call** [工具名] [参数] — 调用外部工具
-- **calculate** [表达式] — 数学/逻辑计算  
-- **reasoning** [推导] — 纯逻辑推演
-- **ask_user** [问题] — 需用户补充信息
-- **final_answer** — 给出最终答案（终止循环）
+# 工具使用原则
+- 工具通过 Function Calling 机制调用，你只需选择工具并填写参数
+- 禁止在回复中虚构文本格式的工具调用（如 `Action: tool_call xxx`）
+- 需要的能力不在已有工具中时，调用 findskill 查找更多技能
+- 多步任务可依次调用工具，后一步可依赖前一步结果
+- 工具失败时，向用户说明情况并给出基于现有信息的最佳回答
 
-# 铁律
-1. **先思后行** — 无 Thought 不得 Action
-2. **失败换路** — 工具失败必须分析原因，禁止重复调用
-3. **及时收敛** — 信息足够立即 final_answer，禁止过度循环
-4. **上限 10 轮** — 达限输出当前最佳进展
-5. **零幻觉** — 不确定标注""推测""，无来源不断言
+# 输出规范
+- 直接用自然语言回答用户，无需输出 Thought/Action/Observation 等格式
+- 回答要准确、完整、有条理
+- 不确定的信息标注""推测""，无来源不断言
 
-# 示例
-用户：北京今天天气？
-Round 1
-Thought: 需实时天气，训练数据无今日信息，必须调工具。风险：接口可能失败。
-Action: tool_call weather_api location=""北京""
-Observation: 返回晴，15-26°C，北风3级。
-Round 2
-Thought: 信息完整，可直接回答。
-Action: final_answer
-北京今天晴，15-26°C，北风3级，空气质量优。";
+# 约束
+1. **先判断再行动** — 简单问题直接回答，不要为了调用工具而调用工具
+2. **失败换路** — 工具出错时分析原因，禁止相同参数重复调用
+3. **及时收敛** — 信息充足后立即回答，禁止过度调用工具
+4. **最多 10 轮** — 达到上限后基于当前信息给出最佳进展";
 
     /// <summary>
     /// 手动注册工具和技能：ToolDefinition
@@ -65,6 +64,8 @@ Action: final_answer
         toolCapable.RegisterTool(PowerShellTool.ToolDefinition);
         toolCapable.RegisterTool(RandomGeneratorTool.ToolDefinition);
         toolCapable.RegisterTool(TextAnalyzerTool.ToolDefinition);
+        toolCapable.RegisterTool(SkillFindTool.ToolDefinition);
+        skilCapable.RegiSkill(new SkillDefinition { Description = "无头浏览器自动化，支持网页导航、点击、输入、截图，内置 PowerShell 执行和网络搜索能力", Name = "Agent Browser", Path = @"wwwroot\skills\agent-browser-0.2.0\SKILL.md" });
     }
 
     /// <inheritdoc />
@@ -104,7 +105,7 @@ Action: final_answer
                 // 追加 AssistantMessage（含 tool_calls）
                 messages.Add(new AssistantMessage
                 {
-                    Content = turnResult.Content,
+                    Content = turnResult.Content ?? string.Empty,
                     ToolCalls = turnResult.ToolCalls
                 });
 
@@ -212,7 +213,7 @@ Action: final_answer
                 // 追加 AssistantMessage（含 tool_calls）
                 messages.Add(new AssistantMessage
                 {
-                    Content = turnResult.Content,
+                    Content = turnResult.Content ?? string.Empty,
                     ToolCalls = turnResult.ToolCalls
                 });
 
@@ -298,6 +299,7 @@ Action: final_answer
 
         // 合并 SystemPrompt：请求级 + Skill 摘要
         var systemPrompt = BuildSystemPrompt(request);
+
         if (!string.IsNullOrEmpty(systemPrompt))
         {
             messages.Add(ChatMessage.System(systemPrompt));
@@ -325,15 +327,21 @@ Action: final_answer
     {
         var sb = new StringBuilder();
 
-        if (!string.IsNullOrEmpty(request.SystemPrompt))
+        var systemPrompt = request.SystemPrompt ?? SystemPropmt;
+
+        if (string.IsNullOrEmpty(request.SystemPrompt))
         {
-            sb.Append(request.SystemPrompt);
+            systemPrompt = SystemPropmt;
         }
 
+        sb.Append(systemPrompt);
+
         var skillPrompt = skilCapable.BuildSkillPropmt();
+
         if (!string.IsNullOrEmpty(skillPrompt))
         {
             if (sb.Length > 0) sb.AppendLine();
+
             sb.Append(skillPrompt);
         }
 

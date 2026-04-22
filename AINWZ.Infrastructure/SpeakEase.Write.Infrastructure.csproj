@@ -7,11 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AINWZ.Domain\AINWZ.Domain.csproj" />
+    <ProjectReference Include="..\AINWZ.Domain\SpeakEase.Write.Domain.csproj" />
+    <ProjectReference Include="..\SpeakEase.AI.Lib\SpeakEase.AI.Lib.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.1.0" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.6" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.6" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.6">

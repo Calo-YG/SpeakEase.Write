@@ -1,11 +1,11 @@
-using AINWZ.Application.Contracts.AI;
-using AINWZ.Application.Contracts.AI.Dto;
-using AINWZ.Infrastructure.Persistence;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.AI;
+using SpeakEase.Write.Application.Contracts.AI.Dto;
+using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Applications;
+namespace SpeakEase.Write.Application.Applications;
 
 /// <summary>
 /// LLM 调用日志查询应用服务实现。

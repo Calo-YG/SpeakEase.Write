@@ -1,12 +1,13 @@
-using AINWZ.Application.Repositories;
-using AINWZ.Infrastructure.Ids;
-using AINWZ.Infrastructure.Repositories;
+using SpeakEase.Write.Application.Repositories;
+using SpeakEase.Write.Infrastructure.Ids;
+using SpeakEase.Write.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Infrastructure.Persistence;
+namespace SpeakEase.Write.Infrastructure.Persistence;
 
 /// <summary>
 /// 基础设施层依赖注入扩展。
@@ -18,7 +19,7 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddInfrastructurePersistence(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("AINWZ")
+        var connectionString = configuration.GetConnectionString("SpeakEaseWrite")
             ?? "Host=localhost;Port=7452;Database=ainwz;Username=blog;Password=blog123";
 
         services.AddDbContext<SpeakEaseDbContext>(options => options.UseNpgsql(connectionString));

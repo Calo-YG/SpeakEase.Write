@@ -1,4 +1,4 @@
-﻿namespace AINWZ.Infrastructure.MutilCache
+﻿namespace SpeakEase.Write.Infrastructure.MutilCache
 {
     /// <summary>
     /// 多级缓存

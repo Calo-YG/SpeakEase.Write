@@ -1,17 +1,18 @@
-using AINWZ.Application.Contracts.Users;
-using AINWZ.Application.Contracts.Users.Dto;
-using AINWZ.Domain.Entities.Users;
-using AINWZ.Infrastructure.Ids;
-using AINWZ.Infrastructure.Persistence;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.Users;
+using SpeakEase.Write.Application.Contracts.Users.Dto;
+using SpeakEase.Write.Domain.Entities.Users;
+using SpeakEase.Write.Infrastructure.Ids;
+using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SpeakEase.AI.Lib.Contract;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Infrastructure.Shared;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AINWZ.Application.Applications
+namespace SpeakEase.Write.Application.Applications
 {
     /// <summary>
     /// 用户模型配置应用服务实现（主表：UserAiModelConfigEntity，关联：AIModelDefinitionEntity）。
@@ -21,6 +22,7 @@ namespace AINWZ.Application.Applications
         ISnowflakeIdGenerator idGenerator,
         IUserContext userContext,
         IHttpClientFactory httpClientFactory,
+        IOpenAIContext openAIContext,
         ILogger<UserModelConfigApplication> logger) : IUserModelConfigApplication
     {
         /// <inheritdoc />
@@ -236,7 +238,7 @@ namespace AINWZ.Application.Applications
                 await dbContext.SaveChangesAsync(cancellationToken);
 
                 // 刷新用户 LLM 配置缓存
-                //await currentLLMOptions.InvalidateAsync(userId, cancellationToken);
+                await openAIContext.InvalidateAsync(userId, cancellationToken);
 
                 logger.LogInformation("用户 {UserId} 创建模型配置：{ConfigName}，Id={Id}", userId, entity.ConfigName, entity.Id);
 
@@ -281,7 +283,7 @@ namespace AINWZ.Application.Applications
                 await dbContext.SaveChangesAsync(cancellationToken);
 
                 // 刷新用户 LLM 配置缓存
-                ///await currentLLMOptions.InvalidateAsync(userId, cancellationToken);
+                await openAIContext.InvalidateAsync(userId, cancellationToken);
 
                 logger.LogInformation("用户 {UserId} 更新模型配置：{ConfigName}，Id={Id}", userId, entity.ConfigName, entity.Id);
 
@@ -330,7 +332,7 @@ namespace AINWZ.Application.Applications
             await dbContext.SaveChangesAsync(cancellationToken);
 
             // 刷新用户 LLM 配置缓存
-            //await currentLLMOptions.InvalidateAsync(userId, cancellationToken);
+            await openAIContext.InvalidateAsync(userId, cancellationToken);
 
             logger.LogInformation("用户 {UserId} 激活模型配置：{ConfigName}，Id={Id}", userId, entity.ConfigName, entity.Id);
 
@@ -361,7 +363,7 @@ namespace AINWZ.Application.Applications
             await dbContext.SaveChangesAsync(cancellationToken);
 
             // 刷新用户 LLM 配置缓存
-            //await currentLLMOptions.InvalidateAsync(userId, cancellationToken);
+            await openAIContext.InvalidateAsync(userId, cancellationToken);
 
             logger.LogInformation("用户 {UserId} 删除模型配置：{ConfigName}，Id={Id}", userId, entity.ConfigName, entity.Id);
 
@@ -379,9 +381,6 @@ namespace AINWZ.Application.Applications
                     latestConfig.IsActive = true;
                     latestConfig.UpdateAt = DateTime.UtcNow;
                     await dbContext.SaveChangesAsync(cancellationToken);
-
-                    // 自动激活也需刷新缓存
-                    ///await currentLLMOptions.InvalidateAsync(userId, cancellationToken);
 
                     logger.LogInformation("用户 {UserId} 自动激活配置：{ConfigName}，Id={Id}", userId, latestConfig.ConfigName, latestConfig.Id);
                 }

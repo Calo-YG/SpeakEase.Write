@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Works
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Works
 {
     /// <summary>
     /// 章节实体，保存正文、摘要、字数和关联剧情信息。

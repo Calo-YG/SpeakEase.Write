@@ -1,4 +1,4 @@
-namespace AINWZ.Infrastructure.Ids;
+namespace SpeakEase.Write.Infrastructure.Ids;
 
 /// <summary>
 /// 雪花 ID 生成器抽象。

@@ -1,7 +1,7 @@
-using AINWZ.Application.Contracts.AI.Dto;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.AI.Dto;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Contracts.AI
+namespace SpeakEase.Write.Application.Contracts.AI
 {
     /// <summary>
     /// 模型提供商管理应用服务接口（单表：AIModelDefinitionEntity）。

@@ -1,10 +1,8 @@
 <Solution>
-  <Project Path="AINWZ.Application/AINWZ.Application.csproj" />
-  <Project Path="AINWZ.Domain/AINWZ.Domain.csproj" />
-  <Project Path="AINWZ.Infrastructure/AINWZ.Infrastructure.csproj" />
+  <Project Path="AINWZ.Application/SpeakEase.Write.Application.csproj" />
+  <Project Path="AINWZ.Domain/SpeakEase.Write.Domain.csproj" />
+  <Project Path="AINWZ.Infrastructure/SpeakEase.Write.Infrastructure.csproj" />
   <Project Path="AINWZ.Tests/AINWZ.Tests.csproj" />
-  <Project Path="AINWZ/AINWZ.csproj" />
-  <Project Path="SpeakEase.AI.Lib/SpeakEase.AI.Lib.csproj">
-    <Build Solution="Debug|*" Project="false" />
-  </Project>
+  <Project Path="AINWZ/SpeakEase.Write.csproj" />
+  <Project Path="SpeakEase.AI.Lib/SpeakEase.AI.Lib.csproj" />
 </Solution>

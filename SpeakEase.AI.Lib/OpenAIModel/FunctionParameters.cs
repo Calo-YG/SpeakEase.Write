@@ -15,7 +15,7 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         public List<string> Required { get; set; }
 
         [JsonPropertyName("additionalProperties")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public bool AdditionalProperties { get; set; }
     }
 
@@ -38,6 +38,6 @@ namespace SpeakEase.AI.Lib.OpenAIModel
 
         [JsonPropertyName("properties")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public Dictionary<string, ParameterSchema>? Properties { get; set; }
+        public Dictionary<string, ParameterSchema> Properties { get; set; }
     }
 }

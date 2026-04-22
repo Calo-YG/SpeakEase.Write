@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Learning
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Learning
 {
     /// <summary>
     /// 灵感记录实体，用于保存用户或 AI 生成的剧情、角色与场景灵感。

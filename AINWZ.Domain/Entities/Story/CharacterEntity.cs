@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Story
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Story
 {
     /// <summary>
     /// 角色实体，记录人物基础信息、能力和背景。

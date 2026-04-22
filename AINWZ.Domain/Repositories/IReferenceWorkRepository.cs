@@ -1,6 +1,7 @@
-using AINWZ.Domain.Entities.Learning;
+using SpeakEase.Write.Domain.Entities.Learning;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Application.Repositories;
 
 /// <summary>
 /// 参考作品聚合根仓储。

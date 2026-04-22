@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.AI
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.AI
 {
     /// <summary>
     /// AI 生成任务实体，用于记录一次续写、润色或设定生成请求。

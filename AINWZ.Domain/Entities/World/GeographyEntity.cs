@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.World
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.World
 {
     /// <summary>
     /// 地理实体，用于描述大陆、国家、城市与特殊区域。

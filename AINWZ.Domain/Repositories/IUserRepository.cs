@@ -1,6 +1,7 @@
-using AINWZ.Domain.Entities.Users;
+using SpeakEase.Write.Domain.Entities.Users;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Application.Repositories;
 
 /// <summary>
 /// 用户聚合根仓储。

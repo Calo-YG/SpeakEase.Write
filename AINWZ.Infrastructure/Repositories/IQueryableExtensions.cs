@@ -1,8 +1,8 @@
-﻿using AINWZ.Infrastructure.Shared;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
+using SpeakEase.Write.Infrastructure.Shared;
 using System.Linq.Expressions;
 
-namespace AINWZ.Infrastructure.Repositories
+namespace SpeakEase.Write.Infrastructure.Repositories
 {
     public static class IQueryableExtensions
     {

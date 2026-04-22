@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.World
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.World
 {
     /// <summary>
     /// 历史事件实体，用于记录世界观中的重大历史背景。

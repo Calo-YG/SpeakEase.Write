@@ -1,8 +1,8 @@
-using AINWZ.Domain.Entities.Users;
+using SpeakEase.Write.Domain.Entities.Users;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.Users;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.Users;
 
 internal sealed class UserAiModelConfigEntityConfiguration : IEntityTypeConfiguration<UserAiModelConfigEntity>
 {

@@ -1,6 +1,6 @@
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Contracts.AI.Dto;
+namespace SpeakEase.Write.Application.Contracts.AI.Dto;
 
 /// <summary>
 /// LLM 调用日志分页查询请求。

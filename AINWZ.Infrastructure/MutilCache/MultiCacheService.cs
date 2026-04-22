@@ -1,10 +1,11 @@
-﻿using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using SpeakEase.Write.Infrastructure.MutilCache;
 using System.Collections.Concurrent;
 using System.Text.Json;
 
-namespace AINWZ.Infrastructure.MutilCache
+namespace SpeakEase.Write.Infrastructure.MutilCache
 {
     public class MultiCacheService(
         IMemoryCache memoryCache,

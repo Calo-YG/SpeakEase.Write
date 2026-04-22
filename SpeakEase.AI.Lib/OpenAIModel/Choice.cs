@@ -8,15 +8,15 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         public int Index { get; set; }
 
         [JsonPropertyName("message")]
-        public AssistantMessage? Message { get; set; }
+        public AssistantMessage Message { get; set; }
 
         [JsonPropertyName("delta")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public DeltaMessage? Delta { get; set; }
+        public DeltaMessage Delta { get; set; }
 
         [JsonPropertyName("logprobs")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public LogprobsInfo? Logprobs { get; set; }
+        public LogprobsInfo Logprobs { get; set; }
 
         [JsonPropertyName("finish_reason")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

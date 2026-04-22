@@ -1,6 +1,8 @@
 #nullable enable
 
-namespace AINWZ.Domain.Entities.AI
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.AI
 {
     /// <summary>
     /// LLM 调用日志实体，用于记录 chat/stream 请求的摘要信息。

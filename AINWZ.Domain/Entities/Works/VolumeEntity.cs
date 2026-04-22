@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Works
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Works
 {
     /// <summary>
     /// 卷实体，用于组织作品章节结构。

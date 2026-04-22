@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Works
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Works
 {
     /// <summary>
     /// 章节版本实体，用于保存自动保存、AI 生成和手动修改历史。

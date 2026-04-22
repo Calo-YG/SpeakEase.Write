@@ -1,7 +1,7 @@
-﻿using AINWZ.Application.Contracts.Auth.Dto;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.Auth.Dto;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Contracts.Auth
+namespace SpeakEase.Write.Application.Contracts.Auth
 {
     /// <summary>
     /// 认证应用服务接口。

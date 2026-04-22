@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.AI
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.AI
 {
     /// <summary>
     /// 模型提供商实体，由管理员维护，管理提供商及其下可用模型列表。

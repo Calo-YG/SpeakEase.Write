@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.World
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.World
 {
     /// <summary>
     /// 势力实体，用于描述门派、家族、国家或组织。

@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Story
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Story
 {
     /// <summary>
     /// 人物关系图谱边实体，用于表示图谱中的人物关系连线。

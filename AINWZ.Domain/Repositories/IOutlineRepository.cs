@@ -1,6 +1,7 @@
-using AINWZ.Domain.Entities.Story;
+using SpeakEase.Write.Domain.Entities.Story;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Application.Repositories;
 
 /// <summary>
 /// 大纲聚合根仓储。

@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Memory
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Memory
 {
     /// <summary>
     /// 记忆快照实体，用于保存一次上下文组装前后的完整快照信息。

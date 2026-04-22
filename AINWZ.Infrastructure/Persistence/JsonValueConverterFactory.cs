@@ -2,7 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace AINWZ.Infrastructure.Persistence;
+namespace SpeakEase.Write.Infrastructure.Persistence;
 
 /// <summary>
 /// 常用 JSON 值转换器工厂。

@@ -1,7 +1,7 @@
-using AINWZ.Application.Contracts.Auth;
-using AINWZ.Application.Contracts.Auth.Dto;
+using SpeakEase.Write.Application.Contracts.Auth;
+using SpeakEase.Write.Application.Contracts.Auth.Dto;
 
-namespace AINWZ.MapRoute.Auth
+namespace SpeakEase.Write.MapRoute.Auth
 {
     public static class AuthRoute
     {

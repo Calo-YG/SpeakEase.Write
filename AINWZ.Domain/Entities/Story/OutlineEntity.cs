@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Story
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Story
 {
     /// <summary>
     /// 剧情大纲实体，表示一部作品的结构化剧情规划。

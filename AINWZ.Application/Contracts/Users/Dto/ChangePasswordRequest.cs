@@ -1,4 +1,4 @@
-namespace AINWZ.Application.Contracts.Users.Dto;
+namespace SpeakEase.Write.Application.Contracts.Users.Dto;
 
 /// <summary>
 /// 修改密码请求。

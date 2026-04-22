@@ -1,7 +1,7 @@
-using AINWZ.Application.Contracts.Users;
-using AINWZ.Application.Contracts.Users.Dto;
+using SpeakEase.Write.Application.Contracts.Users;
+using SpeakEase.Write.Application.Contracts.Users.Dto;
 
-namespace AINWZ.MapRoute.Users
+namespace SpeakEase.Write.MapRoute.Users
 {
     public static class UserRoute
     {

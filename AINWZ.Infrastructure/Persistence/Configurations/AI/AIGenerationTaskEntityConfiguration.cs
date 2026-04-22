@@ -1,8 +1,8 @@
-using AINWZ.Domain.Entities.AI;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SpeakEase.Write.Domain.Entities.AI;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.AI;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.AI;
 
 internal sealed class AIGenerationTaskEntityConfiguration : IEntityTypeConfiguration<AIGenerationTaskEntity>
 {

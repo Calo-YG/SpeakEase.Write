@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.World
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.World
 {
     /// <summary>
     /// 力量体系实体，用于定义修炼等级与能力结构。

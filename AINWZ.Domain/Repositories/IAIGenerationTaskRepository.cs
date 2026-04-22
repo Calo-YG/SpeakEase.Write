@@ -1,6 +1,6 @@
-using AINWZ.Domain.Entities.AI;
+using SpeakEase.Write.Domain.Entities.AI;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Domain.Repositories;
 
 /// <summary>
 /// AI 生成任务聚合根仓储。

@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Users
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Users
 {
     /// <summary>
     /// 用户 AI 模型配置实体，用户管理自己使用的模型提供商及模型。

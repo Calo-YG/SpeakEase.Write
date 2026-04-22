@@ -21,7 +21,7 @@ namespace SpeakEase.AI.Lib.OpenAIModel
     public class PromptTokensDetails
     {
         [JsonPropertyName("cached_tokens")]
-        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
         public int CachedTokens { get; set; }
     }
 }

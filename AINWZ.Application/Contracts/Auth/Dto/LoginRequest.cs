@@ -1,4 +1,4 @@
-namespace AINWZ.Application.Contracts.Auth.Dto;
+namespace SpeakEase.Write.Application.Contracts.Auth.Dto;
 
 /// <summary>
 /// 登录请求。

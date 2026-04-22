@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.World
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.World
 {
     /// <summary>
     /// 世界观实体，保存作品的底层世界设定。

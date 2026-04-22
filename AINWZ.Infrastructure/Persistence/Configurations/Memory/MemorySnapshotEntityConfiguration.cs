@@ -1,8 +1,8 @@
-using AINWZ.Domain.Entities.Memory;
+using SpeakEase.Write.Domain.Entities.Memory;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.Memory;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.Memory;
 
 internal sealed class MemorySnapshotEntityConfiguration : IEntityTypeConfiguration<MemorySnapshotEntity>
 {

@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.AI
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.AI
 {
     /// <summary>
     /// AI 生成结果实体，用于保存多版本候选内容与反馈数据。

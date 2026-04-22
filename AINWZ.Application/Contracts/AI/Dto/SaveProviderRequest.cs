@@ -1,4 +1,4 @@
-namespace AINWZ.Application.Contracts.AI.Dto;
+namespace SpeakEase.Write.Application.Contracts.AI.Dto;
 
 /// <summary>
 /// 创建/更新模型提供商请求 DTO。

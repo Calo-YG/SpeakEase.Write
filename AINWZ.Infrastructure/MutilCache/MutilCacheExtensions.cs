@@ -1,7 +1,8 @@
-﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SpeakEase.Write.Infrastructure.MutilCache;
 
-namespace AINWZ.Infrastructure.MutilCache
+namespace SpeakEase.Write.Infrastructure.MutilCache
 {
     /// <summary>
     /// 多级缓存扩展方法
@@ -20,7 +21,7 @@ namespace AINWZ.Infrastructure.MutilCache
                 services.AddStackExchangeRedisCache(options =>
                 {
                     options.Configuration = redisConfig;
-                    options.InstanceName = "AINWZ:";
+                    options.InstanceName = "SpeakEaseWrite:";
                 });
             }
             else

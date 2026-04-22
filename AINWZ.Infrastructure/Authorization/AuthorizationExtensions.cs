@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Authentication.JwtBearer;
+using SpeakEase.Write.Infrastructure.Authorization;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -7,7 +8,7 @@ using SpeakEase.Authorization;
 using SpeakEase.Authorization.Authorization;
 using System.Text;
 
-namespace AINWZ.Infrastructure.Authorization;
+namespace SpeakEase.Write.Infrastructure.Authorization;
 
 public static class AuthorizationExtensions
 {

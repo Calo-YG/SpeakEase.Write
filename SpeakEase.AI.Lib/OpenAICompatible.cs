@@ -40,13 +40,15 @@ namespace SpeakEase.AI.Lib
         {
             ArgumentNullException.ThrowIfNull(context);
 
+            await _context.ResolveAsync(cancellationToken);
+
             var request = BuildRequest(context, messages, tools, stream: false);
 
             _logger.LogDebug(
                 "ChatAsync 开始: Model={Model}, Messages={MsgCount}, Tools={ToolCount}",
                 request.Model, request.Messages?.Count ?? 0, request.Tools?.Count ?? 0);
 
-            using var httpClient = CreateConfiguredClient();
+            var httpClient = CreateConfiguredClient();
 
             using var response = await httpClient.PostAsJsonAsync(
                 "chat/completions", request, JsonOptions, cancellationToken);
@@ -96,13 +98,15 @@ namespace SpeakEase.AI.Lib
         {
             ArgumentNullException.ThrowIfNull(context);
 
+            await _context.ResolveAsync(cancellationToken);
+
             var request = BuildRequest(context, messages, tools, stream: true);
 
             _logger.LogDebug(
                 "StreamAsync 开始: Model={Model}, Messages={MsgCount}, Tools={ToolCount}",
                 request.Model, request.Messages?.Count ?? 0, request.Tools?.Count ?? 0);
 
-            using var httpClient = CreateConfiguredClient();
+            var httpClient = CreateConfiguredClient();
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
             {
                 Content = JsonContent.Create(request, options: JsonOptions)
@@ -233,7 +237,7 @@ namespace SpeakEase.AI.Lib
 
         private HttpClient CreateConfiguredClient()
         {
-            using var client = _httpClientFactory.CreateClient();
+            var client = _httpClientFactory.CreateClient();
             var baseUrl = _context.Url;
 
             if (!baseUrl.EndsWith('/'))

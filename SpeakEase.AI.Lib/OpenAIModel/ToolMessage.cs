@@ -4,6 +4,7 @@ namespace SpeakEase.AI.Lib.OpenAIModel
 {
     public class ToolMessage : ChatMessage
     {
+        [JsonIgnore]
         public override string Role => "tool";
 
         [JsonPropertyName("tool_call_id")]

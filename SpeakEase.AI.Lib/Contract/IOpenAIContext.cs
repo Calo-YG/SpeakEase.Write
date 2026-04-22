@@ -1,23 +1,33 @@
 ﻿namespace SpeakEase.AI.Lib.Contract
 {
     /// <summary>
-    /// OpenAIContext 定义了与 OpenAI API 交互所需的基本上下文信息，包括 API 密钥、API URL 和模型名称等。
+    /// OpenAI 交互上下文：按用户维度动态解析 LLM 配置并缓存。
     /// </summary>
     public interface IOpenAIContext
     {
         /// <summary>
-        /// OpenAI API 密钥，用于认证和授权访问 OpenAI 服务。必须提供有效的 API 密钥才能调用 OpenAI 模型进行对话生成。
+        /// API 密钥。
         /// </summary>
-        public string ApiKey { get; }
+        string ApiKey { get; }
 
         /// <summary>
-        /// OpenAI API 的基础 URL，默认为 "https://api.openai.com/v1"。如果使用了代理或自定义部署的 OpenAI 模型，可以通过此属性指定不同的 URL。
+        /// API 基础地址。
         /// </summary>
-        public string Url { get; }
+        string Url { get; }
 
         /// <summary>
-        /// OpenAI 模型名称，例如 "gpt-4"、"gpt-3.5-turbo" 等。
+        /// 模型名称。
         /// </summary>
-        public string Model { get; }
+        string Model { get; }
+
+        /// <summary>
+        /// 动态解析当前用户的 LLM 配置并缓存。
+        /// </summary>
+        Task ResolveAsync(CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 使指定用户的缓存失效。
+        /// </summary>
+        Task InvalidateAsync(string userId = null, CancellationToken cancellationToken = default);
     }
 }

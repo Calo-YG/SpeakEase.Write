@@ -1,11 +1,11 @@
 ﻿using System.Text.Json;
-using AINWZ.Infrastructure.Shared;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Authorization.Authorization;
 

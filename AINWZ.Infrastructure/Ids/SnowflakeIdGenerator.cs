@@ -1,8 +1,8 @@
-using AINWZ.Infrastructure.Text;
+using SpeakEase.Write.Infrastructure.Text;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 
-namespace AINWZ.Infrastructure.Ids;
+namespace SpeakEase.Write.Infrastructure.Ids;
 
 /// <summary>
 /// 高性能雪花算法ID生成器。

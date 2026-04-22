@@ -1,6 +1,7 @@
-using AINWZ.Domain.Entities.Memory;
+using SpeakEase.Write.Domain.Entities.Memory;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Application.Repositories;
 
 /// <summary>
 /// 记忆快照聚合根仓储。

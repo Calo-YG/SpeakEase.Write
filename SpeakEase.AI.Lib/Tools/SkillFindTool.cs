@@ -17,45 +17,41 @@ namespace SpeakEase.AI.Lib.Tools
         /// <summary>
         /// 技能描述
         /// </summary>
-        public static ToolDefinition ToolDefinition = new ToolDefinition
+        public static readonly ToolDefinition ToolDefinition = new ToolDefinition
         {
              Type = "function",
              Function = new FunctionDefinition
              {
-                 Description = "如果你需要用到某项技能，可以帮你查询到技能的具体描述包括工具调用等等",
-                 Name = "findskill",
+                 Description = "查找技能的详细使用文档。当你需要使用某项技能但不确定如何操作时，调用此工具获取完整的使用说明和参数格式",
+                 Name = "find_skill",
                  Parameters = new FunctionParameters
                  {
                      Type = "object",
                      Properties = new Dictionary<string, ParameterSchema>
                      {
-                         ["path"] = new()
-                         {
-                             Type = "string",
-                             Description = "技能路径方便查找技能具体内容",
-                         },
                          ["skillName"] = new()
                          {
                              Type = "string",
-                             Description = "技能名称",
+                             Description = "要查找的技能名称，如 Agent Browser",
+                         },
+                         ["path"] = new()
+                         {
+                             Type = "string",
+                             Description = "技能文档的文件路径，如 wwwroot/skills/agent-browser/SKILL.md",
                          }
-                     }
+                     },
+                     Required = ["skillName"]
                  }
              }
         };
 
         /// <summary>
-        /// tool 内部工具定义
+        /// 技能内容缓存
         /// </summary>
-        /// <param name="SkillName"></param>
-        /// <param name="Content"></param>
-        /// <param name="Path"></param>
-        private record class TookSikillDedintion(string SkillName, string Content, string Path);
-
-        /// <summary>
-        /// 技能定义
-        /// </summary>
-        private readonly Dictionary<string, TookSikillDedintion> SkillDic = new Dictionary<string, TookSikillDedintion>();
+        /// <param name="SkillName">技能名称</param>
+        /// <param name="Content">技能文档内容</param>
+        /// <param name="Path">技能文档路径</param>
+        private record class SkillContent(string SkillName, string Content, string Path);
 
         /// <summary>
         /// 执行工具
@@ -77,29 +73,33 @@ namespace SpeakEase.AI.Lib.Tools
                     path = pathProp.ToString();
 
                 if (root.TryGetProperty("skillName", out var skillNameProp))
-                    skillname = skillname.ToString();
+                    skillname = skillNameProp.GetString() ?? string.Empty;
 
-                if(string.IsNullOrEmpty(path) || string.IsNullOrEmpty(skillname))
+                if(string.IsNullOrEmpty(skillname))
                 {
                     return new ToolResult
                     {
-                        Content = "检查Skill 名称 和 文件路径是否传入",
+                        Content = "缺少必要参数：skillName（技能名称）",
                         Success = false,
-                        ToolName = "findskill"
+                        ToolName = "find_skill"
                     };
                 }
 
-                var skillPath = Path.Combine(hostEnvironment.ContentRootPath, path);
+                // path 为空时根据技能名称推导默认路径
+                if (string.IsNullOrEmpty(path))
+                    path = $"wwwroot/skills/{skillname.ToLower().Replace(' ', '-')}/SKILL.md";
 
-                 var fileinfo = new FileInfo(path);
+                var skillPath = System.IO.Path.Combine(hostEnvironment.ContentRootPath, path);
+
+                var fileinfo = new FileInfo(skillPath);
 
                 if (!fileinfo.Exists)
                 {
                     return new ToolResult
                     {
-                        Content = "获取Skill失败，skill 文件不存在",
+                        Content = $"未找到技能文档：{skillname} 内容",
                         Success = false,
-                        ToolName = "findskill"
+                        ToolName = "find_skill"
                     };
                 }
 
@@ -113,7 +113,7 @@ namespace SpeakEase.AI.Lib.Tools
                 {
                     Content = content,
                     Success = true,
-                    ToolName = "findskill"
+                    ToolName = "find_skill"
                 };
             }
             catch (Exception ex)
@@ -125,8 +125,8 @@ namespace SpeakEase.AI.Lib.Tools
                 return new ToolResult
                 {
                     Content = error,
-                    Success = true,
-                    ToolName = "findskill"
+                    Success = false,
+                    ToolName = "find_skill"
                 };
             }
         }

@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Story
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Story
 {
     /// <summary>
     /// 角色关系实体，用于描述人物关系网络。

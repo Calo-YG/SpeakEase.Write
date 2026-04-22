@@ -1,4 +1,4 @@
-﻿namespace AINWZ.Domain
+﻿namespace SpeakEase.Write.Domain
 {
     /// <summary>
     /// 表示实体具备所有者归属能力。

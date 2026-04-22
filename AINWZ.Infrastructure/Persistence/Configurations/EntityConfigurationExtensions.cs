@@ -1,12 +1,13 @@
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SpeakEase.Write.Domain;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations;
 
 /// <summary>
-/// 通用实体配置扩展�?/// </summary>
+/// 通用实体配置扩展�?/// </summary>
 internal static class EntityConfigurationExtensions
 {
-    public static void ConfigureBaseEntity<TEntity>(this EntityTypeBuilder<TEntity> builder) where TEntity : AINWZ.Domain.Entity
+    public static void ConfigureBaseEntity<TEntity>(this EntityTypeBuilder<TEntity> builder) where TEntity : Entity
     {
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasMaxLength(64);

@@ -1,8 +1,8 @@
-using AINWZ.Domain.Entities.World;
+using SpeakEase.Write.Domain.Entities.World;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.World;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.World;
 
 internal sealed class PowerSystemEntityConfiguration : IEntityTypeConfiguration<PowerSystemEntity>
 {

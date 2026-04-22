@@ -1,4 +1,4 @@
-﻿namespace AINWZ.Infrastructure.Authorization
+namespace SpeakEase.Write.Infrastructure.Authorization
 {
     /// <summary>
     /// 

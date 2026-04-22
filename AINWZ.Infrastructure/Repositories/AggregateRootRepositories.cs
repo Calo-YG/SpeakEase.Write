@@ -1,14 +1,16 @@
-using AINWZ.Application.Repositories;
-using AINWZ.Domain.Entities.AI;
-using AINWZ.Domain.Entities.Learning;
-using AINWZ.Domain.Entities.Memory;
-using AINWZ.Domain.Entities.Story;
-using AINWZ.Domain.Entities.Users;
-using AINWZ.Domain.Entities.Works;
-using AINWZ.Domain.Entities.World;
-using AINWZ.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Repositories;
+using SpeakEase.Write.Domain.Entities.AI;
+using SpeakEase.Write.Domain.Entities.Learning;
+using SpeakEase.Write.Domain.Entities.Memory;
+using SpeakEase.Write.Domain.Entities.Story;
+using SpeakEase.Write.Domain.Entities.Users;
+using SpeakEase.Write.Domain.Entities.Works;
+using SpeakEase.Write.Domain.Entities.World;
+using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Domain.Repositories;
+using SpeakEase.Write.Infrastructure.Repositories;
 
-namespace AINWZ.Infrastructure.Repositories;
+namespace SpeakEase.Write.Infrastructure.Repositories;
 
 public sealed class UserRepository(SpeakEaseDbContext dbContext) : EfAggregateRootRepository<UserEntity>(dbContext), IUserRepository;
 public sealed class WorkRepository(SpeakEaseDbContext dbContext) : EfAggregateRootRepository<WorkEntity>(dbContext), IWorkRepository;

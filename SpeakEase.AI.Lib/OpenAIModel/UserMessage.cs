@@ -4,6 +4,7 @@ namespace SpeakEase.AI.Lib.OpenAIModel
 {
     public class UserMessage : ChatMessage
     {
+        [JsonIgnore]
         public override string Role => "user";
 
         [JsonPropertyName("content")]

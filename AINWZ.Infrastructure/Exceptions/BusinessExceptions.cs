@@ -1,4 +1,4 @@
-﻿namespace AINWZ.Infrastructure.Exceptions
+namespace SpeakEase.Write.Infrastructure.Exceptions
 {
     public sealed class BusinessExceptions : Exception
     {

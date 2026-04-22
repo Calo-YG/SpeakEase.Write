@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Story
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Story
 {
     /// <summary>
     /// 时间线事件实体，用于维护故事时序与关键事件。

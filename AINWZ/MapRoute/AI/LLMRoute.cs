@@ -1,10 +1,4 @@
-﻿using AINWZ.Application.Contracts.AI.Dto;
-using Microsoft.AspNetCore.Http.Json;
-using Microsoft.Extensions.Options;
-using System.Text;
-using System.Text.Json;
-
-namespace AINWZ.MapRoute.AI
+namespace SpeakEase.Write.MapRoute.AI
 {
     public static class LLMRoute
     {

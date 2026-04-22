@@ -15,7 +15,7 @@ public sealed class PowerShellToolOptions
     /// <summary>
     /// 全局开关，默认禁用。启用需显式设置为 true
     /// </summary>
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; } = true;
 
     /// <summary>
     /// 命令执行超时（秒），默认 30
@@ -67,7 +67,7 @@ public sealed class PowerShellTool : IToolExecutor
         Function = new FunctionDefinition
         {
             Name = "run_powershell",
-            Description = "执行 PowerShell 命令并返回结果。默认以只读模式运行，禁止执行危险操作。可获取系统信息、文件列表等",
+            Description = "执行命令并返回结果。默认以只读模式运行，禁止执行危险操作。可获取系统信息、文件列表等",
             Parameters = new FunctionParameters
             {
                 Type = "object",

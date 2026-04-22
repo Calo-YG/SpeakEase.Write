@@ -1,4 +1,4 @@
-﻿namespace AINWZ.Infrastructure.Shared
+﻿namespace SpeakEase.Write.Infrastructure.Shared
 {
     public class PageResult<T>
     {

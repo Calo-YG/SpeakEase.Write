@@ -1,8 +1,8 @@
-using AINWZ.Domain.Entities.Learning;
+using SpeakEase.Write.Domain.Entities.Learning;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.Learning;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.Learning;
 
 internal sealed class InspirationRecordEntityConfiguration : IEntityTypeConfiguration<InspirationRecordEntity>
 {

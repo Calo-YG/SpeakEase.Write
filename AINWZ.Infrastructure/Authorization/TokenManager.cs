@@ -1,4 +1,4 @@
-﻿using AINWZ.Infrastructure.Authorization;
+using SpeakEase.Write.Infrastructure.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

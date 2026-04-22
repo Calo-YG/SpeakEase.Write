@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Users
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Users
 {
     /// <summary>
     /// 用户偏好实体，记录创作风格、编辑器偏好与 AI 使用习惯。

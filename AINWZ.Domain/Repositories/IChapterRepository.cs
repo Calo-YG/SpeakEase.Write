@@ -1,6 +1,7 @@
-using AINWZ.Domain.Entities.Works;
+using SpeakEase.Write.Domain.Entities.Works;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Application.Repositories;
 
 /// <summary>
 /// 章节聚合根仓储。

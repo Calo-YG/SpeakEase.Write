@@ -1,7 +1,7 @@
-using AINWZ.Application.Contracts.Users.Dto;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.Users.Dto;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Contracts.Users
+namespace SpeakEase.Write.Application.Contracts.Users
 {
     /// <summary>
     /// 用户模型配置应用服务接口（主表：UserAiModelConfigEntity，关联：AIModelDefinitionEntity）。

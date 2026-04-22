@@ -9,14 +9,14 @@ namespace SpeakEase.AI.Lib.OpenAIModel
     [JsonDerivedType(typeof(ToolMessage), typeDiscriminator: "tool")]
     public abstract class ChatMessage
     {
-        [JsonPropertyName("role")]
+        [JsonIgnore]
         public abstract string Role { get; }
 
         public static SystemMessage System(string content) => new() { Content = content };
         public static UserMessage User(string content) => new() { Content = content };
         public static UserMessage User(List<ContentPart> content) => new() { Content = content };
         public static AssistantMessage Assistant(string content) => new() { Content = content };
-        public static AssistantMessage Assistant(List<ToolCall> toolCalls) => new() { ToolCalls = toolCalls, Content = null };
+        public static AssistantMessage Assistant(List<ToolCall> toolCalls) => new() { ToolCalls = toolCalls, Content = string.Empty };
         public static ToolMessage Tool(string toolCallId, string content) => new() { ToolCallId = toolCallId, Content = content };
     }
 }

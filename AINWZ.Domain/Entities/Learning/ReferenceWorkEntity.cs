@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Learning
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Learning
 {
     /// <summary>
     /// 参考作品实体，用于管理相似作品库。

@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Users
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Users
 {
     /// <summary>
     /// 平台用户实体，保存账户资料、认证信息与创作身份信息。

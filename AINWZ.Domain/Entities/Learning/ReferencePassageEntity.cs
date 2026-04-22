@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Learning
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Learning
 {
     /// <summary>
     /// 高分段落实体，用于沉淀参考片段及技巧分析。

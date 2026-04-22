@@ -1,8 +1,8 @@
-﻿using AINWZ.Infrastructure.Text;
+using SpeakEase.Write.Infrastructure.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AINWZ.Infrastructure.JsonConverters
+namespace SpeakEase.Write.Infrastructure.JsonConverters
 {
     public class LongNullConverter : JsonConverter<long?>
     {

@@ -1,7 +1,7 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace AINWZ.Infrastructure.JsonConverters
+namespace SpeakEase.Write.Infrastructure.JsonConverters
 {
     public class DateTimeConverter: JsonConverter<DateTime>
     {

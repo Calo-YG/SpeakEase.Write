@@ -1,7 +1,7 @@
-using AINWZ.Application.Contracts.AI.Dto;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.AI.Dto;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Contracts.AI;
+namespace SpeakEase.Write.Application.Contracts.AI;
 
 /// <summary>
 /// LLM 调用日志查询应用服务接口。

@@ -1,11 +1,11 @@
-using AINWZ.Domain.Entities.AI;
+using SpeakEase.Write.Domain.Entities.AI;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.AI;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.AI;
 
 /// <summary>
-/// LLM 调用日志实体映射配置�?/// </summary>
+/// LLM 调用日志实体映射配置�?/// </summary>
 public sealed class LLMCallLogConfiguration : IEntityTypeConfiguration<LLMCallLogEntity>
 {
     /// <inheritdoc />

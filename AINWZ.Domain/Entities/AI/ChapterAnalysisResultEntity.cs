@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.AI
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.AI
 {
     /// <summary>
     /// 章节分析结果实体，记录 AI 对章节内容的自动分析输出（伏笔/角色变化等），

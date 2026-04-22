@@ -1,9 +1,9 @@
-﻿using AINWZ.Infrastructure.Exceptions;
+using SpeakEase.Write.Infrastructure.Exceptions;
 using Microsoft.AspNetCore.Http;
 using SpeakEase.Authorization.Authorization;
 using System.Security.Claims;
 
-namespace AINWZ.Infrastructure.Authorization;
+namespace SpeakEase.Write.Infrastructure.Authorization;
 
 public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContext
 {

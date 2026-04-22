@@ -1,13 +1,13 @@
-﻿using System.Text;
-using AINWZ.Application.Contracts.Users;
-using AINWZ.Application.Contracts.Users.Dto;
-using AINWZ.Infrastructure.Authorization;
-using AINWZ.Infrastructure.Persistence;
-using AINWZ.Infrastructure.Shared;
+using System.Text;
+using SpeakEase.Write.Application.Contracts.Users;
+using SpeakEase.Write.Application.Contracts.Users.Dto;
+using SpeakEase.Write.Infrastructure.Authorization;
+using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Applications
+namespace SpeakEase.Write.Application.Applications
 {
     /// <summary>
     /// 用户管理应用服务实现。

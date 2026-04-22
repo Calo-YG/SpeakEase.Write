@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Memory
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Memory
 {
     /// <summary>
     /// 上下文组装日志实体，用于记录 AI 请求前的记忆拼装结果与降级过程。

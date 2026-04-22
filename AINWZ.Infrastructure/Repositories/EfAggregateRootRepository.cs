@@ -1,9 +1,9 @@
-using AINWZ.Application.Repositories;
-using AINWZ.Domain;
-using AINWZ.Infrastructure.Persistence;
+using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
+using SpeakEase.Write.Domain;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Infrastructure.Repositories;
+namespace SpeakEase.Write.Infrastructure.Repositories;
 
 /// <summary>
 /// EF Core 聚合根仓储基础实现。

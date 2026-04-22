@@ -1,16 +1,16 @@
-using AINWZ.Domain.Entities.AI;
-using AINWZ.Domain.Entities.Learning;
-using AINWZ.Domain.Entities.Memory;
-using AINWZ.Domain.Entities.Story;
-using AINWZ.Domain.Entities.Users;
-using AINWZ.Domain.Entities.Works;
-using AINWZ.Domain.Entities.World;
+using SpeakEase.Write.Domain.Entities.AI;
+using SpeakEase.Write.Domain.Entities.Learning;
+using SpeakEase.Write.Domain.Entities.Memory;
+using SpeakEase.Write.Domain.Entities.Story;
+using SpeakEase.Write.Domain.Entities.Users;
+using SpeakEase.Write.Domain.Entities.Works;
+using SpeakEase.Write.Domain.Entities.World;
 using Microsoft.EntityFrameworkCore;
 
-namespace AINWZ.Infrastructure.Persistence;
+namespace SpeakEase.Write.Infrastructure.Persistence;
 
 /// <summary>
-/// AINWZ 应用数据库上下文。
+/// SpeakEase.Write 应用数据库上下文。
 /// </summary>
 public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : DbContext(options)
 {

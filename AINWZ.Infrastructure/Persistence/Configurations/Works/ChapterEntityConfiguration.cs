@@ -1,8 +1,8 @@
-using AINWZ.Domain.Entities.Works;
+using SpeakEase.Write.Domain.Entities.Works;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.Works;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.Works;
 
 internal sealed class ChapterEntityConfiguration : IEntityTypeConfiguration<ChapterEntity>
 {

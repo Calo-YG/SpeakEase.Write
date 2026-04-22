@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.Works
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.Works
 {
     /// <summary>
     /// 作品实体，表示一部小说项目的聚合根。

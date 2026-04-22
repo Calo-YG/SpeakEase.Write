@@ -1,4 +1,6 @@
-namespace AINWZ.Domain.Entities.AI
+using SpeakEase.Write.Domain;
+
+namespace SpeakEase.Write.Domain.Entities.AI
 {
     /// <summary>
     /// Prompt 模板实体，用于管理续写、润色、角色设定等提示模板。

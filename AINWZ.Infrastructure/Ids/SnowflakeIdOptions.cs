@@ -1,4 +1,4 @@
-namespace AINWZ.Infrastructure.Ids;
+namespace SpeakEase.Write.Infrastructure.Ids;
 
 /// <summary>
 /// 雪花 ID 配置项。

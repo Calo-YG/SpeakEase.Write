@@ -1,6 +1,7 @@
-using AINWZ.Domain.Entities.World;
+using SpeakEase.Write.Domain.Entities.World;
+using SpeakEase.Write.Domain.Repositories;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Application.Repositories;
 
 /// <summary>
 /// 世界观聚合根仓储。

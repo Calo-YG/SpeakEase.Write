@@ -1,7 +1,7 @@
-﻿using AINWZ.Application.Contracts.AI;
-using AINWZ.Application.Contracts.AI.Dto;
+using SpeakEase.Write.Application.Contracts.AI;
+using SpeakEase.Write.Application.Contracts.AI.Dto;
 
-namespace AINWZ.MapRoute.AI
+namespace SpeakEase.Write.MapRoute.AI
 {
     public static class LLMLogRoute
     {

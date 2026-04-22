@@ -1,17 +1,20 @@
-using AINWZ.Application.Applications;
-using AINWZ.Application.Contracts.AI;
-using AINWZ.Application.Contracts.Auth;
-using AINWZ.Application.Contracts.Users;
-using AINWZ.Infrastructure.Authorization;
-using AINWZ.Infrastructure.JsonConverters;
-using AINWZ.Infrastructure.MutilCache;
-using AINWZ.Infrastructure.Persistence;
-using AINWZ.MapRoute.AI;
-using AINWZ.MapRoute.Auth;
-using AINWZ.MapRoute.Users;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
+using SpeakEase.AI.Lib;
+using SpeakEase.AI.Lib.Contract;
+using SpeakEase.Write.Application.Applications;
+using SpeakEase.Write.Application.Contracts.AI;
+using SpeakEase.Write.Application.Contracts.Auth;
+using SpeakEase.Write.Application.Contracts.Users;
+using SpeakEase.Write.Infrastructure.AI;
+using SpeakEase.Write.Infrastructure.Authorization;
+using SpeakEase.Write.Infrastructure.JsonConverters;
+using SpeakEase.Write.Infrastructure.MutilCache;
+using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.MapRoute.AI;
+using SpeakEase.Write.MapRoute.Auth;
+using SpeakEase.Write.MapRoute.Users;
 
 
 var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
@@ -66,9 +69,9 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
-    Log.Information("AINWZ 启动中...");
+    Log.Information("SpeakEase.Write 启动中...");
 
-    var builder = WebApplication.CreateBuilder(args);
+    var builder = WebApplication.CreateSlimBuilder();
 
     builder.Host.UseSerilog();
 
@@ -91,6 +94,15 @@ try
     builder.Services.AddScoped<IUserApplication, UserApplication>();
     builder.Services.AddScoped<IModelApplication, ModelApplication>();
     builder.Services.AddScoped<IUserModelConfigApplication, UserModelConfigApplication>();
+
+    // AI Lib DI: IChatCompatible / IToolCapable / ISkilCapable / IOpenAIContext + 内置工具 KeyedService
+    builder.Services.AddChatLLM();
+
+    // 覆盖 IOpenAIContext 默认注册，改为从数据库 + 多级缓存动态解析
+    builder.Services.AddScoped<IOpenAIContext, OpenAIContext>();
+
+    // Agent 对话服务
+    builder.Services.AddScoped<IAgentApplication, AgentApplication>();
 
     var app = builder.Build();
 
@@ -115,8 +127,9 @@ try
     app.MapAuthEndPoint();
     app.MapUserEndPoint();
     app.MapModelEndPoint();
+    app.MapAgentEndPoint();
 
-    Log.Information("AINWZ 已启动");
+    Log.Information("SpeakEase.Write 已启动");
 
     await app.RunAsync();
 

@@ -1,18 +1,18 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using System.Text;
-using AINWZ.Application.Contracts.Auth;
-using AINWZ.Application.Contracts.Auth.Dto;
-using AINWZ.Domain.Entities.Users;
-using AINWZ.Infrastructure.Authorization;
-using AINWZ.Infrastructure.Ids;
-using AINWZ.Infrastructure.MutilCache;
-using AINWZ.Infrastructure.Persistence;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.Auth;
+using SpeakEase.Write.Application.Contracts.Auth.Dto;
+using SpeakEase.Write.Domain.Entities.Users;
+using SpeakEase.Write.Infrastructure.Authorization;
+using SpeakEase.Write.Infrastructure.Ids;
+using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Infrastructure.MutilCache;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Applications;
+namespace SpeakEase.Write.Application.Applications;
 
 /// <summary>
 /// 认证应用服务实现。

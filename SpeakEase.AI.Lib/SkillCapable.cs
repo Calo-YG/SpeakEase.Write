@@ -34,8 +34,8 @@ namespace SpeakEase.AI.Lib
                 return string.Empty;
 
             var sb = new StringBuilder();
-            sb.AppendLine("# Available Skills");
-            sb.AppendLine("You can invoke the following skills as tools when needed:");
+            sb.AppendLine("# 可用技能");
+            sb.AppendLine("以下技能可通过 findskill 工具获取详细用法后调用：");
 
             foreach (var skill in _skills)
             {

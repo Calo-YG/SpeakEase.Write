@@ -1,13 +1,13 @@
-using AINWZ.Application.Contracts.AI;
-using AINWZ.Application.Contracts.AI.Dto;
-using AINWZ.Domain.Entities.AI;
-using AINWZ.Infrastructure.Ids;
-using AINWZ.Infrastructure.Persistence;
-using AINWZ.Infrastructure.Shared;
+using SpeakEase.Write.Application.Contracts.AI;
+using SpeakEase.Write.Application.Contracts.AI.Dto;
+using SpeakEase.Write.Domain.Entities.AI;
+using SpeakEase.Write.Infrastructure.Ids;
+using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using SpeakEase.Write.Infrastructure.Shared;
 
-namespace AINWZ.Application.Applications
+namespace SpeakEase.Write.Application.Applications
 {
     /// <summary>
     /// 模型提供商管理应用服务实现（单表：AIModelDefinitionEntity）。

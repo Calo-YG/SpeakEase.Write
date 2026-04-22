@@ -1,6 +1,6 @@
-using AINWZ.Domain;
+using SpeakEase.Write.Domain;
 
-namespace AINWZ.Application.Repositories;
+namespace SpeakEase.Write.Domain.Repositories;
 
 /// <summary>
 /// 聚合根仓储基础抽象，仅面向聚合根实体开放持久化能力。

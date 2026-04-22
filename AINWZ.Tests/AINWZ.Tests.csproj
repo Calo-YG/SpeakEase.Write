@@ -8,10 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AINWZ.Infrastructure\AINWZ.Infrastructure.csproj" />
-    <ProjectReference Include="..\AINWZ.Application\AINWZ.Application.csproj" />
-    <ProjectReference Include="..\AINWZ.Domain\AINWZ.Domain.csproj" />
-    <ProjectReference Include="..\AINWZ\AINWZ.csproj" />
+    <ProjectReference Include="..\AINWZ.Infrastructure\SpeakEase.Write.Infrastructure.csproj" />
+    <ProjectReference Include="..\AINWZ.Application\SpeakEase.Write.Application.csproj" />
+    <ProjectReference Include="..\AINWZ.Domain\SpeakEase.Write.Domain.csproj" />
+    <ProjectReference Include="..\AINWZ\SpeakEase.Write.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,4 +1,4 @@
-namespace AINWZ.Infrastructure.Text;
+namespace SpeakEase.Write.Infrastructure.Text;
 
 /// <summary>
 /// 高性能 long 转 string 转换器。

@@ -1,8 +1,8 @@
-using AINWZ.Domain.Entities.Story;
+using SpeakEase.Write.Domain.Entities.Story;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace AINWZ.Infrastructure.Persistence.Configurations.Story;
+namespace SpeakEase.Write.Infrastructure.Persistence.Configurations.Story;
 
 internal sealed class CharacterGraphEntityConfiguration : IEntityTypeConfiguration<CharacterGraphEntity>
 {

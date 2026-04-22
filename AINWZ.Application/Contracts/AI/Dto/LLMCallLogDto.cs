@@ -1,4 +1,4 @@
-namespace AINWZ.Application.Contracts.AI.Dto;
+namespace SpeakEase.Write.Application.Contracts.AI.Dto;
 
 /// <summary>
 /// LLM 调用日志响应 DTO。

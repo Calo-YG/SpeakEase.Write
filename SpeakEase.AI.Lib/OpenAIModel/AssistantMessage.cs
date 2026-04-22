@@ -4,11 +4,12 @@ namespace SpeakEase.AI.Lib.OpenAIModel
 {
     public class AssistantMessage : ChatMessage
     {
+        [JsonIgnore]
         public override string Role => "assistant";
 
         [JsonPropertyName("content")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-        public string Content { get; set; }
+        public string Content { get; set; } = string.Empty;
 
         [JsonPropertyName("refusal")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

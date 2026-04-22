@@ -1,4 +1,4 @@
-﻿namespace AINWZ.Infrastructure.Shared
+﻿namespace SpeakEase.Write.Infrastructure.Shared
 {
     /// <summary>
     /// 分页响应

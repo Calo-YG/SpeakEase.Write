@@ -11,6 +11,11 @@ namespace SpeakEase.AI.Lib
     {
         private readonly List<SkillDefinition> _skills = [];
 
+        /// <summary>
+        /// 缓存的技能提示词，注册新技能时失效
+        /// </summary>
+        private string _cachedPrompt;
+
         /// <inheritdoc />
         public IReadOnlyList<SkillDefinition> Skills => _skills;
 
@@ -25,6 +30,7 @@ namespace SpeakEase.AI.Lib
                 return;
 
             _skills.Add(skill);
+            _cachedPrompt = null; // 失效缓存
         }
 
         /// <inheritdoc />
@@ -33,6 +39,18 @@ namespace SpeakEase.AI.Lib
             if (_skills.Count == 0)
                 return string.Empty;
 
+            if (_cachedPrompt != null)
+                return _cachedPrompt;
+
+            _cachedPrompt = BuildSkillPromptCore();
+            return _cachedPrompt;
+        }
+
+        /// <summary>
+        /// 实际构建技能提示词的逻辑
+        /// </summary>
+        private string BuildSkillPromptCore()
+        {
             var sb = new StringBuilder();
             sb.AppendLine("# 可用技能");
             sb.AppendLine("以下技能可通过 findskill 工具获取详细用法后调用：");

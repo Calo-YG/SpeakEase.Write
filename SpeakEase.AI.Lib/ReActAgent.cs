@@ -62,11 +62,18 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
 4. **最多 10 轮** — 达到上限后基于当前信息给出最佳进展";
 
     /// <summary>
-    /// 手动注册工具和技能：ToolDefinition
+    /// 注册守卫，确保工具和技能仅注册一次。
+    /// </summary>
+    private bool _initialized;
+
+    /// <summary>
+    /// 注册工具和技能：仅首次调用时执行，后续调用直接返回。
     /// </summary>
     public void Init()
     {
-        // 手动注册工具和技能：IToolExecutor 的实现本身需要构建一个静态常量 ToolDefinition 后续这里只要通过 IToolExecutor.ToolDefinition 获取并注册
+        if (_initialized) return;
+        _initialized = true;
+
         toolCapable.RegisterTool(EchoTool.ToolDefinition);
         toolCapable.RegisterTool(CharacterNameGeneratorTool.ToolDefinition);
         toolCapable.RegisterTool(CalculateTool.ToolDefinition);

@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Tools;
+using System.Net.Http.Headers;
 
 namespace SpeakEase.AI.Lib
 {
@@ -9,9 +10,19 @@ namespace SpeakEase.AI.Lib
     /// </summary>
     public static class AIExtensions
     {
+        /// <summary>
+        /// 命名 HttpClient 标识，与 <see cref="OpenAICompatible"/> 中引用的名称对应。
+        /// </summary>
+        private const string HttpClientName = "SpeakEase.LLM";
+
         public static IServiceCollection AddChatLLM(this IServiceCollection services)
         {
-            services.AddHttpClient();
+            services.AddHttpClient(HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(120);
+                client.DefaultRequestHeaders.Accept.Add(
+                    new MediaTypeWithQualityHeaderValue("application/json"));
+            });
 
             services.AddScoped<IToolCapable, ToolCapable>();
             services.AddScoped<ISkilCapable, SkillCapable>();

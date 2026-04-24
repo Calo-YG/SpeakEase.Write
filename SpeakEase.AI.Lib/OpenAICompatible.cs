@@ -25,6 +25,11 @@ namespace SpeakEase.AI.Lib
         private readonly IOpenAIContext _context = context ?? throw new ArgumentNullException(nameof(context));
         private readonly ILogger<OpenAICompatible> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
+        /// <summary>
+        /// 命名 HttpClient 标识，与 DI 注册时 <see cref="AIExtensions.AddChatLLM"/> 中的名称对应。
+        /// </summary>
+        private const string HttpClientName = "SpeakEase.LLM";
+
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -237,16 +242,12 @@ namespace SpeakEase.AI.Lib
 
         private HttpClient CreateConfiguredClient()
         {
-            var client = _httpClientFactory.CreateClient();
-            var baseUrl = _context.Url;
+            var client = _httpClientFactory.CreateClient(HttpClientName);
 
-            if (!baseUrl.EndsWith('/'))
-                baseUrl += "/";
-
-            client.BaseAddress = new Uri(baseUrl);
-            client.Timeout = TimeSpan.FromSeconds(120);
-            client.DefaultRequestHeaders.Accept.Add(
-                new MediaTypeWithQualityHeaderValue("application/json"));
+            // BaseAddress 和 Auth 每次必须设置：IOpenAIContext 是 Scoped，
+            // ResolveAsync 后才有值，且不同用户配置可能不同。
+            // Timeout 和 Accept 已在命名客户端注册时配置，此处不再重复设置。
+            client.BaseAddress = new Uri(_context.Url.TrimEnd('/') + "/");
 
             if (!string.IsNullOrWhiteSpace(_context.ApiKey))
             {
@@ -255,7 +256,7 @@ namespace SpeakEase.AI.Lib
             }
 
             _logger.LogDebug(
-                "HttpClient 已配置: BaseAddress={BaseAddress}, Timeout={Timeout}s",client.BaseAddress, client.Timeout.TotalSeconds);
+                "HttpClient 已配置: BaseAddress={BaseAddress}, Timeout={Timeout}s", client.BaseAddress, client.Timeout.TotalSeconds);
 
             return client;
         }
@@ -271,7 +272,7 @@ namespace SpeakEase.AI.Lib
         {
             Model = string.IsNullOrWhiteSpace(context.Model) ? _context.Model : context.Model,
             Messages = messages,
-            Tools = tools?.Count > 0 ? tools.ToList() : null,
+            Tools = tools?.Count > 0 ? new List<ToolDefinition>(tools) : null,
             ToolChoice = context.ToolChoice,
             Temperature = context.Temperature,
             MaxTokens = context.MaxTokens,

@@ -44,6 +44,11 @@ namespace SpeakEase.Write.MapRoute.AI
                 return await modelApp.DeleteProviderAsync(id, cancellationToken);
             }).WithName("deleteprovider");
 
+            group.MapGet("providers/{id}/models", async (string id, IModelApplication modelApp, CancellationToken cancellationToken) =>
+            {
+                return await modelApp.GetProviderModelsAsync(id, cancellationToken);
+            }).WithName("getprovidermodels");
+
             // === 用户模型配置端点 ===
 
             group.MapGet("configs", async (IUserModelConfigApplication configApp, CancellationToken cancellationToken) =>

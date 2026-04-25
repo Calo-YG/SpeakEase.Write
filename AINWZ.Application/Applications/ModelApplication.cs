@@ -6,6 +6,8 @@ using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SpeakEase.Write.Infrastructure.Shared;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SpeakEase.Write.Application.Applications
 {
@@ -239,8 +241,77 @@ namespace SpeakEase.Write.Application.Applications
             return new ApiResult(true);
         }
 
+        /// <inheritdoc />
+        public async Task<ApiResult<List<string>>> GetProviderModelsAsync(string id, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return new ApiResult<List<string>>("标识不能为空。", 400);
+        
+            var entity = await dbContext.AIModelDefinitions
+                .AsNoTracking()
+                .Where(x => x.Id == id)
+                .Select(x => new { x.ApiBaseUrl, x.ApiKey })
+                .FirstOrDefaultAsync(cancellationToken);
+        
+            if (entity is null)
+                return new ApiResult<List<string>>($"未找到标识为 {id} 的提供商。", 404);
+        
+            try
+            {
+                var url = entity.ApiBaseUrl.TrimEnd('/') + "/models";
+                logger.LogInformation("获取提供商模型列表：{Url}", url);
+        
+                using var httpClient = httpClientFactory.CreateClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(15);
+        
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {entity.ApiKey}");
+        
+                using var response = await httpClient.SendAsync(request, cancellationToken);
+        
+                if (!response.IsSuccessStatusCode)
+                {
+                    var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                    logger.LogWarning("获取模型列表失败：{Url}，状态码={StatusCode}，响应={Body}", url, (int)response.StatusCode, body);
+                    return new ApiResult<List<string>>($"获取模型列表失败（HTTP {(int)response.StatusCode}）。", 400);
+                }
+        
+                using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                var parsed = await JsonSerializer.DeserializeAsync<OpenAiModelsResponse>(stream,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, cancellationToken);
+        
+                var models = parsed?.Data
+                    ?.Select(m => m.Id)
+                    .Where(s => !string.IsNullOrWhiteSpace(s))
+                    .OrderBy(s => s)
+                    .ToList() ?? [];
+        
+                logger.LogInformation("提供商 {Id} 共返回 {Count} 个模型", id, models.Count);
+                return new ApiResult<List<string>>(models);
+            }
+            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (TaskCanceledException ex)
+            {
+                logger.LogWarning(ex, "获取模型列表超时：{BaseUrl}", entity.ApiBaseUrl);
+                return new ApiResult<List<string>>("获取模型列表超时，请检查提供商地址。", 400);
+            }
+            catch (HttpRequestException ex)
+            {
+                logger.LogWarning(ex, "获取模型列表网络错误：{BaseUrl}", entity.ApiBaseUrl);
+                return new ApiResult<List<string>>($"获取模型列表失败：{ex.Message}", 400);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "获取模型列表未知异常：{BaseUrl}", entity.ApiBaseUrl);
+                return new ApiResult<List<string>>($"获取模型列表异常：{ex.Message}", 400);
+            }
+        }
+        
         /// <summary>
-        /// 按 OpenAI 兼容格式验证 API 地址与密钥可用性。
+        /// 按 OpenAI 兼容格式验证 API 地址与密鑰可用性。
         /// 请求 GET {baseUrl}/models，若返回 2xx 则视为可用。
         /// </summary>
         private async Task<ApiResult> ValidateApiConnectivityAsync(string baseUrl, string apiKey, CancellationToken cancellationToken)
@@ -294,4 +365,13 @@ namespace SpeakEase.Write.Application.Applications
             }
         }
     }
+
+    // ===== 私有辅助类型 =====
+
+    /// <summary>OpenAI 兼容格式 /models 响应。</summary>
+    file record OpenAiModelsResponse(
+        [property: JsonPropertyName("data")] List<OpenAiModelItem> Data);
+
+    file record OpenAiModelItem(
+        [property: JsonPropertyName("id")] string Id);
 }

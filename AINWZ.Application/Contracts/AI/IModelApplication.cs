@@ -32,5 +32,10 @@ namespace SpeakEase.Write.Application.Contracts.AI
         /// 删除提供商。
         /// </summary>
         Task<ApiResult> DeleteProviderAsync(string id, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// 获取指定提供商下的可用模型列表（调用提供商 /models 端点）。
+        /// </summary>
+        Task<ApiResult<List<string>>> GetProviderModelsAsync(string id, CancellationToken cancellationToken = default);
     }
 }

@@ -12,9 +12,9 @@ public static class TagRoute
             .WithTags("tags")
             .RequireAuthorization();
 
-        group.MapGet("", async (string category, ITagApplication tagApp, CancellationToken ct) =>
+        group.MapGet("query", async (string category, ITagApplication tagApp, CancellationToken ct) =>
             await tagApp.ListTagsAsync(category, ct))
-            .WithName("listtags");
+            .WithName("querytags");
 
         group.MapGet("hot", async (int? limit, ITagApplication tagApp, CancellationToken ct) =>
             await tagApp.GetHotTagsAsync(limit ?? 20, ct))

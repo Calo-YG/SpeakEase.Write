@@ -140,7 +140,6 @@ try
     app.MapAuthEndPoint();
     app.MapUserEndPoint();
     app.MapModelEndPoint();
-    app.MapAgentEndPoint();
     app.MapWorkEndPoint();
     app.MapStoryEndPoint();
     app.MapReferenceEndPoint();

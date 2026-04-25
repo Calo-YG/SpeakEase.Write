@@ -48,6 +48,11 @@ namespace SpeakEase.Write.Domain.Entities.Works
         public string Status { get; set; } = "draft";
 
         /// <summary>
+        /// 封面图片地址。
+        /// </summary>
+        public string CoverUrl { get; set; } = string.Empty;
+
+        /// <summary>
         /// 作品总字数。
         /// </summary>
         public int TotalWordCount { get; set; }

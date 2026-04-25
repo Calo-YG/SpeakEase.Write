@@ -62,7 +62,7 @@ public class LLMCallLogApplication(SpeakEaseDbContext dbContext,IUserContext use
         })
             .ToListAsync(cancellationToken);
 
-        var result = PageResult<LLMCallLogDto>.Create(total, items);
+        var result = PageResult<LLMCallLogDto>.Create(total, items, page, pageSize);
 
         return new ApiResult<PageResult<LLMCallLogDto>>(result);
     }

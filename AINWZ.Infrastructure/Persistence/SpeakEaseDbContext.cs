@@ -2,6 +2,7 @@ using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Learning;
 using SpeakEase.Write.Domain.Entities.Memory;
 using SpeakEase.Write.Domain.Entities.Story;
+using SpeakEase.Write.Domain.Entities.Tags;
 using SpeakEase.Write.Domain.Entities.Users;
 using SpeakEase.Write.Domain.Entities.Works;
 using SpeakEase.Write.Domain.Entities.World;
@@ -48,6 +49,8 @@ public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : 
     public DbSet<ReferenceWorkEntity> ReferenceWorks => Set<ReferenceWorkEntity>();
     public DbSet<ReferencePassageEntity> ReferencePassages => Set<ReferencePassageEntity>();
     public DbSet<InspirationRecordEntity> InspirationRecords => Set<InspirationRecordEntity>();
+    public DbSet<TagEntity> Tags => Set<TagEntity>();
+    public DbSet<UserPassageFavoriteEntity> UserPassageFavorites => Set<UserPassageFavoriteEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

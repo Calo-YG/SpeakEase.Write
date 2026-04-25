@@ -6,7 +6,12 @@ using SpeakEase.AI.Lib.Contract;
 using SpeakEase.Write.Application.Applications;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.Auth;
+using SpeakEase.Write.Application.Contracts.Dashboard;
+using SpeakEase.Write.Application.Contracts.References;
+using SpeakEase.Write.Application.Contracts.Story;
+using SpeakEase.Write.Application.Contracts.Tags;
 using SpeakEase.Write.Application.Contracts.Users;
+using SpeakEase.Write.Application.Contracts.Works;
 using SpeakEase.Write.Infrastructure.AI;
 using SpeakEase.Write.Infrastructure.Authorization;
 using SpeakEase.Write.Infrastructure.JsonConverters;
@@ -14,7 +19,11 @@ using SpeakEase.Write.Infrastructure.MutilCache;
 using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.MapRoute.AI;
 using SpeakEase.Write.MapRoute.Auth;
+using SpeakEase.Write.MapRoute.Dashboard;
+using SpeakEase.Write.MapRoute.References;
+using SpeakEase.Write.MapRoute.Tags;
 using SpeakEase.Write.MapRoute.Users;
+using SpeakEase.Write.MapRoute.Works;
 
 
 var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
@@ -94,6 +103,13 @@ try
     builder.Services.AddScoped<IUserApplication, UserApplication>();
     builder.Services.AddScoped<IModelApplication, ModelApplication>();
     builder.Services.AddScoped<IUserModelConfigApplication, UserModelConfigApplication>();
+    builder.Services.AddScoped<IWorkApplication, WorkApplication>();
+    builder.Services.AddScoped<IChapterApplication, ChapterApplication>();
+    builder.Services.AddScoped<ICharacterApplication, CharacterApplication>();
+    builder.Services.AddScoped<IOutlineApplication, OutlineApplication>();
+    builder.Services.AddScoped<IReferenceApplication, ReferenceApplication>();
+    builder.Services.AddScoped<ITagApplication, TagApplication>();
+    builder.Services.AddScoped<IDashboardApplication, DashboardApplication>();
 
     // AI Lib DI: IChatCompatible / IToolCapable / ISkilCapable / IOpenAIContext + 内置工具 KeyedService
     builder.Services.AddChatLLM();
@@ -128,6 +144,11 @@ try
     app.MapUserEndPoint();
     app.MapModelEndPoint();
     app.MapAgentEndPoint();
+    app.MapWorkEndPoint();
+    app.MapStoryEndPoint();
+    app.MapReferenceEndPoint();
+    app.MapTagEndPoint();
+    app.MapDashboardEndPoint();
 
     Log.Information("SpeakEase.Write 已启动");
 

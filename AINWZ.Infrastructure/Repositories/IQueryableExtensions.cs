@@ -30,7 +30,7 @@ namespace SpeakEase.Write.Infrastructure.Repositories
         {
             var total = source.Count();
             var data = source.Skip((pagination.Page - 1) * pagination.PageSize).Take(pagination.PageSize).ToList();
-            return PageResult<T>.Create(total, data);
+            return PageResult<T>.Create(total, data, pagination.Page, pagination.PageSize);
         }
 
         /// <summary>
@@ -44,7 +44,7 @@ namespace SpeakEase.Write.Infrastructure.Repositories
         {
             var total = await source.CountAsync();
             var data = await source.Skip((pagination.Page - 1) * pagination.PageSize).Take(pagination.PageSize).ToListAsync();
-            return PageResult<T>.Create(total, data);
+            return PageResult<T>.Create(total, data, pagination.Page, pagination.PageSize);
         }
     }
 }

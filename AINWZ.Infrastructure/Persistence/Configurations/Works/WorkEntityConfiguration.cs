@@ -18,5 +18,6 @@ internal sealed class WorkEntityConfiguration : IEntityTypeConfiguration<WorkEnt
         builder.Property(x => x.StyleTags).ConfigureStringListProperty<WorkEntity>();
         builder.Property(x => x.CreationMode).HasMaxLength(32);
         builder.Property(x => x.Status).HasMaxLength(32);
+        builder.Property(x => x.CoverUrl).HasMaxLength(500);
     }
 }

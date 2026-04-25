@@ -24,7 +24,7 @@ namespace SpeakEase.AI.Lib
                     new MediaTypeWithQualityHeaderValue("application/json"));
             });
 
-            services.AddScoped<IToolCapable, ToolCapable>();
+            services.AddTransient<IToolCapable, ToolCapable>();//注册为瞬时涉及到SubAgent调用时注册内部工具
             services.AddScoped<ISkilCapable, SkillCapable>();
             services.AddScoped<IChatCompatible, OpenAICompatible>();
             services.AddKeyedTransient<IToolExecutor, CalculateTool>(CalculateTool.ToolDefinition.Function.Name);

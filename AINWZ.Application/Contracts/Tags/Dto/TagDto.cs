@@ -18,6 +18,6 @@ public sealed class TagItemResponse
 public sealed class SaveTagRequest
 {
     public string Name { get; set; } = string.Empty;
-    public string? Category { get; set; }
-    public string? Color { get; set; }
+    public string Category { get; set; }
+    public string Color { get; set; }
 }

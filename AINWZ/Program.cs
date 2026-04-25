@@ -117,9 +117,6 @@ try
     // 覆盖 IOpenAIContext 默认注册，改为从数据库 + 多级缓存动态解析
     builder.Services.AddScoped<IOpenAIContext, OpenAIContext>();
 
-    // Agent 对话服务
-    builder.Services.AddScoped<IAgentApplication, AgentApplication>();
-
     var app = builder.Build();
 
 

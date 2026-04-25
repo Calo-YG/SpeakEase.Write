@@ -8,7 +8,7 @@ namespace SpeakEase.Write.Application.Contracts.Tags;
 /// </summary>
 public interface ITagApplication
 {
-    Task<ApiResult<List<TagItemResponse>>> ListTagsAsync(string? category, CancellationToken cancellationToken = default);
+    Task<ApiResult<List<TagItemResponse>>> ListTagsAsync(string category, CancellationToken cancellationToken = default);
     Task<ApiResult<TagItemResponse>> CreateTagAsync(SaveTagRequest request, CancellationToken cancellationToken = default);
     Task<ApiResult<TagItemResponse>> UpdateTagAsync(string id, SaveTagRequest request, CancellationToken cancellationToken = default);
     Task<ApiResult> DeleteTagAsync(string id, CancellationToken cancellationToken = default);

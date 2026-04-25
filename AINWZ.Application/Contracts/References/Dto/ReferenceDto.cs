@@ -40,7 +40,7 @@ public sealed class ReferencePassageItemResponse
 /// </summary>
 public sealed class ReferenceWorkQueryRequest
 {
-    public string? Keyword { get; set; }
+    public string Keyword { get; set; }
 }
 
 /// <summary>
@@ -48,9 +48,9 @@ public sealed class ReferenceWorkQueryRequest
 /// </summary>
 public sealed class ReferencePassageQueryRequest
 {
-    public string? Keyword { get; set; }
-    public string? PassageType { get; set; }
-    public string? Tag { get; set; }
+    public string Keyword { get; set; }
+    public string PassageType { get; set; }
+    public string Tag { get; set; }
     public int PageIndex { get; set; } = 1;
     public int PageSize { get; set; } = 20;
 }
@@ -60,12 +60,12 @@ public sealed class ReferencePassageQueryRequest
 /// </summary>
 public sealed class SaveReferencePassageRequest
 {
-    public string? ReferenceWorkId { get; set; }
-    public string? BookTitle { get; set; }
-    public string? Author { get; set; }
-    public string? Genre { get; set; }
+    public string ReferenceWorkId { get; set; }
+    public string BookTitle { get; set; }
+    public string Author { get; set; }
+    public string Genre { get; set; }
     public string PassageType { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
-    public List<string>? HighlightTags { get; set; }
-    public string? TechniqueAnalysis { get; set; }
+    public List<string> HighlightTags { get; set; }
+    public string TechniqueAnalysis { get; set; }
 }

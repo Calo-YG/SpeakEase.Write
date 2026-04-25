@@ -26,7 +26,7 @@ public class TagApplication(
         UsageCount = x.UsageCount
     };
 
-    public async Task<ApiResult<List<TagItemResponse>>> ListTagsAsync(string? category, CancellationToken cancellationToken = default)
+    public async Task<ApiResult<List<TagItemResponse>>> ListTagsAsync(string category, CancellationToken cancellationToken = default)
     {
         var query = dbContext.Tags.AsNoTracking();
         if (!string.IsNullOrWhiteSpace(category))

@@ -382,3 +382,5 @@ FodyWeavers.xsd
 /AINWZ/tmp_ps_test.json
 /AINWZ/tmp_tools_test.json
 /AINWZ.Infrastructure/Persistence/Migrations/20260418114502_AddAgentLoopFields.cs
+/AINWZ.Infrastructure/Persistence/Migrations/20260425041004_AddTagsAndUserFavorites.cs
+/AINWZ.Infrastructure/Persistence/Migrations/SpeakEaseDbContextModelSnapshot.cs

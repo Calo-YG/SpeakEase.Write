@@ -26,14 +26,14 @@ public sealed class CharacterItemResponse
 public sealed class SaveCharacterRequest
 {
     public string Name { get; set; } = string.Empty;
-    public string? Alias { get; set; }
-    public string? Gender { get; set; }
-    public string? AgeDescription { get; set; }
-    public string? Identity { get; set; }
-    public string? Appearance { get; set; }
-    public string? Personality { get; set; }
-    public string? BackgroundStory { get; set; }
-    public string? Motivation { get; set; }
-    public string? AbilityDescription { get; set; }
-    public List<string>? Tags { get; set; }
+    public string Alias { get; set; }
+    public string Gender { get; set; }
+    public string AgeDescription { get; set; }
+    public string Identity { get; set; }
+    public string Appearance { get; set; }
+    public string Personality { get; set; }
+    public string BackgroundStory { get; set; }
+    public string Motivation { get; set; }
+    public string AbilityDescription { get; set; }
+    public List<string> Tags { get; set; }
 }

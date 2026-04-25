@@ -12,7 +12,7 @@ public static class TagRoute
             .WithTags("tags")
             .RequireAuthorization();
 
-        group.MapGet("", async (string? category, ITagApplication tagApp, CancellationToken ct) =>
+        group.MapGet("", async (string category, ITagApplication tagApp, CancellationToken ct) =>
             await tagApp.ListTagsAsync(category, ct))
             .WithName("listtags");
 

@@ -5,7 +5,7 @@ namespace SpeakEase.Write.Application.Contracts.Works.Dto;
 /// </summary>
 public sealed class WorkQueryRequest
 {
-    public string? Keyword { get; set; }
+    public string Keyword { get; set; }
     public int PageIndex { get; set; } = 1;
     public int PageSize { get; set; } = 20;
 }

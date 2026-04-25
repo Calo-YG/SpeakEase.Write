@@ -38,8 +38,8 @@ public sealed class CreateChapterRequest
 /// </summary>
 public sealed class UpdateChapterRequest
 {
-    public string? Title { get; set; }
-    public string? Content { get; set; }
-    public string? Status { get; set; }
-    public string? AuthorNotes { get; set; }
+    public string Title { get; set; }
+    public string Content { get; set; }
+    public string Status { get; set; }
+    public string AuthorNotes { get; set; }
 }

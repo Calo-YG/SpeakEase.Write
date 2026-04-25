@@ -7,11 +7,11 @@ public sealed class OutlineNodeItemResponse
 {
     public string Id { get; set; } = string.Empty;
     public string WorkId { get; set; } = string.Empty;
-    public string? ParentId { get; set; }
+    public string ParentId { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public int Sequence { get; set; }
-    public string? ChapterId { get; set; }
+    public string ChapterId { get; set; }
 }
 
 /// <summary>
@@ -19,9 +19,9 @@ public sealed class OutlineNodeItemResponse
 /// </summary>
 public sealed class SaveOutlineNodeRequest
 {
-    public string? ParentId { get; set; }
+    public string ParentId { get; set; }
     public string Title { get; set; } = string.Empty;
-    public string? Description { get; set; }
+    public string Description { get; set; }
     public int? Sequence { get; set; }
-    public string? ChapterId { get; set; }
+    public string ChapterId { get; set; }
 }

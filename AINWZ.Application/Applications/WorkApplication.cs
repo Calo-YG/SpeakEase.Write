@@ -45,7 +45,7 @@ public class WorkApplication(
         var works = await query
             .Where(x => workIds.Contains(x.Id))
             .OrderByDescending(x => x.UpdateAt)
-            .Select(x => new { x.Id, x.Title, x.Genre, x.StyleTags, x.Summary, x.CoverUrl, x.TotalWordCount, x.Status, x.CreateAt, x.UpdateAt })
+            .Select(x => new { x.Id, x.Title, x.Genre, x.StyleTags, x.Perspective, x.Summary, x.CoverUrl, x.TotalWordCount, x.Status, x.CreateAt, x.UpdateAt })
             .ToListAsync(cancellationToken);
 
         // 批量查询章节数和卷数
@@ -67,6 +67,7 @@ public class WorkApplication(
             Title = w.Title,
             Genre = w.Genre,
             StyleTags = w.StyleTags,
+            Perspective = w.Perspective,
             Description = w.Summary,
             CoverUrl = w.CoverUrl,
             TotalWordCount = w.TotalWordCount,
@@ -86,7 +87,7 @@ public class WorkApplication(
         var userId = userContext.UserId;
         var work = await dbContext.Works.AsNoTracking()
             .Where(x => x.Id == id && x.UserId == userId)
-            .Select(x => new { x.Id, x.Title, x.Genre, x.StyleTags, x.Summary, x.CoverUrl, x.TotalWordCount, x.Status, x.CreateAt, x.UpdateAt })
+            .Select(x => new { x.Id, x.Title, x.Genre, x.StyleTags, x.Perspective, x.Summary, x.CoverUrl, x.TotalWordCount, x.Status, x.CreateAt, x.UpdateAt })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (work is null)
@@ -101,6 +102,7 @@ public class WorkApplication(
             Title = work.Title,
             Genre = work.Genre,
             StyleTags = work.StyleTags,
+            Perspective = work.Perspective,
             Description = work.Summary,
             CoverUrl = work.CoverUrl,
             TotalWordCount = work.TotalWordCount,
@@ -125,6 +127,7 @@ public class WorkApplication(
             Title = request.Title.Trim(),
             Genre = request.Genre ?? string.Empty,
             StyleTags = request.StyleTags ?? new(),
+            Perspective = request.Perspective ?? "third",
             Summary = request.Description ?? string.Empty,
             CoverUrl = request.CoverUrl ?? string.Empty,
             Status = "draft",
@@ -144,6 +147,7 @@ public class WorkApplication(
             Title = entity.Title,
             Genre = entity.Genre,
             StyleTags = entity.StyleTags,
+            Perspective = entity.Perspective,
             Description = entity.Summary,
             CoverUrl = entity.CoverUrl,
             TotalWordCount = 0,
@@ -167,6 +171,7 @@ public class WorkApplication(
         if (request.Title is not null) entity.Title = request.Title.Trim();
         if (request.Genre is not null) entity.Genre = request.Genre;
         if (request.StyleTags is not null) entity.StyleTags = request.StyleTags;
+        if (request.Perspective is not null) entity.Perspective = request.Perspective;
         if (request.Description is not null) entity.Summary = request.Description;
         if (request.CoverUrl is not null) entity.CoverUrl = request.CoverUrl;
         if (request.Status is not null) entity.Status = request.Status;
@@ -184,6 +189,7 @@ public class WorkApplication(
             Title = entity.Title,
             Genre = entity.Genre,
             StyleTags = entity.StyleTags,
+            Perspective = entity.Perspective,
             Description = entity.Summary,
             CoverUrl = entity.CoverUrl,
             TotalWordCount = entity.TotalWordCount,

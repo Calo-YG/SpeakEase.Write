@@ -38,6 +38,11 @@ namespace SpeakEase.Write.Domain.Entities.Works
         public List<string> StyleTags { get; set; } = new();
 
         /// <summary>
+        /// 叙述视角：first = 第一人称，third = 第三人称。
+        /// </summary>
+        public string Perspective { get; set; } = "third";
+
+        /// <summary>
         /// 当前创作模式，例如 ai-led、collaborative、assist。
         /// </summary>
         public string CreationMode { get; set; } = "assist";

@@ -10,6 +10,7 @@ public sealed class CreateWorkRequest
     public List<string> StyleTags { get; set; } = new();
     public string Description { get; set; } = string.Empty;
     public string CoverUrl { get; set; }
+    public string Perspective { get; set; } = "third";
 }
 
 /// <summary>
@@ -23,4 +24,5 @@ public sealed class UpdateWorkRequest
     public string Description { get; set; }
     public string CoverUrl { get; set; }
     public string Status { get; set; }
+    public string Perspective { get; set; }
 }

@@ -15,6 +15,7 @@ public sealed class WorkItemResponse
     public int ChapterCount { get; set; }
     public int VolumeCount { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string Perspective { get; set; } = "third";
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

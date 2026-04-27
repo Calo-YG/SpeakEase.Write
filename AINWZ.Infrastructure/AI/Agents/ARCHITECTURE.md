@@ -280,11 +280,200 @@ public sealed class WritingBlackboardBuilder
 
 ---
 
-## 四、创作编排器（CreationOrchestrator）
+## 四、渐进式披露与创作域工具
+
+核心原则：**禁止将黑板全量内容拼入 SystemPrompt；Agent 通过 Function Calling 按需查询黑板分区。**
+
+### 4.1 设计动机
+
+| 策略 | 一次性注入 | 渐进式披露 |
+|------|-----------|----------|
+| 上下文来源 | SystemPrompt 内联全量黑板 | Function Calling 按需查询 |
+| Token 消耗 | 随小说长度线性增长 | 恒定（仅 Prompt + 按需查询） |
+| 信息聚焦 | 噪音多，关键信息被淹没 | LLM 只取需要的分区 |
+| 长篇适配 | 超过 context window 即失效 | 任意长度均可工作 |
+
+### 4.2 BlackboardHolder — 黑板桥接器
+
+工具执行时需要访问黑板，但 `IToolExecutor.ExecuteAsync` 只接收 JSON 参数字符串。
+通过 Scoped 服务 `BlackboardHolder` 桥接：
+
+```csharp
+/// <summary>
+/// Scoped 生命周期，持有当前请求的 WritingBlackboard 实例。
+/// 创作域工具通过 DI 注入此对象访问黑板数据。
+/// </summary>
+public sealed class BlackboardHolder
+{
+    public WritingBlackboard Blackboard { get; set; }
+}
+```
+
+生命周期：Orchestrator 在构建黑板后设置 `BlackboardHolder.Blackboard`，
+工具在 `ToolCapable.ExecuteAsync` 的 `CreateAsyncScope()` 中获取同一 Scoped 实例。
+
+### 4.3 创作域工具定义
+
+每个 Agent 注册自己需要的专用工具，工具内部通过 `BlackboardHolder` 读取黑板分区。
+
+#### WriteAgent 工具集
+
+| 工具名 | 参数 | 数据源 | 说明 |
+|--------|------|--------|------|
+| `get_world_setting` | `section?` (world_rules/geography/factions/history) | `WorldSetting` | 按分区查询世界观 |
+| `get_outline` | `volume_seq?, chapter_seq?` | `Outline` | 查大纲结构，精确到某卷某章 |
+| `get_character` | `name` | `Characters` | 查特定角色的完整信息 |
+| `search_characters` | `query, limit?` | `Characters` | 模糊搜索角色（按标签/身份） |
+| `get_recent_chapters` | `count` | `RecentChapters` | 获取最近 N 章内容 |
+| `get_chapter` | `chapter_id` | `RecentChapters` | 获取特定章节 |
+
+#### WorldAgent 工具集
+
+| 工具名 | 参数 | 数据源 | 说明 |
+|--------|------|--------|------|
+| `get_existing_settings` | `section?` | `WorldSetting` | 查已有世界观分区 |
+| `get_characters_in_world` | 无 | `Characters` | 获取所有角色概要（世界观关联） |
+| `get_timeline_events` | `era?` | `Meta` | 查历史编年事件 |
+
+#### OutlineAgent 工具集
+
+| 工具名 | 参数 | 数据源 | 说明 |
+|--------|------|--------|------|
+| `get_world_setting` | 同上 | `WorldSetting` | 大纲需对齐世界观 |
+| `get_characters` | 无 | `Characters` | 全量角色（大纲需全局视角） |
+| `get_existing_outline` | 无 | `Outline` | 当前大纲结构 |
+
+#### CreationAgent 工具集
+
+| 工具名 | 参数 | 数据源 | 说明 |
+|--------|------|--------|------|
+| `get_character` | `name` | `Characters` | 查已有角色避免重复 |
+| `get_world_setting` | `section?` | `WorldSetting` | 创意需符合世界规则 |
+| `get_relationships` | `character_name` | `Characters` | 查角色人际关系 |
+
+#### AuditAgent 工具集
+
+| 工具名 | 参数 | 数据源 | 说明 |
+|--------|------|--------|------|
+| `get_chapter` | `chapter_id` | `RecentChapters` | 获取待审章节 |
+| `get_character` | `name` | `Characters` | 校验角色一致性 |
+| `get_world_setting` | `section?` | `WorldSetting` | 校验世界规则 |
+| `get_outline` | 无 | `Outline` | 校验情节对齐 |
+| `get_foreshadowing` | `status?` | 伏笔表 | 查伏笔回收状态 |
+
+### 4.4 工具实现示例
+
+以 `get_character` 为例，展示创作域工具的标准实现模式：
+
+```csharp
+public sealed class GetCharacterTool : IToolExecutor
+{
+    private readonly BlackboardHolder _holder;
+
+    public GetCharacterTool(BlackboardHolder holder) => _holder = holder;
+
+    public static readonly ToolDefinition Definition = new()
+    {
+        Type = "function",
+        Function = new FunctionDefinition
+        {
+            Name = "get_character",
+            Description = "根据角色名称查询角色的完整信息，包括性格、背景、说话风格、成长弧线等",
+            Parameters = new FunctionParameters
+            {
+                Type = "object",
+                Properties = new Dictionary<string, ParameterSchema>
+                {
+                    ["name"] = new()
+                    {
+                        Type = "string",
+                        Description = "角色名称"
+                    }
+                },
+                Required = ["name"]
+            }
+        }
+    };
+
+    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
+    {
+        var board = _holder.Blackboard;
+        if (board?.Characters == null || board.Characters.Count == 0)
+            return Task.FromResult(new ToolResult
+            {
+                Success = false,
+                Content = "当前作品暂无角色信息",
+                ErrorCode = "no_characters"
+            });
+
+        string name = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(arguments);
+            if (doc.RootElement.TryGetProperty("name", out var prop))
+                name = prop.GetString();
+        }
+        catch { /* 忽略解析错误 */ }
+
+        if (string.IsNullOrEmpty(name))
+            return Task.FromResult(new ToolResult
+            {
+                Success = false,
+                Content = "缺少 name 参数",
+                ErrorCode = "missing_parameter"
+            });
+
+        // 精确匹配 → 模糊匹配
+        var character = board.Characters.FirstOrDefault(c =>
+            c.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+            ?? board.Characters.FirstOrDefault(c =>
+                c.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+
+        if (character == null)
+            return Task.FromResult(new ToolResult
+            {
+                Success = false,
+                Content = $"未找到角色「{name}」，当前作品角色：{string.Join("、", board.Characters.Select(c => c.Name))}",
+                ErrorCode = "character_not_found"
+            });
+
+        return Task.FromResult(new ToolResult
+        {
+            Success = true,
+            Content = JsonSerializer.Serialize(new
+            {
+                character.Name,
+                character.CoreSeed,
+                character.Background,
+                character.Personality,
+                character.Traits,
+                character.Voice,
+                character.Arc,
+                character.Relationships,
+                character.Fears,
+                character.Desires
+            })
+        });
+    }
+}
+```
+
+### 4.5 Prompt 调整原则
+
+从「全量注入」转向「引导查询」的 Prompt 编写规范：
+
+1. **角色与规范独立于上下文** — SystemPrompt 只包含角色定义、写作规范、输出要求
+2. **信息获取方式显式声明** — 明确列出可用工具及其适用场景，引导 LLM 按需查询
+3. **决策原则替代上下文注入** — 用「先查后写、按需查询、一次查准」替代直接塞入数据
+4. **禁止在 Prompt 中引用黑板字段** — 所有上下文必须通过工具调用获取
+
+---
+
+## 五、创作编排器（CreationOrchestrator）
 
 Orchestrator 是总控，不负责具体写作，只控制流程。
 
-### 4.1 核心实现
+### 5.1 核心实现
 
 ```csharp
 public sealed class CreationOrchestrator
@@ -292,18 +481,18 @@ public sealed class CreationOrchestrator
     private readonly CreationRouter _router;
     private readonly IEnumerable<INovelAgent> _agents;
     private readonly WritingBlackboardBuilder _blackboardBuilder;
-    private readonly ISSEForwardProvider _sse;
+    private readonly BlackboardHolder _blackboardHolder; // Scoped：桥接黑板到工具
 
     public CreationOrchestrator(
         CreationRouter router,
         IEnumerable<INovelAgent> agents,
         WritingBlackboardBuilder blackboardBuilder,
-        ISSEForwardProvider sse)
+        BlackboardHolder blackboardHolder)
     {
         _router = router;
         _agents = agents;
         _blackboardBuilder = blackboardBuilder;
-        _sse = sse;
+        _blackboardHolder = blackboardHolder;
     }
 
     /// <summary>
@@ -340,9 +529,12 @@ public sealed class CreationOrchestrator
 
         var blackboard = await _blackboardBuilder.BuildAsync(workId, Guid.NewGuid().ToString());
 
-        // 4. 执行目标 Agent（流式）
+        // 4. 将黑板注入 Scoped BlackboardHolder，工具执行时可通过 DI 访问
+        _blackboardHolder.Blackboard = blackboard;
+
+        // 5. 执行目标 Agent（流式）
         var agent = _agents.First(a => a.Name == route.AgentName);
-        var prompt = agent.BuildPrompt(blackboard);
+        var prompt = agent.BuildPrompt(); // 不再注入黑板，Prompt 独立于上下文
 
         await foreach (var chunk in agent.ExecuteStreamAsync(
             new AgentRequest
@@ -356,7 +548,7 @@ public sealed class CreationOrchestrator
             yield return chunk;
         }
 
-        // 5. 通知前端完成
+        // 6. 通知前端完成
         yield return new AgentStreamChunk
         {
             Type = "done",
@@ -366,11 +558,12 @@ public sealed class CreationOrchestrator
 }
 ```
 
-### 4.2 Agent 接口
+### 5.2 Agent 接口
 
 ```csharp
 /// <summary>
-/// 所有小说创作 Agent 的统一接口
+/// 所有小说创作 Agent 的统一接口。
+/// 渐进式披露模式：Prompt 独立于黑板上下文，Agent 通过工具按需查询。
 /// </summary>
 public interface INovelAgent
 {
@@ -378,9 +571,14 @@ public interface INovelAgent
     string DisplayName { get; }              // 写作Agent | 世界观Agent | ...
 
     /// <summary>
-    /// 基于黑板上下文构建 System Prompt
+    /// 构建 System Prompt（不含黑板上下文，只含角色定义 + 写作规范 + 工具引导）
     /// </summary>
-    string BuildPrompt(WritingBlackboard blackboard);
+    string BuildPrompt();
+
+    /// <summary>
+    /// 注册该 Agent 专属的创作域工具到 IToolCapable
+    /// </summary>
+    void RegisterTools(IToolCapable toolCapable);
 
     /// <summary>
     /// 流式执行（内部使用 ReActAgent）
@@ -391,20 +589,21 @@ public interface INovelAgent
 }
 ```
 
-### 4.3 WriteAgent 实现示例
+### 5.3 WriteAgent 实现示例
 
 ```csharp
 public sealed class WriteAgent : INovelAgent
 {
     private readonly IReActAgent _react;
     private readonly IOpenAIContext _llmContext;
+    private bool _toolsInitialized;
 
     public string Name => "write";
     public string DisplayName => "写作Agent";
 
-    public string BuildPrompt(WritingBlackboard blackboard)
+    public string BuildPrompt()
     {
-        return $"""
+        return """
 # 角色
 你是资深小说写手，擅长各种风格的文字创作。
 
@@ -415,34 +614,43 @@ public sealed class WriteAgent : INovelAgent
 - 重写不满意片段
 
 # 写作规范
-- 遵循已建立的世界观设定
-- 遵循已有大纲路径
-- 保持人物性格一致性
-- 注意伏笔和前后呼应
+- 遵循已建立的世界观设定——如不确定细节，调用 get_world_setting 查询
+- 遵循已有大纲路径——如不确定后续走向，调用 get_outline 查看
+- 保持人物性格一致性——写涉及某角色时，先调用 get_character 确认其性格和说话风格
+- 注意伏笔和前后呼应——参考前文时调用 get_recent_chapters
 
-# 当前作品上下文
+# 信息获取方式
+你拥有一组查询工具，可在写作过程中按需调用：
+- 需要世界观规则、地理、势力信息 → 调用 get_world_setting
+- 需要大纲结构、章节规划 → 调用 get_outline
+- 需要了解某个角色的性格、背景、说话风格 → 调用 get_character
+- 需要模糊搜索某类角色 → 调用 search_characters
+- 需要回顾前文内容 → 调用 get_recent_chapters
+- 需要查看特定章节 → 调用 get_chapter
 
-## 世界观设定
-{blackboard.WorldSetting?.WorldRules ?? "（暂无）"}
-
-## 大纲结构
-{FormatOutline(blackboard.Outline)}
-
-## 人物信息
-{FormatCharacters(blackboard.Characters)}
-
-## 已写内容摘要
-{blackboard.RecentChapters?.LastOrDefault()?.Summary ?? "（暂无）"}
-
-## 当前章节前文
-{blackboard.RecentChapters?.LastOrDefault()?.Content ?? "（暂无）"}
+# 决策原则
+1. 先查后写 — 涉及具体设定、角色时，先调用工具确认再动笔
+2. 按需查询 — 不需要的信息不要主动查询，节省上下文空间
+3. 一次查准 — 尽量精确传参，避免多次查询同类信息
 
 # 输出要求
-- 输出完整的章节内容
+- 直接输出完整的章节内容，无需输出思考过程
 - 每段尽量不超过 300 字
 - 注意段落间的过渡自然
-- 如需要更多上下文，通过工具查询
 """;
+    }
+
+    public void RegisterTools(IToolCapable toolCapable)
+    {
+        if (_toolsInitialized) return;
+        _toolsInitialized = true;
+
+        toolCapable.RegisterTool(GetWorldSettingTool.Definition);
+        toolCapable.RegisterTool(GetOutlineTool.Definition);
+        toolCapable.RegisterTool(GetCharacterTool.Definition);
+        toolCapable.RegisterTool(SearchCharactersTool.Definition);
+        toolCapable.RegisterTool(GetRecentChaptersTool.Definition);
+        toolCapable.RegisterTool(GetChapterTool.Definition);
     }
 
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteStreamAsync(
@@ -458,80 +666,90 @@ public sealed class WriteAgent : INovelAgent
             yield return chunk;
         }
     }
-
-    private static string FormatOutline(OutlineSection outline)
-    {
-        if (outline?.Volumes == null) return "（暂无大纲）";
-        return string.Join("\n", outline.Volumes.Select(v =>
-            $"- 卷 {v.Sequence}: {v.Title} ({v.Chapters.Count} 章)"));
-    }
-
-    private static string FormatCharacters(List<CharacterSection> characters)
-    {
-        if (characters?.Any() != true) return "（暂无人物）";
-        return string.Join("\n", characters.Select(c =>
-            $"- {c.Name}: {c.Personality ?? "待补充"}"));
-    }
 }
 ```
 
-### 4.4 AuditAgent 实现示例
+### 5.4 AuditAgent 实现示例
 
 ```csharp
 public sealed class AuditAgent : INovelAgent
 {
+    private readonly IReActAgent _react;
+    private readonly IOpenAIContext _llmContext;
+    private bool _toolsInitialized;
+
     public string Name => "audit";
     public string DisplayName => "审核Agent";
 
-    public string BuildPrompt(WritingBlackboard blackboard)
+    public string BuildPrompt()
     {
-        return $"""
+        return """
 # 角色
 你是严格的审稿编辑，擅长发现故事中的逻辑漏洞和一致性问题。
 
 # 你的检查清单
-1. □ 人物性格是否前后一致？
-2. □ 世界观规则是否被违反？
-3. □ 伏笔是否有回收？
-4. □ 时间线是否有矛盾？
-5. □ 章节之间的衔接是否流畅？
-6. □ 叙事视角是否统一？
-7. □ 节奏是否有问题？
+1. □ 人物性格是否前后一致？→ 调用 get_character 核实
+2. □ 世界观规则是否被违反？→ 调用 get_world_setting 核实
+3. □ 伏笔是否有回收？→ 调用 get_foreshadowing 核实
+4. □ 时间线是否有矛盾？→ 调用 get_outline 比对
+5. □ 章节之间的衔接是否流畅？→ 调用 get_recent_chapters 对比
+6. □ 叙事视角是否统一？→ 检查全文
+7. □ 节奏是否有问题？→ 结合大纲判断
 
-# 检查对象
-## 待检查章节
-{blackboard.RecentChapters?.LastOrDefault()?.Content ?? "（暂无内容）"}
+# 信息获取方式
+你拥有一组查询工具，可在审核过程中按需调用：
+- 获取待审章节内容 → 调用 get_chapter
+- 核实角色设定 → 调用 get_character
+- 核实世界规则 → 调用 get_world_setting
+- 比对大纲走向 → 调用 get_outline
+- 查伏笔回收状态 → 调用 get_foreshadowing
 
-## 已有上下文
-{FormatContext(blackboard)}
+# 决策原则
+1. 先查后判 — 发现疑似问题时，先调用工具确认再下结论
+2. 按需查询 — 只查询与当前检查点相关的信息
+3. 证据充分 — 每个问题必须引用具体文本作为证据
 
 # 输出要求
 - 先给出总体评价（通过/需修改/大改）
 - 列出每个问题的严重程度（高/中/低）
-- 给出具体修改建议
+- 给出具体修改建议，引用原文
 - 如无问题，明确说"通过"
 """;
     }
 
-    private static string FormatContext(WritingBlackboard board)
+    public void RegisterTools(IToolCapable toolCapable)
     {
-        var parts = new List<string>();
-        if (board.Characters?.Any() == true)
-            parts.Add($"人物数: {board.Characters.Count}");
-        if (board.WorldSetting != null)
-            parts.Add("世界观: 已设定");
-        if (board.Outline != null)
-            parts.Add("大纲: 已规划");
-        return string.Join(" | ", parts);
+        if (_toolsInitialized) return;
+        _toolsInitialized = true;
+
+        toolCapable.RegisterTool(GetChapterTool.Definition);
+        toolCapable.RegisterTool(GetCharacterTool.Definition);
+        toolCapable.RegisterTool(GetWorldSettingTool.Definition);
+        toolCapable.RegisterTool(GetOutlineTool.Definition);
+        toolCapable.RegisterTool(GetForeshadowingTool.Definition);
+    }
+
+    public async IAsyncEnumerable<AgentStreamChunk> ExecuteStreamAsync(
+        AgentRequest request,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        await _llmContext.ResolveAsync(ct);
+
+        request.Model = _llmContext.Model;
+
+        await foreach (var chunk in _react.ExecuteStreamAsync(request, ct))
+        {
+            yield return chunk;
+        }
     }
 }
 ```
 
 ---
 
-## 五、流式协议设计
+## 六、流式协议设计
 
-### 5.1 Chunk 协议
+### 6.1 Chunk 协议
 
 ```csharp
 public sealed class AgentStreamChunk
@@ -545,7 +763,7 @@ public sealed class AgentStreamChunk
 }
 ```
 
-### 5.2 完整的流式交互示例
+### 6.2 完整的流式交互示例
 
 ```
 用户触发: "帮我写第一章，迷雾森林"
@@ -567,7 +785,7 @@ public sealed class AgentStreamChunk
   收到 done → 启用「保存」「继续改」「放弃」按钮
 ```
 
-### 5.3 前端渲染策略
+### 6.3 前端渲染策略
 
 ```
 接收 SSE 流
@@ -597,9 +815,9 @@ public sealed class AgentStreamChunk
 
 ---
 
-## 六、世界自生长机制
+## 七、世界自生长机制
 
-### 6.1 自生长循环
+### 7.1 自生长循环
 
 ```
 1. WorldAgent 基于当前设定，推导 1-2 个合理的扩展点
@@ -608,7 +826,7 @@ public sealed class AgentStreamChunk
 4. 重复步骤 1，继续下一轮生长
 ```
 
-### 6.2 WorldAgent 自生长 Prompt
+### 7.2 WorldAgent 自生长 Prompt
 
 ```
 # 世界自生长模式
@@ -640,9 +858,9 @@ public sealed class AgentStreamChunk
 
 ---
 
-## 七、人物自生长机制
+## 八、人物自生长机制
 
-### 7.1 生长维度
+### 8.1 生长维度
 
 ```
                       ┌──────────┐
@@ -667,7 +885,7 @@ public sealed class AgentStreamChunk
                         不断生长
 ```
 
-### 7.2 CreationAgent 人物生长 Prompt
+### 8.2 CreationAgent 人物生长 Prompt
 
 ```
 # 人物自生长模式
@@ -692,7 +910,7 @@ public sealed class AgentStreamChunk
 - 提供「写作提示」：这个新维度在写作中怎么体现
 ```
 
-### 7.3 生长触发方式
+### 8.3 生长触发方式
 
 ```csharp
 public enum GrowthTrigger
@@ -703,7 +921,7 @@ public enum GrowthTrigger
 }
 ```
 
-### 7.4 人物生长编排
+### 8.4 人物生长编排
 
 ```csharp
 public sealed class CharacterGrowthOrchestrator
@@ -740,11 +958,11 @@ public sealed class CharacterGrowthOrchestrator
 
 ---
 
-## 八、数据库保存策略
+## 九、数据库保存策略
 
 核心原则：**AI 只负责生成内容预览，保存由用户确认后触发。**
 
-### 8.1 数据流
+### 9.1 数据流
 
 ```
 Agent 流式输出 → 前端编辑器展示（临时，不落库）
@@ -763,7 +981,7 @@ Agent 流式输出 → 前端编辑器展示（临时，不落库）
                        → 前端清除，无事发生
 ```
 
-### 8.2 保存 API（复用现有 Application）
+### 9.2 保存 API（复用现有 Application）
 
 ```csharp
 // 前端保存时调用——复用 ChapterApplication
@@ -779,7 +997,7 @@ public async Task<ApiResult> SaveChapterContent(
 }
 ```
 
-### 8.3 Function Calling 的合理使用场景
+### 9.3 Function Calling 的合理使用场景
 
 | 场景 | 方式 | 原因 |
 |------|------|------|
@@ -789,7 +1007,7 @@ public async Task<ApiResult> SaveChapterContent(
 
 ---
 
-## 九、项目文件对照
+## 十、项目文件对照
 
 | 现有文件 | 职责 | 状态 |
 |---------|------|------|
@@ -816,11 +1034,23 @@ public async Task<ApiResult> SaveChapterContent(
 | `Orchestrator/CreationRouter.cs` | 路由决策 |
 | `Orchestrator/WritingBlackboard.cs` | 黑板数据结构 |
 | `Orchestrator/WritingBlackboardBuilder.cs` | 黑板构建器 |
-| `Orchestrator/INovelAgent.cs` | 统一 Agent 接口 |
+| `Orchestrator/BlackboardHolder.cs` | 黑板桥接器（Scoped） |
+| `Contract/INovelAgent.cs` | 统一 Agent 接口（含 BuildPrompt + RegisterTools） |
+| `Tools/GetWorldSettingTool.cs` | 世界观查询工具 |
+| `Tools/GetCharacterTool.cs` | 角色查询工具 |
+| `Tools/SearchCharactersTool.cs` | 角色模糊搜索工具 |
+| `Tools/GetOutlineTool.cs` | 大纲查询工具 |
+| `Tools/GetRecentChaptersTool.cs` | 最近章节查询工具 |
+| `Tools/GetChapterTool.cs` | 特定章节查询工具 |
+| `Tools/GetForeshadowingTool.cs` | 伏笔查询工具 |
+| `Tools/GetExistingSettingsTool.cs` | 已有世界观查询工具 |
+| `Tools/GetCharactersInWorldTool.cs` | 世界观关联角色查询工具 |
+| `Tools/GetTimelineEventsTool.cs` | 时间线事件查询工具 |
+| `Tools/GetRelationshipsTool.cs` | 角色人际关系查询工具 |
 
 ---
 
-## 十、整体流程回顾
+## 十一、整体流程回顾
 
 ```
 用户输入
@@ -837,26 +1067,34 @@ Orchestrator.ExecuteAsync()
     │     → 加载作品数据
     │     → 构建结构化上下文
     │
-    ├── 3. Agent.ExecuteStreamAsync()（流式）
-    │     → BuildPrompt(blackboard) 注入上下文
-    │     → ReActAgent 执行 LLM 对话
+    ├── 3. 注入 BlackboardHolder（非流式）
+    │     → 将黑板实例设置到 Scoped BlackboardHolder
+    │     → 工具执行时可通过 DI 访问黑板数据
+    │
+    ├── 4. Agent.ExecuteStreamAsync()（流式）
+    │     → BuildPrompt() 生成精简角色 Prompt（不含黑板上下文）
+    │     → RegisterTools() 注册该 Agent 专属创作域工具
+    │     → ReActAgent 执行 LLM 对话 + Function Calling
+    │     → Agent 按需调用工具查询黑板分区（渐进式披露）
     │     → content chunk 透传到前端
     │
-    ├── 4. Agent 完成 → 发 done chunk
+    ├── 5. Agent 完成 → 发 done chunk
     │
-    └── 5. （由前端决定）
+    └── 6. （由前端决定）
           ├── 用户点保存 → 调 API 存库
-          ├── 用户追加修改 → 回到步骤 3
+          ├── 用户追加修改 → 回到步骤 4
           └── 用户放弃 → 结束
 ```
 
 ---
 
-## 十一、关键设计原则
+## 十二、关键设计原则
 
 1. **路由不流式，Agent 才流式** — 路由判断瞬时完成，Agent 生成才需要流式
 2. **黑板是结构化的** — 不是一个大字符串，而是按领域分区的对象
-3. **存库由前端决定** — AI 只生成预览，确认后才落库
-4. **自生长而不是一次性生成** — 世界、人物都是从种子逐步长出来的
-5. **Agent 职责单一** — 每个 Agent 只负责一个创作维度，组合起来形成完整系统
-6. **复用底层能力** — 所有 Agent 共用 ReActAgent + OpenAIContext + SSEForwardProvider
+3. **渐进式披露，禁止全量注入** — 禁止将黑板全量拼入 SystemPrompt，Agent 通过 Function Calling 按需查询黑板分区，先查后写、按需查询、一次查准
+4. **存库由前端决定** — AI 只生成预览，确认后才落库
+5. **自生长而不是一次性生成** — 世界、人物都是从种子逐步长出来的
+6. **Agent 职责单一** — 每个 Agent 只负责一个创作维度，组合起来形成完整系统
+7. **复用底层能力** — 所有 Agent 共用 ReActAgent + OpenAIContext + ToolCapable
+8. **工具按 Agent 注册** — 每个 Agent 注册自己专属的创作域工具，通过 BlackboardHolder 访问黑板数据

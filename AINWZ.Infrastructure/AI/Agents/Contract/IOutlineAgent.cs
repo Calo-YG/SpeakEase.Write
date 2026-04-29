@@ -1,9 +1,8 @@
-﻿namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract
+using SpeakEase.Write.Infrastructure.AI.Contract;
+
+namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+
+public interface IOutlineAgent : INovelAgent
 {
-    /// <summary>
-    /// 世界观Agent
-    /// </summary>
-    public interface IOutlineAgent
-    {
-    }
+    string OutlineDomain { get; }
 }

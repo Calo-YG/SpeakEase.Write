@@ -1,6 +1,8 @@
-﻿namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract
+using SpeakEase.Write.Infrastructure.AI.Contract;
+
+namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+
+public interface IWorldAgent : INovelAgent
 {
-    internal interface IWorldAgent
-    {
-    }
+    string WorldDomain { get; }
 }

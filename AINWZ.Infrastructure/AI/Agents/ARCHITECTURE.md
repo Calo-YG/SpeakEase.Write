@@ -564,6 +564,10 @@ public sealed class CreationOrchestrator
 /// <summary>
 /// 所有小说创作 Agent 的统一接口。
 /// 渐进式披露模式：Prompt 独立于黑板上下文，Agent 通过工具按需查询。
+///
+/// 注意：INovelAgent 不是 IReActAgent 的子类型。
+/// 各 Novel Agent 是独立的上层编排单元，内部组合 ReActAgent 作为 LLM 对话引擎来使用。
+/// 每个 Agent 自己管理：Prompt 构建、工具注册、执行流程。
 /// </summary>
 public interface INovelAgent
 {
@@ -581,7 +585,8 @@ public interface INovelAgent
     void RegisterTools(IToolCapable toolCapable);
 
     /// <summary>
-    /// 流式执行（内部使用 ReActAgent）
+    /// 流式执行。
+    /// 内部组合 ReActAgent 作为 LLM 对话引擎，但执行流程完全由本 Agent 控制。
     /// </summary>
     IAsyncEnumerable<AgentStreamChunk> ExecuteStreamAsync(
         AgentRequest request,
@@ -594,6 +599,7 @@ public interface INovelAgent
 ```csharp
 public sealed class WriteAgent : INovelAgent
 {
+    // 组合 ReActAgent 作为 LLM 对话引擎，而非继承
     private readonly IReActAgent _react;
     private readonly IOpenAIContext _llmContext;
     private bool _toolsInitialized;
@@ -1096,5 +1102,6 @@ Orchestrator.ExecuteAsync()
 4. **存库由前端决定** — AI 只生成预览，确认后才落库
 5. **自生长而不是一次性生成** — 世界、人物都是从种子逐步长出来的
 6. **Agent 职责单一** — 每个 Agent 只负责一个创作维度，组合起来形成完整系统
-7. **复用底层能力** — 所有 Agent 共用 ReActAgent + OpenAIContext + ToolCapable
-8. **工具按 Agent 注册** — 每个 Agent 注册自己专属的创作域工具，通过 BlackboardHolder 访问黑板数据
+7. **组合 ReActAgent，不继承** — Novel Agent 不是 IReActAgent 的子类型；Novel Agent 是上层编排单元，组合 ReActAgent 作为 LLM 对话引擎来使用，自己管理 Prompt、工具和执行流程
+8. **复用底层能力** — 所有 Agent 共用 ReActAgent + OpenAIContext + ToolCapable
+9. **工具按 Agent 注册** — 每个 Agent 注册自己专属的创作域工具，通过 BlackboardHolder 访问黑板数据

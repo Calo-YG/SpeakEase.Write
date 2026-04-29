@@ -1,10 +1,8 @@
-﻿namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract
-{
-    /// <summary>
-    /// 写作agent
-    /// </summary>
-    public interface IWriteAgent
-    {
+using SpeakEase.Write.Infrastructure.AI.Contract;
 
-    }
+namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+
+public interface IWriteAgent : INovelAgent
+{
+    string WritingStyle { get; }
 }

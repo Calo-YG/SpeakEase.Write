@@ -1,3 +1,5 @@
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Scalar.AspNetCore;
 using Serilog;
 using Serilog.Events;
@@ -6,12 +8,16 @@ using SpeakEase.AI.Lib.Contract;
 using SpeakEase.Write.Application.Applications;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.Auth;
+using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Dashboard;
 using SpeakEase.Write.Application.Contracts.References;
+using SpeakEase.Write.Application.Contracts.Snapshot;
 using SpeakEase.Write.Application.Contracts.Story;
 using SpeakEase.Write.Application.Contracts.Tags;
 using SpeakEase.Write.Application.Contracts.Users;
+using SpeakEase.Write.Application.Contracts.Version;
 using SpeakEase.Write.Application.Contracts.Works;
+using SpeakEase.Write.HealthChecks;
 using SpeakEase.Write.Infrastructure.AI;
 using SpeakEase.Write.Infrastructure.Authorization;
 using SpeakEase.Write.Infrastructure.JsonConverters;
@@ -24,7 +30,7 @@ using SpeakEase.Write.MapRoute.References;
 using SpeakEase.Write.MapRoute.Tags;
 using SpeakEase.Write.MapRoute.Users;
 using SpeakEase.Write.MapRoute.Works;
-
+using SpeakEase.Write.Middleware;
 
 var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
 
@@ -34,8 +40,7 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
     .MinimumLevel.Override("System", LogEventLevel.Warning)
     .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "SpeakEase.Blog")
-    // 全量日志（Debug 级别及以上）
+    .Enrich.WithProperty("Application", "SpeakEase.Write")
     .WriteTo.Logger(lc => lc
         .Filter.ByIncludingOnly(e => e.Level == LogEventLevel.Debug)
         .WriteTo.File(
@@ -44,7 +49,6 @@ Log.Logger = new LoggerConfiguration()
             fileSizeLimitBytes: 10 * 1024 * 1024,
             rollOnFileSizeLimit: true,
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"))
-    // 信息日志
     .WriteTo.Logger(lc => lc
         .Filter.ByIncludingOnly(e => e.Level == LogEventLevel.Information)
         .WriteTo.File(
@@ -53,7 +57,6 @@ Log.Logger = new LoggerConfiguration()
             fileSizeLimitBytes: 10 * 1024 * 1024,
             rollOnFileSizeLimit: true,
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"))
-    // 警告日志
     .WriteTo.Logger(lc => lc
         .Filter.ByIncludingOnly(e => e.Level == LogEventLevel.Warning)
         .WriteTo.File(
@@ -62,7 +65,6 @@ Log.Logger = new LoggerConfiguration()
             fileSizeLimitBytes: 10 * 1024 * 1024,
             rollOnFileSizeLimit: true,
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"))
-    // 错误日志
     .WriteTo.Logger(lc => lc
         .Filter.ByIncludingOnly(e => e.Level == LogEventLevel.Error || e.Level == LogEventLevel.Fatal)
         .WriteTo.File(
@@ -71,7 +73,6 @@ Log.Logger = new LoggerConfiguration()
             fileSizeLimitBytes: 10 * 1024 * 1024,
             rollOnFileSizeLimit: true,
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj}{NewLine}{Exception}"))
-    // 控制台输出
     .WriteTo.Console(
         outputTemplate: "{Timestamp:HH:mm:ss} [{Level:u3}] {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
@@ -84,10 +85,37 @@ try
 
     builder.Host.UseSerilog();
 
+    // ── 基础服务 ──
     builder.Services.AddHttpClient();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddAuthorization();
     builder.Services.AddOpenApi();
+
+    // ── CORS ──
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            policy.WithOrigins(
+                    builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? new[] { "http://localhost:5173" })
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials()
+                .SetPreflightMaxAge(TimeSpan.FromHours(24));
+        });
+    });
+
+    // ── 响应压缩 ──
+    builder.Services.AddResponseCompression(options =>
+    {
+        options.EnableForHttps = true;
+    });
+
+    // ── 健康检查 ──
+    builder.Services.AddHealthChecks()
+        .AddCheck<DbContextHealthCheck>("database", tags: new[] { "ready" });
+
+    // ── 持久化 + 缓存 + 认证 ──
     builder.Services.AddInfrastructurePersistence(builder.Configuration);
     builder.Services.ConfigureHttpJsonOptions(op =>
     {
@@ -98,7 +126,9 @@ try
     });
     builder.Services.AddMutilCache(builder.Configuration);
     builder.Services.AddJwt(builder.Configuration);
-    builder.Services.AddScoped<ILLMCallLogApplication,LLMCallLogApplication>();
+
+    // ── Application 层 ──
+    builder.Services.AddScoped<ILLMCallLogApplication, LLMCallLogApplication>();
     builder.Services.AddScoped<IAuthApplication, AuthApplication>();
     builder.Services.AddScoped<IUserApplication, UserApplication>();
     builder.Services.AddScoped<IModelApplication, ModelApplication>();
@@ -107,24 +137,47 @@ try
     builder.Services.AddScoped<IChapterApplication, ChapterApplication>();
     builder.Services.AddScoped<ICharacterApplication, CharacterApplication>();
     builder.Services.AddScoped<IOutlineApplication, OutlineApplication>();
+    builder.Services.AddScoped<IVolumeApplication, VolumeApplication>();
+    builder.Services.AddScoped<IForeshadowingApplication, ForeshadowingApplication>();
+    builder.Services.AddScoped<ITimelineApplication, TimelineApplication>();
+    builder.Services.AddScoped<IWorldApplication, WorldApplication>();
+    builder.Services.AddScoped<ICharacterRelationshipApplication, CharacterRelationshipApplication>();
+    builder.Services.AddScoped<IInspirationApplication, InspirationApplication>();
     builder.Services.AddScoped<IReferenceApplication, ReferenceApplication>();
     builder.Services.AddScoped<ITagApplication, TagApplication>();
     builder.Services.AddScoped<IDashboardApplication, DashboardApplication>();
+    builder.Services.AddScoped<IAgentApplication, AgentApplication>();
+    builder.Services.AddScoped<ICreationSessionManager, CreationSessionManager>();
+    builder.Services.AddScoped<IChapterVersionManager, ChapterVersionManager>();
+    builder.Services.AddScoped<ISnapshotService, SnapshotService>();
+    builder.Services.AddScoped<IAdoptionManager, AdoptionManager>();
+    builder.Services.AddScoped<IBlackboardUpdater, BlackboardUpdater>();
+    builder.Services.AddScoped<IAutoSaveApplication, AutoSaveApplication>();
 
-    // AI Lib DI: IChatCompatible / IToolCapable / ISkilCapable / IOpenAIContext + 内置工具 KeyedService
+    // ── AI Lib + Novel AI ──
     builder.Services.AddChatLLM();
-
-    // 覆盖 IOpenAIContext 默认注册，改为从数据库 + 多级缓存动态解析
+    builder.Services.AddNovelAI();
     builder.Services.AddScoped<IOpenAIContext, OpenAIContext>();
 
     var app = builder.Build();
 
+    // ── 中间件管道 ──
 
-    if (app.Environment.IsDevelopment())
+    // 全局异常处理（最外层，兜底所有未处理异常）
+    app.UseMiddleware<GlobalExceptionMiddleware>();
+
+    // 慢请求告警
+    app.UseMiddleware<RequestTimingMiddleware>();
+
+    if (!app.Environment.IsDevelopment())
     {
-        app.MapScalarApiReference(); // scalar/v1
-        app.MapOpenApi();
+        app.UseHttpsRedirection();
     }
+
+    app.UseCors();
+
+    app.UseResponseCompression();
+    app.UseMiddleware<RateLimitMiddleware>();
 
     // 请求日志（Serilog）
     app.UseSerilogRequestLogging(options =>
@@ -132,6 +185,24 @@ try
         options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
     });
 
+    if (app.Environment.IsDevelopment())
+    {
+        app.MapScalarApiReference();
+        app.MapOpenApi();
+    }
+
+    // ── 健康检查 ──
+    app.MapHealthChecks("/health/live", new HealthCheckOptions
+    {
+        Predicate = _ => false
+    });
+
+    app.MapHealthChecks("/health/ready", new HealthCheckOptions
+    {
+        Predicate = check => check.Tags.Contains("ready")
+    });
+
+    // ── 路由端点 ──
     app.UseAuthentication();
     app.UseAuthorization();
 
@@ -142,14 +213,25 @@ try
     app.MapModelEndPoint();
     app.MapWorkEndPoint();
     app.MapStoryEndPoint();
+    app.MapVolumeEndPoint();
+    app.MapForeshadowingEndPoint();
+    app.MapTimelineEndPoint();
+    app.MapWorldEndPoint();
+    app.MapRelationshipEndPoint();
+    app.MapInspirationEndPoint();
     app.MapReferenceEndPoint();
     app.MapTagEndPoint();
     app.MapDashboardEndPoint();
+    app.MapAgentEndPoint();
+    app.MapSessionEndPoint();
+    app.MapSnapshotEndPoint();
+    app.MapAdoptionEndPoint();
+    app.MapVersionEndPoint();
+    app.MapAutoSaveEndPoint();
 
     Log.Information("SpeakEase.Write 已启动");
 
     await app.RunAsync();
-
 }
 catch (Exception ex)
 {
@@ -159,5 +241,3 @@ finally
 {
     Log.CloseAndFlush();
 }
-
-

@@ -44,6 +44,7 @@ public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : 
     public DbSet<ChapterAnalysisResultEntity> ChapterAnalysisResults => Set<ChapterAnalysisResultEntity>();
     public DbSet<LLMCallLogEntity> LlmCallLogs => Set<LLMCallLogEntity>();
     public DbSet<PromptTemplateEntity> PromptTemplates => Set<PromptTemplateEntity>();
+    public DbSet<AICreationSessionEntity> AICreationSessions => Set<AICreationSessionEntity>();
     public DbSet<MemorySnapshotEntity> MemorySnapshots => Set<MemorySnapshotEntity>();
     public DbSet<ContextAssemblyLogEntity> ContextAssemblyLogs => Set<ContextAssemblyLogEntity>();
     public DbSet<ReferenceWorkEntity> ReferenceWorks => Set<ReferenceWorkEntity>();

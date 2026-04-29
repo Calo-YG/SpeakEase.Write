@@ -278,7 +278,7 @@ namespace SpeakEase.Write.Application.Applications
         
                 using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 var parsed = await JsonSerializer.DeserializeAsync<OpenAiModelsResponse>(stream,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }, cancellationToken);
+                    JsonHelper.DefaultOptions, cancellationToken);
         
                 var models = parsed?.Data
                     ?.Select(m => m.Id)

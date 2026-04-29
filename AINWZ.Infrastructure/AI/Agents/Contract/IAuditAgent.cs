@@ -1,9 +1,8 @@
-﻿namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract
+using SpeakEase.Write.Infrastructure.AI.Contract;
+
+namespace SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+
+public interface IAuditAgent : INovelAgent
 {
-    /// <summary>
-    /// 审核Agent
-    /// </summary>
-    public interface IAuditAgent
-    {
-    }
+    string AuditScope { get; }
 }

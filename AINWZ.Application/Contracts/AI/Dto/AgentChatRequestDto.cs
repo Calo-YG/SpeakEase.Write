@@ -6,6 +6,11 @@ namespace SpeakEase.Write.Application.Contracts.AI.Dto;
 public sealed class AgentChatRequestDto
 {
     /// <summary>
+    /// 所属作品标识（创作 Agent 必填）
+    /// </summary>
+    public string WorkId { get; set; }
+
+    /// <summary>
     /// 对话消息列表（前端格式：role + content）
     /// </summary>
     public List<AgentChatMessage> Messages { get; set; } = new();

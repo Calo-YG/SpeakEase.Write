@@ -8,9 +8,16 @@ namespace SpeakEase.AI.Lib.Models;
 public sealed class AgentStreamChunk
 {
     /// <summary>
-    /// 片段类型：content | tool_call | tool_result | done
+    /// 片段类型：meta | content | tool_call | tool_result | done
     /// </summary>
     public string Type { get; set; }
+
+    /// <summary>
+    /// 内容类型：chapter | character | outline | setting | audit_report | plain | system
+    /// 仅在 Type=meta 时有意义，前端据此选择渲染组件
+    /// </summary>
+    public string ContentType { get; set; }
+
     public string Content { get; set; }
     public ToolCallDelta ToolCallDelta { get; set; }
     public ToolResult ToolResult { get; set; }

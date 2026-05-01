@@ -39,7 +39,7 @@ public sealed class CreationOrchestrator
         List<ChatMessage> conversationHistory = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var route = _router.Decide(userMessage);
+        var route = await _router.DecideWithLLMAsync(userMessage, cancellationToken);
 
         yield return new AgentStreamChunk
         {
@@ -49,7 +49,8 @@ public sealed class CreationOrchestrator
                 stage = "routing",
                 agent = route.AgentName,
                 contentType = route.ContentType,
-                reason = route.Reason
+                reason = route.Reason,
+                pipeline = route.Pipeline.Count > 0 ? route.Pipeline : null
             })
         };
 
@@ -75,31 +76,54 @@ public sealed class CreationOrchestrator
                 enrichedMessage = $"{userMessage}\n\n{string.Join("\n\n", contextParts)}";
             }
 
-            var agent = _agents.FirstOrDefault(a => a.Name == route.AgentName);
-            if (agent == null)
-            {
-                yield return new AgentStreamChunk
-                {
-                    Type = "done",
-                    Content = JsonHelper.Serialize(new { error = $"未找到 Agent: {route.AgentName}" })
-                };
-                yield break;
-            }
-
             await _llmContext.ResolveAsync(cancellationToken);
 
-            var request = new AgentRequest
-            {
-                UserMessage = enrichedMessage,
-                SystemPrompt = agent.BuildPrompt(),
-                Model = _llmContext.Model,
-                MaxIterations = 10,
-                ConversationHistory = conversationHistory ?? new List<ChatMessage>()
-            };
+            var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
 
-            await foreach (var chunk in agent.ExecuteStreamAsync(request, cancellationToken))
+            var previousResult = "";
+            for (var i = 0; i < pipeline.Count; i++)
             {
-                yield return chunk;
+                var agentName = pipeline[i];
+                var agent = _agents.FirstOrDefault(a => a.Name == agentName);
+                if (agent == null)
+                {
+                    yield return new AgentStreamChunk
+                    {
+                        Type = "meta",
+                        Content = JsonHelper.Serialize(new { stage = "pipeline_skip", agent = agentName, error = "未找到该Agent" })
+                    };
+                    continue;
+                }
+
+                if (i > 0)
+                {
+                    yield return new AgentStreamChunk
+                    {
+                        Type = "meta",
+                        Content = JsonHelper.Serialize(new { stage = "pipeline_next", agent = agentName, step = i + 1, total = pipeline.Count })
+                    };
+                }
+
+                var chainMessage = i > 0 && !string.IsNullOrEmpty(previousResult)
+                    ? $"{enrichedMessage}\n\n[前一步Agent结果]\n{previousResult}"
+                    : enrichedMessage;
+
+                var request = new AgentRequest
+                {
+                    UserMessage = chainMessage,
+                    SystemPrompt = agent.BuildPrompt(),
+                    Model = _llmContext.Model,
+                    MaxIterations = 10,
+                    ConversationHistory = conversationHistory ?? new List<ChatMessage>()
+                };
+
+                previousResult = "";
+                await foreach (var chunk in agent.ExecuteStreamAsync(request, cancellationToken))
+                {
+                    if (chunk.Type == "content")
+                        previousResult += chunk.Content;
+                    yield return chunk;
+                }
             }
         }
         finally

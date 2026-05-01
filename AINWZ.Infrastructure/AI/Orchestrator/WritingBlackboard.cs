@@ -17,6 +17,10 @@ public sealed class WritingBlackboard
 
     public List<AuditResultSection> AuditResults { get; set; } = new();
 
+    public ForeshadowingBlackboardSection Foreshadowings { get; set; } = new();
+
+    public List<TimelineEventSection> TimelineEvents { get; set; } = new();
+
     public WritingMetaInfo Meta { get; set; } = new();
 }
 
@@ -108,4 +112,35 @@ public sealed class WritingMetaInfo
     public int TotalWordCount { get; set; }
     public string CurrentFocus { get; set; } = string.Empty;
     public string PreferredModel { get; set; } = string.Empty;
+}
+
+public sealed class ForeshadowingBlackboardSection
+{
+    public List<ForeshadowingEntry> Pending { get; set; } = new();
+    public List<ForeshadowingEntry> Hinted { get; set; } = new();
+    public int OverdueCount { get; set; }
+}
+
+public sealed class ForeshadowingEntry
+{
+    public string Id { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public int Importance { get; set; }
+    public string SetupChapterId { get; set; } = string.Empty;
+    public int SetupChapterSequence { get; set; }
+    public string PayoffChapterId { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+}
+
+public sealed class TimelineEventSection
+{
+    public string Id { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public DateTime EventTime { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string ChapterId { get; set; } = string.Empty;
+    public int ChapterSequence { get; set; }
+    public List<string> RelatedCharacterIds { get; set; } = new();
 }

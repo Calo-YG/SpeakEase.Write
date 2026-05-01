@@ -14,5 +14,6 @@ internal sealed class VolumeEntityConfiguration : IEntityTypeConfiguration<Volum
         builder.Property(x => x.OwnerId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Title).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Summary).HasColumnType("text");
+        builder.HasIndex(x => new { x.WorkId, x.Sequence });
     }
 }

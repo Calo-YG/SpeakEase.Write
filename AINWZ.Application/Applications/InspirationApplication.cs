@@ -97,7 +97,12 @@ public class InspirationApplication(
         if (entity is null)
             return new ApiResult<InspirationRecordResponse>("灵感记录不存在。", 404);
 
-        if (request.Title is not null) entity.Title = request.Title.Trim();
+        if (request.Title is not null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title))
+                return new ApiResult<InspirationRecordResponse>("灵感标题不能为空。", 400);
+            entity.Title = request.Title.Trim();
+        }
         if (request.Content is not null) entity.Content = request.Content;
         if (request.InspirationType is not null) entity.InspirationType = request.InspirationType;
         if (request.Source is not null) entity.Source = request.Source;

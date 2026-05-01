@@ -113,7 +113,12 @@ public class OutlineApplication(
         if (entity is null)
             return new ApiResult<OutlineNodeItemResponse>("大纲节点不存在。", 404);
 
-        if (request.Title is not null) entity.Title = request.Title.Trim();
+        if (request.Title is not null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title))
+                return new ApiResult<OutlineNodeItemResponse>("节点标题不能为空。", 400);
+            entity.Title = request.Title.Trim();
+        }
         if (request.Description is not null) entity.Goal = request.Description;
         if (request.ParentId is not null) entity.ParentNodeId = request.ParentId;
         if (request.Sequence.HasValue) entity.Sequence = request.Sequence.Value;

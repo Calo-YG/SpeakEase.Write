@@ -15,4 +15,6 @@ public interface ICreationSessionManager
     Task<ApiResult<CreationSessionDto>> GetActiveSessionAsync(string workId);
     Task<ApiResult<List<CreationSessionDto>>> ListSessionsAsync(string workId);
     Task<int> ExpireStaleSessionsAsync();
+    Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)>? toolResults = null);
+    Task<ApiResult<List<SessionMessageResponse>>> GetSessionMessagesAsync(string sessionId, int? limit = null);
 }

@@ -25,3 +25,14 @@ public sealed class AdoptedItem
     public string Summary { get; set; } = string.Empty;
     public DateTime AdoptedAt { get; set; }
 }
+
+public sealed class SessionMessageResponse
+{
+    public string Id { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public int TurnNumber { get; set; }
+    public string ToolName { get; set; } = string.Empty;
+    public bool? ToolSuccess { get; set; }
+    public DateTime CreatedAt { get; set; }
+}

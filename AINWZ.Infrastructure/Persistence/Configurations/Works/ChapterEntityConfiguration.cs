@@ -21,5 +21,7 @@ internal sealed class ChapterEntityConfiguration : IEntityTypeConfiguration<Chap
         builder.Property(x => x.OutlineNodeIds).ConfigureStringListProperty<ChapterEntity>();
         builder.Property(x => x.LastContentSavedAt);
         builder.Property(x => x.AuthorNotes).HasColumnType("text");
+        builder.HasIndex(x => x.VolumeId);
+        builder.HasIndex(x => new { x.WorkId, x.Sequence });
     }
 }

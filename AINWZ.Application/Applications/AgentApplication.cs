@@ -6,6 +6,7 @@ using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Snapshot;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
+using SpeakEase.Write.Infrastructure.Exceptions;
 
 namespace SpeakEase.Write.Application.Applications;
 
@@ -27,6 +28,7 @@ public sealed class AgentApplication : IAgentApplication
 
     public async Task<AgentResponse> ChatAsync(AgentChatRequestDto request, CancellationToken cancellationToken = default)
     {
+        ValidateRequest(request);
         var workId = request.WorkId ?? string.Empty;
         var (userMessage, history) = ExtractMessages(request.Messages);
 
@@ -50,7 +52,12 @@ public sealed class AgentApplication : IAgentApplication
             await _snapshotService.CaptureAfterSnapshotAsync(workId, correlationId);
 
         if (sessionId != null)
-            await _sessionManager.RecordTurnAsync(sessionId);
+        {
+            var aiContent = string.Join(string.Empty, contentParts);
+            var recordResult = await _sessionManager.RecordTurnAsync(sessionId);
+            var turnNumber = recordResult.Data?.TurnCount ?? 0;
+            await _sessionManager.SaveMessagesAsync(sessionId, turnNumber, userMessage, aiContent);
+        }
 
         return new AgentResponse
         {
@@ -63,6 +70,7 @@ public sealed class AgentApplication : IAgentApplication
         AgentChatRequestDto request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        ValidateRequest(request);
         var workId = request.WorkId ?? string.Empty;
         var (userMessage, history) = ExtractMessages(request.Messages);
 
@@ -74,9 +82,23 @@ public sealed class AgentApplication : IAgentApplication
         if (!string.IsNullOrWhiteSpace(workId))
             await _snapshotService.CaptureBeforeSnapshotAsync(workId, correlationId);
 
+        var accumulatedContent = new System.Text.StringBuilder();
+        var toolResults = new List<(string ToolName, bool Success, string Content)>();
+
         await foreach (var chunk in _orchestrator.ExecuteAsync(
             workId, userMessage, history, cancellationToken))
         {
+            if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
+                accumulatedContent.Append(chunk.Content);
+
+            if (chunk.Type == "tool_result" && chunk.ToolResult is { } tr)
+            {
+                var truncated = tr.Content?.Length > 500
+                    ? tr.Content[..500]
+                    : tr.Content ?? string.Empty;
+                toolResults.Add((tr.ToolName ?? "tool", tr.Success, truncated));
+            }
+
             yield return chunk;
         }
 
@@ -84,7 +106,20 @@ public sealed class AgentApplication : IAgentApplication
             await _snapshotService.CaptureAfterSnapshotAsync(workId, correlationId);
 
         if (sessionId != null)
-            await _sessionManager.RecordTurnAsync(sessionId);
+        {
+            var aiContent = accumulatedContent.ToString();
+            var recordResult = await _sessionManager.RecordTurnAsync(sessionId);
+            var turnNumber = recordResult.Data?.TurnCount ?? 0;
+            await _sessionManager.SaveMessagesAsync(
+                sessionId, turnNumber, userMessage, aiContent,
+                toolResults.Count > 0 ? toolResults : null);
+        }
+    }
+
+    private static void ValidateRequest(AgentChatRequestDto request)
+    {
+        if (request.Messages == null || request.Messages.Count == 0)
+            BusinessThrow.ThrowException("消息列表不能为空。");
     }
 
     private static (string userMessage, List<ChatMessage> history) ExtractMessages(

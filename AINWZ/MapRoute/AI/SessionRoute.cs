@@ -77,6 +77,14 @@ public static class SessionRoute
             return await mgr.ListSessionsAsync(workId);
         }).WithName("list_sessions");
 
+        group.MapGet("{sessionId}/messages", async (
+            string sessionId,
+            int? limit,
+            ICreationSessionManager mgr) =>
+        {
+            return await mgr.GetSessionMessagesAsync(sessionId, limit);
+        }).WithName("get_session_messages");
+
         group.MapPost("expire-stale", async (
             ICreationSessionManager mgr) =>
         {

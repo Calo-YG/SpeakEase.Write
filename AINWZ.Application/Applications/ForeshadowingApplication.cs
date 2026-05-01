@@ -157,7 +157,12 @@ public class ForeshadowingApplication(
             entity.Status = newStatus;
         }
 
-        if (request.Title is not null) entity.Title = request.Title.Trim();
+        if (request.Title is not null)
+        {
+            if (string.IsNullOrWhiteSpace(request.Title))
+                return new ApiResult<ForeshadowingItemResponse>("伏笔标题不能为空。", 400);
+            entity.Title = request.Title.Trim();
+        }
         if (request.Description is not null) entity.Description = request.Description;
         if (request.SetupChapterId is not null) entity.SetupChapterId = request.SetupChapterId;
         if (request.PayoffChapterId is not null) entity.PayoffChapterId = request.PayoffChapterId;

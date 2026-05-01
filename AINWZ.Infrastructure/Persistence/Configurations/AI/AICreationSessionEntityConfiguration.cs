@@ -14,9 +14,7 @@ internal sealed class AICreationSessionEntityConfiguration : IEntityTypeConfigur
         builder.Property(x => x.UserId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.WorkId).HasMaxLength(64).IsRequired();
         builder.Property(x => x.Status).HasMaxLength(32).IsRequired();
-        builder.Property(x => x.ContextSnapshotJson).HasColumnType("text");
         builder.Property(x => x.AdoptedContentJson).HasColumnType("text");
-        builder.Property(x => x.MessagesJson).HasColumnType("text");
         builder.Property(x => x.CloseReason).HasMaxLength(256);
         builder.HasIndex(x => new { x.WorkId, x.Status });
         builder.HasIndex(x => x.LastActivityAt);

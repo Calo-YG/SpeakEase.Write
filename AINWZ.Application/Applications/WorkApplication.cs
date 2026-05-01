@@ -210,23 +210,23 @@ public class WorkApplication(
         if (entity is null)
             return new ApiResult($"未找到标识为 {id} 的作品。", 404);
 
-        // 开启事务：级联删除 10+ 张关联表，任意步骤失败全部回滚
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
-            // 章节版本 -> 章节
             var chapterIds = await dbContext.Chapters.Where(x => x.WorkId == id).Select(x => x.Id).ToListAsync(cancellationToken);
             if (chapterIds.Count > 0)
                 await dbContext.ChapterVersions.Where(x => chapterIds.Contains(x.ChapterId)).ExecuteDeleteAsync(cancellationToken);
             await dbContext.Chapters.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
             await dbContext.Volumes.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+
             await dbContext.Characters.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.CharacterRelationships.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.CharacterArcs.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.CharacterGraphNodes.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.CharacterGraphEdges.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.CharacterGraphs.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
-            // 大纲节点 -> 大纲
             var outlineIds = await dbContext.Outlines.Where(x => x.WorkId == id).Select(x => x.Id).ToListAsync(cancellationToken);
             if (outlineIds.Count > 0)
                 await dbContext.OutlineNodes.Where(x => outlineIds.Contains(x.OutlineId)).ExecuteDeleteAsync(cancellationToken);
@@ -234,6 +234,20 @@ public class WorkApplication(
 
             await dbContext.Foreshadowings.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.TimelineEvents.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.InspirationRecords.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+
+            await dbContext.WorldRules.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.PowerSystems.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.Factions.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.Geographies.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.HistoricalEvents.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.WorldSettings.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+
+            await dbContext.AICreationSessions.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.MemorySnapshots.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.ContextAssemblyLogs.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.AIGenerationTasks.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.ChapterAnalysisResults.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
             dbContext.Works.Remove(entity);
             await dbContext.SaveChangesAsync(cancellationToken);

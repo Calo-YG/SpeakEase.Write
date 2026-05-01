@@ -2,6 +2,7 @@ using SpeakEase.AI.Lib;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.Write.Infrastructure.AI.Agents;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+using SpeakEase.Write.Infrastructure.AI.Analysis;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Memory;
@@ -21,6 +22,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<WritingBlackboardBuilder>();
         services.AddScoped<CreationOrchestrator>();
         services.AddScoped<ICreationAgentContext, CreationAgentContext>();
+        services.AddScoped<IForeshadowAnalysisService, ForeshadowAnalysisService>();
 
         services.AddScoped<INovelAgent, WriteAgent>();
         services.AddScoped<INovelAgent, WorldAgent>();
@@ -44,6 +46,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddKeyedTransient<IToolExecutor, GetRelationshipsTool>(GetRelationshipsTool.ToolDefinition.Function.Name);
 
         services.AddKeyedTransient<IToolExecutor, CreateCharacterTool>(CreateCharacterTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, UpdateCharacterTool>(UpdateCharacterTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, CreateOutlineNodeTool>(CreateOutlineNodeTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetChapterBySequenceTool>(GetChapterBySequenceTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, SearchOutlineTool>(SearchOutlineTool.ToolDefinition.Function.Name);
@@ -51,10 +54,14 @@ public static class NovelAIServiceCollectionExtensions
 
         services.AddKeyedTransient<IToolExecutor, CreateChapterOutlineTool>(CreateChapterOutlineTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, CreateForeshadowingTool>(CreateForeshadowingTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, ResolveForeshadowingTool>(ResolveForeshadowingTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, CreateTimelineEventTool>(CreateTimelineEventTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, GetTimelineEventsTool>(GetTimelineEventsTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, SaveWorldSettingTool>(SaveWorldSettingTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, SearchWorldSettingTool>(SearchWorldSettingTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetCharacterListTool>(GetCharacterListTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetWorkInfoTool>(GetWorkInfoTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, UpdateChapterSummaryTool>(UpdateChapterSummaryTool.ToolDefinition.Function.Name);
 
         return services;
     }

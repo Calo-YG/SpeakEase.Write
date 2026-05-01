@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Contracts.Snapshot;
 using SpeakEase.Write.Application.Contracts.Story;
 using SpeakEase.Write.Application.Contracts.Story.Dto;
 using SpeakEase.Write.Infrastructure.AI.Memory;
@@ -13,6 +14,7 @@ public sealed class AutoSaveApplication(
     SpeakEaseDbContext db,
     IUserContext user,
     IMemoryProvider memory,
+    IBlackboardUpdater blackboardUpdater,
     ILogger<AutoSaveApplication> logger) : IAutoSaveApplication
 {
     private static readonly HashSet<string> SupportedTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -55,6 +57,7 @@ public sealed class AutoSaveApplication(
         if (entity is null) return new ApiResult("章节不存在", 404);
 
         var changed = false;
+        var contentChanged = false;
 
         if (req.Content is not null && req.Content != entity.Content)
         {
@@ -62,6 +65,7 @@ public sealed class AutoSaveApplication(
             entity.WordCount = req.Content.Count(c => !char.IsWhiteSpace(c));
             entity.LastContentSavedAt = now;
             changed = true;
+            contentChanged = true;
         }
         if (req.Title is not null && req.Title != entity.Title)
         {
@@ -78,7 +82,22 @@ public sealed class AutoSaveApplication(
 
         entity.UpdateBy = userId;
         entity.UpdateAt = now;
+
         await db.SaveChangesAsync(ct);
+
+        if (contentChanged)
+        {
+            var totalWords = await db.Chapters.AsNoTracking()
+                .Where(c => c.WorkId == entity.WorkId)
+                .SumAsync(c => c.WordCount, ct);
+
+            await db.Works
+                .Where(w => w.Id == entity.WorkId)
+                .ExecuteUpdateAsync(s => s.SetProperty(w => w.TotalWordCount, totalWords)
+                                          .SetProperty(w => w.UpdateAt, now), ct);
+
+            blackboardUpdater.UpdateChapterContent(chapterId, entity.Content, entity.Summary);
+        }
 
         await memory.InvalidateAsync(userId, entity.WorkId, ct);
         logger.LogDebug("自动保存章节 {ChapterId}，字数={Words}", chapterId, entity.WordCount);

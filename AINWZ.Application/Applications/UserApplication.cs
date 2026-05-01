@@ -1,6 +1,7 @@
 using System.Text;
 using SpeakEase.Write.Application.Contracts.Users;
 using SpeakEase.Write.Application.Contracts.Users.Dto;
+using SpeakEase.Write.Application.Shared;
 using SpeakEase.Write.Infrastructure.Authorization;
 using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -158,17 +159,6 @@ namespace SpeakEase.Write.Application.Applications
         /// <summary>
         /// 验证邮箱格式。
         /// </summary>
-        private static bool IsValidEmail(string email)
-        {
-            try
-            {
-                var addr = new System.Net.Mail.MailAddress(email);
-                return addr.Address == email;
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        private static bool IsValidEmail(string email) => ValidationHelper.IsValidEmail(email);
     }
 }

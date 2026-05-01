@@ -4,226 +4,236 @@ using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Creation.Dto;
 using SpeakEase.Write.Domain.Entities.AI;
-using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
-public sealed class CreationSessionManager : ICreationSessionManager
+public class CreationSessionManager(
+    SpeakEaseDbContext db,
+    ILogger<CreationSessionManager> logger,
+    IUserContext userContext) : ICreationSessionManager
 {
     private const int MaxTurnsBeforeArchive = 10;
-    private static readonly TimeSpan InactivityTimeout = TimeSpan.FromHours(24);
-
-    private readonly SpeakEaseDbContext _db;
-    private readonly ISnowflakeIdGenerator _idGen;
-    private readonly IUserContext _user;
-    private readonly ILogger<CreationSessionManager> _log;
-
-    public CreationSessionManager(
-        SpeakEaseDbContext db,
-        ISnowflakeIdGenerator idGen,
-        IUserContext user,
-        ILogger<CreationSessionManager> log)
-    {
-        _db = db;
-        _idGen = idGen;
-        _user = user;
-        _log = log;
-    }
+    private static readonly TimeSpan SessionExpiration = TimeSpan.FromHours(24);
 
     public async Task<ApiResult<CreationSessionDto>> StartSessionAsync(string workId)
     {
-        var userId = _user.UserId;
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<CreationSessionDto>("用户未登录。", 401);
 
-        await _db.AICreationSessions
-            .Where(s => s.WorkId == workId && s.UserId == userId
-                        && (s.Status == "active" || s.Status == "paused"))
-            .ExecuteUpdateAsync(s => s
-                .SetProperty(x => x.Status, "closed")
-                .SetProperty(x => x.CloseReason, "被新会话取代")
-                .SetProperty(x => x.UpdateAt, DateTime.UtcNow)
-                .SetProperty(x => x.UpdateBy, userId));
+        await CloseActiveSessionForWorkAsync(workId, userId, "cancelled", "new_session_started");
 
-        var now = DateTime.UtcNow;
         var entity = new AICreationSessionEntity
         {
-            Id = _idGen.NextIdString(),
-            UserId = userId,
             WorkId = workId,
+            UserId = userId,
             Status = "active",
             TurnCount = 0,
-            ContextSnapshotJson = "{}",
             AdoptedContentJson = "[]",
-            MessagesJson = "[]",
-            StartedAt = now,
-            LastActivityAt = now,
-            ExpiresAt = now.Add(InactivityTimeout),
-            CreateBy = userId,
-            UpdateBy = userId
+            StartedAt = DateTime.UtcNow,
+            LastActivityAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.Add(SessionExpiration),
         };
 
-        _db.AICreationSessions.Add(entity);
-        await _db.SaveChangesAsync();
-
-        _log.LogInformation("用户 {UserId} 在作品 {WorkId} 启动会话 {SessionId}", userId, workId, entity.Id);
-
-        return new ApiResult<CreationSessionDto>(MapToDto(entity));
+        db.AICreationSessions.Add(entity);
+        await db.SaveChangesAsync();
+        return MapToResult(entity);
     }
 
     public async Task<ApiResult<CreationSessionDto>> RecordTurnAsync(string sessionId)
     {
-        var session = await FindOwnedSessionAsync(sessionId);
-        if (session == null) return new ApiResult<CreationSessionDto>("会话不存在或无权访问", 404);
-        if (session.Status != "active") return new ApiResult<CreationSessionDto>("会话已结束，无法继续对话", 400);
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<CreationSessionDto>("用户未登录。", 401);
+
+        var session = await GetOwnedSessionAsync(sessionId, userId);
+        if (session is null)
+            return new ApiResult<CreationSessionDto>("会话不存在。", 404);
 
         session.TurnCount++;
         session.LastActivityAt = DateTime.UtcNow;
-        session.ExpiresAt = session.LastActivityAt.Add(InactivityTimeout);
-        session.UpdateAt = session.LastActivityAt;
-        session.UpdateBy = _user.UserId;
 
-        if (session.TurnCount == MaxTurnsBeforeArchive + 1)
-            session.MessagesJson = "[]";
+        if (session.TurnCount % MaxTurnsBeforeArchive == 0)
+        {
+            logger.LogInformation("session {SessionId} reached {TurnCount} turns, performing archive check", sessionId, session.TurnCount);
+            await PerformArchiveAsync(session, userId);
+        }
 
-        await _db.SaveChangesAsync();
-        return new ApiResult<CreationSessionDto>(MapToDto(session));
+        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
+        await db.SaveChangesAsync();
+        return MapToResult(session);
+    }
+
+    private async Task PerformArchiveAsync(AICreationSessionEntity currentSession, string userId)
+    {
+        if (currentSession.TurnCount >= MaxTurnsBeforeArchive * 2)
+        {
+            await CloseActiveSessionForWorkAsync(currentSession.WorkId, userId, "expired", "archive_turns_limit");
+            var entity = new AICreationSessionEntity
+            {
+                WorkId = currentSession.WorkId,
+                UserId = userId,
+                Status = "active",
+                TurnCount = 0,
+                AdoptedContentJson = "[]",
+                StartedAt = DateTime.UtcNow,
+                LastActivityAt = DateTime.UtcNow,
+                ExpiresAt = DateTime.UtcNow.Add(SessionExpiration),
+            };
+            db.AICreationSessions.Add(entity);
+            logger.LogInformation("session archived for work {WorkId}, new session created", currentSession.WorkId);
+        }
     }
 
     public async Task<ApiResult> AdoptContentAsync(string sessionId, AdoptContentRequest request)
     {
-        var session = await FindOwnedSessionAsync(sessionId);
-        if (session == null) return new ApiResult("会话不存在或无权访问", 404);
-        if (session.Status != "active") return new ApiResult("会话已结束，无法采纳内容", 400);
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult("用户未登录。", 401);
+
+        var session = await GetOwnedSessionAsync(sessionId, userId);
+        if (session is null)
+            return new ApiResult("会话不存在。", 404);
 
         var adopted = DeserializeAdopted(session.AdoptedContentJson);
         adopted.Add(new AdoptedItem
         {
             TurnNumber = session.TurnCount,
             Content = request.Content,
-            Summary = request.Summary ?? string.Empty,
-            AdoptedAt = DateTime.UtcNow
+            Summary = request.Summary,
+            AdoptedAt = DateTime.UtcNow,
         });
+
         session.AdoptedContentJson = JsonHelper.Serialize(adopted);
         session.LastActivityAt = DateTime.UtcNow;
-        session.UpdateAt = session.LastActivityAt;
-        session.UpdateBy = _user.UserId;
-
-        await _db.SaveChangesAsync();
-        _log.LogInformation("会话 {SessionId} 第 {Turn} 轮内容已采纳", sessionId, session.TurnCount);
-
+        await db.SaveChangesAsync();
         return new ApiResult(true);
     }
 
     public async Task<ApiResult<CreationSessionDto>> PauseSessionAsync(string sessionId)
     {
-        var session = await FindOwnedSessionAsync(sessionId);
-        if (session == null) return new ApiResult<CreationSessionDto>("会话不存在或无权访问", 404);
-        if (session.Status != "active") return new ApiResult<CreationSessionDto>("只有活跃会话才能暂停", 400);
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<CreationSessionDto>("用户未登录。", 401);
+
+        var session = await GetOwnedSessionAsync(sessionId, userId);
+        if (session is null)
+            return new ApiResult<CreationSessionDto>("会话不存在。", 404);
+        if (session.Status != "active")
+            return new ApiResult<CreationSessionDto>("会话不在活跃状态。", 400);
 
         session.Status = "paused";
-        session.UpdateAt = DateTime.UtcNow;
-        session.UpdateBy = _user.UserId;
-        await _db.SaveChangesAsync();
-
-        return new ApiResult<CreationSessionDto>(MapToDto(session));
+        session.LastActivityAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+        return MapToResult(session);
     }
 
     public async Task<ApiResult> CancelSessionAsync(string sessionId)
     {
-        var session = await FindOwnedSessionAsync(sessionId);
-        if (session == null) return new ApiResult("会话不存在或无权访问", 404);
-        if (session.Status == "cancelled") return new ApiResult("会话已取消", 400);
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult("用户未登录。", 401);
+
+        var session = await GetOwnedSessionAsync(sessionId, userId);
+        if (session is null)
+            return new ApiResult("会话不存在。", 404);
 
         session.Status = "cancelled";
-        session.CloseReason = "用户取消";
-        session.ContextSnapshotJson = "{}";
-        session.MessagesJson = "[]";
-        session.UpdateAt = DateTime.UtcNow;
-        session.UpdateBy = _user.UserId;
-        await _db.SaveChangesAsync();
+        session.CloseReason = "user_cancelled";
+        session.LastActivityAt = DateTime.UtcNow;
+        session.AdoptedContentJson = "[]";
 
-        _log.LogInformation("会话 {SessionId} 已取消", sessionId);
+        await db.SaveChangesAsync();
         return new ApiResult(true);
     }
 
     public async Task<ApiResult<CreationSessionDto>> ResumeSessionAsync(string sessionId)
     {
-        var session = await FindOwnedSessionAsync(sessionId);
-        if (session == null) return new ApiResult<CreationSessionDto>("会话不存在或无权访问", 404);
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<CreationSessionDto>("用户未登录。", 401);
 
-        if (session.Status == "expired")
-        {
-            session.ContextSnapshotJson = "{}";
-            session.MessagesJson = "[]";
-            session.TurnCount = 0;
-        }
-        else if (session.Status != "paused" && session.Status != "closed")
-        {
-            return new ApiResult<CreationSessionDto>("只有已暂停或已关闭的会话可以恢复", 400);
-        }
+        var session = await GetOwnedSessionAsync(sessionId, userId);
+        if (session is null)
+            return new ApiResult<CreationSessionDto>("会话不存在。", 404);
+        if (session.Status != "paused")
+            return new ApiResult<CreationSessionDto>("会话未处于暂停状态。", 400);
 
         session.Status = "active";
         session.LastActivityAt = DateTime.UtcNow;
-        session.ExpiresAt = session.LastActivityAt.Add(InactivityTimeout);
-        session.CloseReason = string.Empty;
-        session.UpdateAt = session.LastActivityAt;
-        session.UpdateBy = _user.UserId;
-        await _db.SaveChangesAsync();
-
-        return new ApiResult<CreationSessionDto>(MapToDto(session));
+        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
+        await db.SaveChangesAsync();
+        return MapToResult(session);
     }
 
     public async Task<ApiResult> RollbackToTurnAsync(string sessionId, int targetTurn)
     {
-        var session = await FindOwnedSessionAsync(sessionId);
-        if (session == null) return new ApiResult("会话不存在或无权访问", 404);
-        if (session.Status != "active") return new ApiResult("只有活跃会话才能回滚", 400);
-        if (targetTurn < 1 || targetTurn >= session.TurnCount)
-            return new ApiResult($"目标轮次 {targetTurn} 无效", 400);
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult("用户未登录。", 401);
+
+        var session = await GetOwnedSessionAsync(sessionId, userId);
+        if (session is null)
+            return new ApiResult("会话不存在。", 404);
+
+        if (targetTurn < 0 || targetTurn > session.TurnCount)
+            return new ApiResult("无效的目标轮次。", 400);
+
+        var adopted = DeserializeAdopted(session.AdoptedContentJson);
+        adopted.RemoveAll(a => a.TurnNumber > targetTurn);
+        session.AdoptedContentJson = JsonHelper.Serialize(adopted);
+
+        await db.AICreationMessages
+            .Where(m => m.SessionId == sessionId && m.TurnNumber > targetTurn)
+            .ExecuteDeleteAsync();
 
         session.TurnCount = targetTurn;
-        session.MessagesJson = "[]";
-        session.ContextSnapshotJson = "{}";
         session.LastActivityAt = DateTime.UtcNow;
-        session.ExpiresAt = session.LastActivityAt.Add(InactivityTimeout);
-        session.UpdateAt = session.LastActivityAt;
-        session.UpdateBy = _user.UserId;
-        await _db.SaveChangesAsync();
+        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
+        await db.SaveChangesAsync();
 
         return new ApiResult(true);
     }
 
     public async Task<ApiResult<CreationSessionDto>> GetActiveSessionAsync(string workId)
     {
-        var session = await _db.AICreationSessions
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<CreationSessionDto>("用户未登录。", 401);
+
+        var session = await db.AICreationSessions
             .AsNoTracking()
-            .Where(s => s.WorkId == workId && s.UserId == _user.UserId && s.Status == "active")
-            .OrderByDescending(s => s.StartedAt)
+            .Where(x => x.WorkId == workId && x.UserId == userId && x.Status == "active")
+            .OrderByDescending(x => x.LastActivityAt)
             .FirstOrDefaultAsync();
 
-        if (session == null)
-            return new ApiResult<CreationSessionDto>("当前作品无活跃会话", 404);
-
-        return new ApiResult<CreationSessionDto>(MapToDto(session));
+        return session is null
+            ? new ApiResult<CreationSessionDto>("没有活跃会话。", 404)
+            : MapToResult(session);
     }
 
     public async Task<ApiResult<List<CreationSessionDto>>> ListSessionsAsync(string workId)
     {
-        var sessions = await _db.AICreationSessions
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<List<CreationSessionDto>>("用户未登录。", 401);
+
+        var sessions = await db.AICreationSessions
             .AsNoTracking()
-            .Where(s => s.WorkId == workId && s.UserId == _user.UserId)
-            .OrderByDescending(s => s.StartedAt)
-            .Select(s => new CreationSessionDto
+            .Where(x => x.WorkId == workId && x.UserId == userId)
+            .OrderByDescending(x => x.StartedAt)
+            .Select(x => new CreationSessionDto
             {
-                SessionId = s.Id,
-                WorkId = s.WorkId,
-                Status = s.Status,
-                TurnCount = s.TurnCount,
-                StartedAt = s.StartedAt,
-                LastActivityAt = s.LastActivityAt,
-                ExpiresAt = s.ExpiresAt,
-                CloseReason = s.CloseReason
+                SessionId = x.Id,
+                WorkId = x.WorkId,
+                Status = x.Status,
+                TurnCount = x.TurnCount,
+                StartedAt = x.StartedAt,
+                LastActivityAt = x.LastActivityAt,
+                ExpiresAt = x.ExpiresAt,
+                CloseReason = x.CloseReason,
             })
             .ToListAsync();
 
@@ -232,36 +242,115 @@ public sealed class CreationSessionManager : ICreationSessionManager
 
     public async Task<int> ExpireStaleSessionsAsync()
     {
-        var now = DateTime.UtcNow;
-        var count = await _db.AICreationSessions
-            .Where(s => (s.Status == "active" || s.Status == "paused")
-                        && s.LastActivityAt < now.Add(-InactivityTimeout))
+        return await db.AICreationSessions
+            .Where(x => x.Status == "active" && x.ExpiresAt.HasValue && x.ExpiresAt < DateTime.UtcNow)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Status, "expired")
-                .SetProperty(x => x.CloseReason, "超时自动过期")
-                .SetProperty(x => x.UpdateAt, now));
-
-        if (count > 0)
-            _log.LogInformation("已过期 {Count} 个超时会话", count);
-
-        return count;
+                .SetProperty(x => x.CloseReason, "expired_timeout")
+                .SetProperty(x => x.LastActivityAt, DateTime.UtcNow));
     }
 
-    private async Task<AICreationSessionEntity> FindOwnedSessionAsync(string sessionId)
+    public async Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)>? toolResults = null)
     {
-        return await _db.AICreationSessions
-            .FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == _user.UserId);
+        var now = DateTime.UtcNow;
+        var messages = new List<AICreationMessageEntity>
+        {
+            new()
+            {
+                SessionId = sessionId,
+                Role = "user",
+                Content = userMessage,
+                TurnNumber = turnNumber,
+                CreatedAt = now,
+            }
+        };
+
+        if (toolResults is { Count: > 0 })
+        {
+            foreach (var (toolName, success, content) in toolResults)
+            {
+                messages.Add(new AICreationMessageEntity
+                {
+                    SessionId = sessionId,
+                    Role = "tool",
+                    Content = content,
+                    TurnNumber = turnNumber,
+                    ToolName = toolName,
+                    ToolSuccess = success,
+                    CreatedAt = now,
+                });
+            }
+        }
+
+        messages.Add(new AICreationMessageEntity
+        {
+            SessionId = sessionId,
+            Role = "assistant",
+            Content = aiMessage,
+            TurnNumber = turnNumber,
+            CreatedAt = now,
+        });
+
+        db.AICreationMessages.AddRange(messages);
+        await db.SaveChangesAsync();
+    }
+
+    public async Task<ApiResult<List<SessionMessageResponse>>> GetSessionMessagesAsync(string sessionId, int? limit = null)
+    {
+        var query = db.AICreationMessages
+            .AsNoTracking()
+            .Where(m => m.SessionId == sessionId)
+            .OrderBy(m => m.CreatedAt)
+            .ThenBy(m => m.TurnNumber);
+
+        var messages = limit.HasValue
+            ? await query.Take(limit.Value).ToListAsync()
+            : await query.ToListAsync();
+
+        var result = messages.Select(m => new SessionMessageResponse
+        {
+            Id = m.Id,
+            Role = m.Role,
+            Content = m.Content,
+            TurnNumber = m.TurnNumber,
+            ToolName = m.ToolName,
+            ToolSuccess = m.ToolSuccess,
+            CreatedAt = m.CreatedAt,
+        }).ToList();
+
+        return new ApiResult<List<SessionMessageResponse>>(result);
+    }
+
+    private async Task<AICreationSessionEntity?> GetOwnedSessionAsync(string sessionId, string userId)
+    {
+        var session = await db.AICreationSessions.FindAsync(sessionId);
+        if (session is null || session.UserId != userId) return null;
+        return session;
+    }
+
+    private async Task CloseActiveSessionForWorkAsync(string workId, string userId, string status, string reason)
+    {
+        var active = await db.AICreationSessions
+            .Where(x => x.WorkId == workId && x.UserId == userId && x.Status == "active")
+            .ToListAsync();
+
+        foreach (var s in active)
+        {
+            s.Status = status;
+            s.CloseReason = reason;
+            s.LastActivityAt = DateTime.UtcNow;
+        }
     }
 
     private static List<AdoptedItem> DeserializeAdopted(string json)
     {
-        if (string.IsNullOrWhiteSpace(json) || json == "[]") return new();
-        try { return JsonHelper.Deserialize<List<AdoptedItem>>(json) ?? new(); }
-        catch { return new(); }
+        if (string.IsNullOrWhiteSpace(json)) return new List<AdoptedItem>();
+        return JsonHelper.Deserialize<List<AdoptedItem>>(json) ?? new List<AdoptedItem>();
     }
 
-    private static CreationSessionDto MapToDto(AICreationSessionEntity entity)
-        => new CreationSessionDto
+    private static ApiResult<CreationSessionDto> MapToResult(AICreationSessionEntity entity)
+    {
+        return new ApiResult<CreationSessionDto>(new CreationSessionDto
         {
             SessionId = entity.Id,
             WorkId = entity.WorkId,
@@ -270,6 +359,7 @@ public sealed class CreationSessionManager : ICreationSessionManager
             StartedAt = entity.StartedAt,
             LastActivityAt = entity.LastActivityAt,
             ExpiresAt = entity.ExpiresAt,
-            CloseReason = entity.CloseReason
-        };
+            CloseReason = entity.CloseReason,
+        });
+    }
 }

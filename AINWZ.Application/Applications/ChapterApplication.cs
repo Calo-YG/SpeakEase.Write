@@ -35,7 +35,7 @@ public class ChapterApplication(
             .OrderBy(x => x.Sequence)
             .Select(x => new ChapterItemResponse
             {
-                Id = x.Id, WorkId = x.WorkId, Title = x.Title, Sequence = x.Sequence,
+                Id = x.Id, WorkId = x.WorkId, VolumeId = x.VolumeId, Title = x.Title, Sequence = x.Sequence,
                 WordCount = x.WordCount, Status = x.Status, Summary = x.Summary,
                 AuthorNotes = x.AuthorNotes, LastContentSavedAt = x.LastContentSavedAt
             })
@@ -54,7 +54,7 @@ public class ChapterApplication(
             .Where(x => x.Id == chapterId && x.WorkId == workId)
             .Select(x => new ChapterDetailResponse
             {
-                Id = x.Id, WorkId = x.WorkId, Title = x.Title, Sequence = x.Sequence,
+                Id = x.Id, WorkId = x.WorkId, VolumeId = x.VolumeId, Title = x.Title, Sequence = x.Sequence,
                 WordCount = x.WordCount, Status = x.Status, Summary = x.Summary,
                 AuthorNotes = x.AuthorNotes, LastContentSavedAt = x.LastContentSavedAt,
                 Content = x.Content
@@ -100,7 +100,7 @@ public class ChapterApplication(
 
         return new ApiResult<ChapterDetailResponse>(new ChapterDetailResponse
         {
-            Id = entity.Id, WorkId = entity.WorkId, Title = entity.Title,
+            Id = entity.Id, WorkId = entity.WorkId, VolumeId = entity.VolumeId, Title = entity.Title,
             Sequence = entity.Sequence, WordCount = 0, Status = entity.Status,
             Summary = entity.Summary, AuthorNotes = entity.AuthorNotes,
             LastContentSavedAt = null, Content = string.Empty
@@ -163,7 +163,7 @@ public class ChapterApplication(
 
         return new ApiResult<ChapterDetailResponse>(new ChapterDetailResponse
         {
-            Id = entity.Id, WorkId = entity.WorkId, Title = entity.Title,
+            Id = entity.Id, WorkId = entity.WorkId, VolumeId = entity.VolumeId, Title = entity.Title,
             Sequence = entity.Sequence, WordCount = entity.WordCount, Status = entity.Status,
             Summary = entity.Summary, AuthorNotes = entity.AuthorNotes,
             LastContentSavedAt = entity.LastContentSavedAt, Content = entity.Content

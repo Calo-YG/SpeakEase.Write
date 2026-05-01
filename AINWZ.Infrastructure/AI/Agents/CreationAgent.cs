@@ -64,6 +64,7 @@ public sealed class CreationAgent : AgentBase, ICreationAgent
         yield return GetRelationshipsTool.ToolDefinition;
         yield return SearchCharactersTool.ToolDefinition;
         yield return CreateCharacterTool.ToolDefinition;
+        yield return UpdateCharacterTool.ToolDefinition;
         yield return SearchWorldSettingTool.ToolDefinition;
         yield return GetCharacterListTool.ToolDefinition;
     }

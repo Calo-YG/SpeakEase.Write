@@ -95,6 +95,20 @@ public sealed class HybridMemoryProvider : IMemoryProvider
                     .Select(w => w.Summary)
                     .FirstOrDefaultAsync(cancellationToken);
 
+                var timelineEvents = await db.TimelineEvents.AsNoTracking()
+                    .Where(t => t.WorkId == workId)
+                    .OrderBy(t => t.EventTime)
+                    .Take(20)
+                    .Select(t => new MemoryTimelineEvent
+                    {
+                        Title = t.Title,
+                        Description = t.Description,
+                        EventTime = t.EventTime,
+                        EventType = t.EventType,
+                        ChapterId = t.ChapterId
+                    })
+                    .ToListAsync(cancellationToken);
+
                 return new MemoryContext
                 {
                     WorkTitle = work.Title,
@@ -106,7 +120,8 @@ public sealed class HybridMemoryProvider : IMemoryProvider
                     Characters = characters,
                     OutlineNodes = outlines,
                     WorldSettingSummary = worldSetting ?? string.Empty,
-                    ActiveForeshadowings = foreshadowings
+                    ActiveForeshadowings = foreshadowings,
+                    TimelineEvents = timelineEvents
                 };
             },
             memoryExpiry: MemExpiry,

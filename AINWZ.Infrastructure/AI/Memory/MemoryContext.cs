@@ -13,6 +13,7 @@ public sealed class MemoryContext
     public List<MemoryOutlineNode> OutlineNodes { get; set; } = new();
     public string WorldSettingSummary { get; set; } = string.Empty;
     public List<MemoryForeshadowing> ActiveForeshadowings { get; set; } = new();
+    public List<MemoryTimelineEvent> TimelineEvents { get; set; } = new();
 }
 
 public sealed class MemoryChapter
@@ -44,4 +45,13 @@ public sealed class MemoryForeshadowing
 {
     public string Title { get; set; } = string.Empty;
     public string Status { get; set; } = "pending";
+}
+
+public sealed class MemoryTimelineEvent
+{
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public DateTime EventTime { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string ChapterId { get; set; } = string.Empty;
 }

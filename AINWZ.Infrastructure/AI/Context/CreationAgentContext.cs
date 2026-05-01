@@ -104,6 +104,44 @@ public sealed class CreationAgentContext : ICreationAgentContext
             sb.AppendLine();
         }
 
+        if (bb.Foreshadowings.Pending.Count > 0 || bb.Foreshadowings.Hinted.Count > 0)
+        {
+            sb.AppendLine("## 伏笔追踪");
+            if (bb.Foreshadowings.Pending.Count > 0)
+            {
+                sb.AppendLine("### 待回收");
+                foreach (var f in bb.Foreshadowings.Pending)
+                {
+                    var overdueTag = bb.Foreshadowings.OverdueCount > 0 && f.SetupChapterSequence > 0 ? " ⚠" : "";
+                    sb.AppendLine($"- [{f.Id}] {f.Title}（重要性:{f.Importance}·埋设于第{f.SetupChapterSequence}章）{overdueTag}");
+                    if (!string.IsNullOrEmpty(f.Description))
+                        sb.AppendLine($"  > {f.Description}");
+                }
+            }
+            if (bb.Foreshadowings.Hinted.Count > 0)
+            {
+                sb.AppendLine("### 已暗示待回收");
+                foreach (var f in bb.Foreshadowings.Hinted)
+                    sb.AppendLine($"- [{f.Id}] {f.Title}（重要性:{f.Importance}）");
+            }
+            if (bb.Foreshadowings.OverdueCount > 0)
+                sb.AppendLine($"⚠ 有 {bb.Foreshadowings.OverdueCount} 个伏笔已超过5章未回收，请优先处理。");
+            sb.AppendLine();
+        }
+
+        if (bb.TimelineEvents.Count > 0)
+        {
+            sb.AppendLine("## 故事时间线");
+            foreach (var t in bb.TimelineEvents)
+            {
+                var chapterTag = t.ChapterSequence > 0 ? $"[第{t.ChapterSequence}章]" : "";
+                sb.AppendLine($"- {t.EventTime:yyyy-MM-dd} [{t.EventType}] {t.Title} {chapterTag}");
+                if (!string.IsNullOrEmpty(t.Description))
+                    sb.AppendLine($"  > {t.Description}");
+            }
+            sb.AppendLine();
+        }
+
         return sb.ToString().TrimEnd();
     }
 
@@ -169,6 +207,18 @@ public sealed class CreationAgentContext : ICreationAgentContext
             sb.AppendLine("## 待回收伏笔");
             foreach (var f in mem.ActiveForeshadowings)
                 sb.AppendLine($"- {f.Title} [{f.Status}]");
+            sb.AppendLine();
+        }
+
+        if (mem.TimelineEvents.Count > 0)
+        {
+            sb.AppendLine("## 故事时间线");
+            foreach (var t in mem.TimelineEvents)
+            {
+                sb.AppendLine($"- {t.EventTime:yyyy-MM-dd} [{t.EventType}] {t.Title}");
+                if (!string.IsNullOrEmpty(t.Description))
+                    sb.AppendLine($"  > {t.Description}");
+            }
             sb.AppendLine();
         }
 

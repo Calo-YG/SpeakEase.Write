@@ -6,6 +6,7 @@ using Serilog.Events;
 using SpeakEase.AI.Lib;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.Write.Application.Applications;
+using SpeakEase.Write.Application.Novel.Export;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.Auth;
 using SpeakEase.Write.Application.Contracts.Creation;
@@ -30,6 +31,7 @@ using SpeakEase.Write.MapRoute.References;
 using SpeakEase.Write.MapRoute.Tags;
 using SpeakEase.Write.MapRoute.Users;
 using SpeakEase.Write.MapRoute.Works;
+using SpeakEase.Write.MapRoute.Novel;
 using SpeakEase.Write.Middleware;
 
 var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
@@ -153,6 +155,7 @@ try
     builder.Services.AddScoped<IAdoptionManager, AdoptionManager>();
     builder.Services.AddScoped<IBlackboardUpdater, BlackboardUpdater>();
     builder.Services.AddScoped<IAutoSaveApplication, AutoSaveApplication>();
+    builder.Services.AddScoped<ExportService>();
 
     // ── AI Lib + Novel AI ──
     builder.Services.AddChatLLM();
@@ -228,6 +231,7 @@ try
     app.MapAdoptionEndPoint();
     app.MapVersionEndPoint();
     app.MapAutoSaveEndPoint();
+    app.MapExportEndPoint();
 
     Log.Information("SpeakEase.Write 已启动");
 

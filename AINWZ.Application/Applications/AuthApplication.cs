@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using SpeakEase.Write.Application.Contracts.Auth;
 using SpeakEase.Write.Application.Contracts.Auth.Dto;
+using SpeakEase.Write.Application.Shared;
 using SpeakEase.Write.Domain.Entities.Users;
 using SpeakEase.Write.Infrastructure.Authorization;
 using SpeakEase.Write.Infrastructure.Ids;
@@ -210,16 +211,5 @@ public class AuthApplication(
     /// <summary>
     /// 验证邮箱格式。
     /// </summary>
-    private static bool IsValidEmail(string email)
-    {
-        try
-        {
-            var addr = new System.Net.Mail.MailAddress(email);
-            return addr.Address == email;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    private static bool IsValidEmail(string email) => ValidationHelper.IsValidEmail(email);
 }

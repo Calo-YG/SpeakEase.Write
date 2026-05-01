@@ -16,7 +16,7 @@ public sealed class WritingBlackboardBuilder
         _logger = logger;
     }
 
-    public async Task<WritingBlackboard> BuildAsync(string workId, string requestId)
+    public async Task<WritingBlackboard> BuildAsync(string workId, string requestId, ContextFocus? focus = null)
     {
         var board = new WritingBlackboard
         {
@@ -40,11 +40,35 @@ public sealed class WritingBlackboardBuilder
             TotalWordCount = work.TotalWordCount
         };
 
+        var maxChapters = focus?.MaxChapters ?? 10;
         var chapters = await _db.Chapters.AsNoTracking()
             .Where(x => x.WorkId == workId)
             .OrderByDescending(x => x.Sequence)
-            .Take(10)
+            .Take(maxChapters)
             .ToListAsync();
+
+        if (focus?.CurrentChapterId != null)
+        {
+            var currentChapter = await _db.Chapters.AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == focus.CurrentChapterId && x.WorkId == workId);
+
+            if (currentChapter != null && !chapters.Any(c => c.Id == currentChapter.Id))
+            {
+                var nearbyChapters = await _db.Chapters.AsNoTracking()
+                    .Where(x => x.WorkId == workId && x.Sequence >= currentChapter.Sequence - 3
+                                && x.Sequence <= currentChapter.Sequence + 1)
+                    .OrderByDescending(x => x.Sequence)
+                    .ToListAsync();
+
+                chapters = nearbyChapters
+                    .Concat(chapters)
+                    .GroupBy(c => c.Id)
+                    .Select(g => g.First())
+                    .OrderByDescending(c => c.Sequence)
+                    .Take(maxChapters)
+                    .ToList();
+            }
+        }
 
         board.RecentChapters = chapters
             .OrderBy(c => c.Sequence)
@@ -60,55 +84,37 @@ public sealed class WritingBlackboardBuilder
             })
             .ToList();
 
-        var characters = await _db.Characters.AsNoTracking()
-            .Where(x => x.WorkId == workId)
-            .Take(30)
-            .ToListAsync();
+        var maxCharacters = focus?.MaxCharacters ?? 30;
+        var charactersQuery = _db.Characters.AsNoTracking()
+            .Where(x => x.WorkId == workId);
 
-        var characterIds = characters.Select(c => c.Id).ToHashSet();
-        var relationships = await _db.CharacterRelationships.AsNoTracking()
-            .Where(x => x.WorkId == workId
-                && characterIds.Contains(x.SourceCharacterId))
-            .ToListAsync();
+        if (focus?.CharacterIds?.Count > 0)
+        {
+            var focusIds = focus.CharacterIds;
+            var focusNames = focus.CharacterNames ?? new List<string>();
 
-        board.Characters = characters
-            .Select(c =>
-            {
-                var rels = relationships
-                    .Where(r => r.SourceCharacterId == c.Id)
-                    .Select(r =>
-                    {
-                        var target = characters.FirstOrDefault(tc => tc.Id == r.TargetCharacterId);
-                        return $"{target?.Name ?? r.TargetCharacterId}({r.RelationshipType}): {r.Description}";
-                    })
-                    .ToList();
+            var prioritized = await charactersQuery
+                .Where(c => focusIds.Contains(c.Id)
+                            || focusNames.Any(n => c.Name != null && c.Name.Contains(n)))
+                .ToListAsync();
 
-                var fears = new List<string>();
-                var desires = new List<string>();
-                if (c.Metadata != null)
-                {
-                    if (c.Metadata.TryGetValue("fears", out var f) && !string.IsNullOrEmpty(f))
-                        fears = f.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
-                    if (c.Metadata.TryGetValue("desires", out var d) && !string.IsNullOrEmpty(d))
-                        desires = d.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
-                }
+            var remaining = await charactersQuery
+                .Where(c => !focusIds.Contains(c.Id)
+                            && !focusNames.Any(n => c.Name != null && c.Name.Contains(n)))
+                .Take(maxCharacters - prioritized.Count)
+                .ToListAsync();
 
-                return new CharacterSection
-                {
-                    CharacterId = c.Id,
-                    Name = c.Name ?? string.Empty,
-                    CoreSeed = c.Identity ?? string.Empty,
-                    Background = c.BackgroundStory ?? string.Empty,
-                    Personality = c.Personality ?? string.Empty,
-                    Traits = c.Gender ?? string.Empty,
-                    Voice = c.Alias ?? string.Empty,
-                    Arc = c.Motivation ?? string.Empty,
-                    Relationships = rels,
-                    Fears = fears,
-                    Desires = desires
-                };
-            })
-            .ToList();
+            var characters = prioritized.Concat(remaining).DistinctBy(c => c.Id).ToList();
+
+            await LoadCharactersIntoBoard(board, characters, workId);
+        }
+        else
+        {
+            var characters = await charactersQuery.Take(maxCharacters).ToListAsync();
+            await LoadCharactersIntoBoard(board, characters, workId);
+        }
+
+        var characterIds = board.Characters.Select(c => c.CharacterId).ToHashSet();
 
         var worldSetting = await _db.WorldSettings.AsNoTracking()
             .FirstOrDefaultAsync(x => x.WorkId == workId);
@@ -186,7 +192,7 @@ public sealed class WritingBlackboardBuilder
         };
 
         var foreshadowings = await _db.Foreshadowings.AsNoTracking()
-            .Where(x => x.WorkId == workId && (x.Status == "pending" || x.Status == "active"))
+            .Where(x => x.WorkId == workId && (x.Status == "pending" || x.Status == "active" || x.Status == "hinted"))
             .Take(30)
             .ToListAsync();
 
@@ -200,6 +206,114 @@ public sealed class WritingBlackboardBuilder
             })
             .ToList();
 
+        var chapterIdToSequence = chapters.ToDictionary(c => c.Id, c => c.Sequence);
+
+        board.Foreshadowings = new ForeshadowingBlackboardSection
+        {
+            Pending = foreshadowings
+                .Where(f => f.Status == "pending")
+                .Select(f => new ForeshadowingEntry
+                {
+                    Id = f.Id,
+                    Title = f.Title ?? string.Empty,
+                    Description = f.Description ?? string.Empty,
+                    Importance = f.Importance,
+                    SetupChapterId = f.SetupChapterId ?? string.Empty,
+                    SetupChapterSequence = chapterIdToSequence.GetValueOrDefault(f.SetupChapterId ?? string.Empty),
+                    PayoffChapterId = f.PayoffChapterId ?? string.Empty,
+                    Status = f.Status
+                })
+                .OrderByDescending(f => f.Importance)
+                .ToList(),
+            Hinted = foreshadowings
+                .Where(f => f.Status == "hinted")
+                .Select(f => new ForeshadowingEntry
+                {
+                    Id = f.Id,
+                    Title = f.Title ?? string.Empty,
+                    Description = f.Description ?? string.Empty,
+                    Importance = f.Importance,
+                    SetupChapterId = f.SetupChapterId ?? string.Empty,
+                    SetupChapterSequence = chapterIdToSequence.GetValueOrDefault(f.SetupChapterId ?? string.Empty),
+                    PayoffChapterId = f.PayoffChapterId ?? string.Empty,
+                    Status = f.Status
+                })
+                .OrderByDescending(f => f.Importance)
+                .ToList()
+        };
+
+        var currentSequence = chapters.Count > 0 ? chapters.Max(c => c.Sequence) : 0;
+        board.Foreshadowings.OverdueCount = board.Foreshadowings.Pending
+            .Count(f => f.SetupChapterSequence > 0 && currentSequence - f.SetupChapterSequence > 5);
+
+        var timelineEvents = await _db.TimelineEvents.AsNoTracking()
+            .Where(x => x.WorkId == workId)
+            .OrderBy(x => x.EventTime)
+            .Take(30)
+            .ToListAsync();
+
+        board.TimelineEvents = timelineEvents
+            .Select(t => new TimelineEventSection
+            {
+                Id = t.Id,
+                Title = t.Title ?? string.Empty,
+                Description = t.Description ?? string.Empty,
+                EventTime = t.EventTime,
+                EventType = t.EventType ?? string.Empty,
+                ChapterId = t.ChapterId ?? string.Empty,
+                ChapterSequence = chapterIdToSequence.GetValueOrDefault(t.ChapterId ?? string.Empty),
+                RelatedCharacterIds = t.RelatedCharacterIds ?? new List<string>()
+            })
+            .ToList();
+
         return board;
+    }
+
+    private async Task LoadCharactersIntoBoard(
+        WritingBlackboard board,
+        List<Domain.Entities.Story.CharacterEntity> characters,
+        string workId)
+    {
+        var characterIds = characters.Select(c => c.Id).ToHashSet();
+        var relationships = await _db.CharacterRelationships.AsNoTracking()
+            .Where(x => x.WorkId == workId && characterIds.Contains(x.SourceCharacterId))
+            .ToListAsync();
+
+        board.Characters = characters.Select(c =>
+        {
+            var rels = relationships
+                .Where(r => r.SourceCharacterId == c.Id)
+                .Select(r =>
+                {
+                    var target = characters.FirstOrDefault(tc => tc.Id == r.TargetCharacterId);
+                    return $"{target?.Name ?? r.TargetCharacterId}({r.RelationshipType}): {r.Description}";
+                })
+                .ToList();
+
+            var fears = new List<string>();
+            var desires = new List<string>();
+            if (c.Metadata != null)
+            {
+                if (c.Metadata.TryGetValue("fears", out var f) && !string.IsNullOrEmpty(f))
+                    fears = f.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
+                if (c.Metadata.TryGetValue("desires", out var d) && !string.IsNullOrEmpty(d))
+                    desires = d.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(s => s.Trim()).ToList();
+            }
+
+            return new CharacterSection
+            {
+                CharacterId = c.Id,
+                Name = c.Name ?? string.Empty,
+                CoreSeed = c.Identity ?? string.Empty,
+                Background = c.BackgroundStory ?? string.Empty,
+                Personality = c.Personality ?? string.Empty,
+                Traits = c.Gender ?? string.Empty,
+                Voice = c.Alias ?? string.Empty,
+                Arc = c.Motivation ?? string.Empty,
+                Relationships = rels,
+                Fears = fears,
+                Desires = desires
+            };
+        }).ToList();
     }
 }

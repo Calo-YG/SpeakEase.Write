@@ -7,6 +7,7 @@ public class ChapterItemResponse
 {
     public string Id { get; set; } = string.Empty;
     public string WorkId { get; set; } = string.Empty;
+    public string VolumeId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public int Sequence { get; set; }
     public int WordCount { get; set; }

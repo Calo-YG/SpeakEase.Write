@@ -80,7 +80,7 @@ public sealed class AutoSaveApplication(
         entity.UpdateAt = now;
         await db.SaveChangesAsync(ct);
 
-        memory.Invalidate(userId, entity.WorkId);
+        await memory.InvalidateAsync(userId, entity.WorkId, ct);
         logger.LogDebug("自动保存章节 {ChapterId}，字数={Words}", chapterId, entity.WordCount);
 
         return new ApiResult(true);
@@ -115,7 +115,7 @@ public sealed class AutoSaveApplication(
         entity.UpdateAt = now;
         await db.SaveChangesAsync(ct);
 
-        memory.Invalidate(userId, entity.WorkId);
+        await memory.InvalidateAsync(userId, entity.WorkId, ct);
         logger.LogDebug("自动保存角色 {CharacterId} {Name}", characterId, entity.Name);
 
         return new ApiResult(true);
@@ -150,7 +150,7 @@ public sealed class AutoSaveApplication(
         entity.UpdateAt = now;
         await db.SaveChangesAsync(ct);
 
-        memory.Invalidate(userId, entity.WorkId);
+        await memory.InvalidateAsync(userId, entity.WorkId, ct);
         logger.LogDebug("自动保存世界观 {SettingId}", worldSettingId);
 
         return new ApiResult(true);
@@ -180,7 +180,7 @@ public sealed class AutoSaveApplication(
         entity.UpdateAt = now;
         await db.SaveChangesAsync(ct);
 
-        memory.Invalidate(userId, entity.WorkId);
+        await memory.InvalidateAsync(userId, entity.WorkId, ct);
         logger.LogDebug("自动保存大纲节点 {NodeId}", outlineNodeId);
 
         return new ApiResult(true);
@@ -210,7 +210,7 @@ public sealed class AutoSaveApplication(
         entity.UpdateAt = now;
         await db.SaveChangesAsync(ct);
 
-        memory.Invalidate(userId, entity.WorkId);
+        await memory.InvalidateAsync(userId, entity.WorkId, ct);
         logger.LogDebug("自动保存灵感 {InspirationId}", inspirationId);
 
         return new ApiResult(true);

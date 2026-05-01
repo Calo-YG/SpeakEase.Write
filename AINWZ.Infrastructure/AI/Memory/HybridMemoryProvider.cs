@@ -1,5 +1,6 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SpeakEase.Write.Infrastructure.MutilCache;
 using SpeakEase.Write.Infrastructure.Persistence;
 
@@ -9,13 +10,18 @@ public sealed class HybridMemoryProvider : IMemoryProvider
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IMultiCacheService _cache;
+    private readonly ILogger<HybridMemoryProvider> _logger;
     private static readonly TimeSpan MemExpiry = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RedisExpiry = TimeSpan.FromMinutes(10);
 
-    public HybridMemoryProvider(IServiceScopeFactory scopeFactory, IMultiCacheService cache)
+    public HybridMemoryProvider(
+        IServiceScopeFactory scopeFactory,
+        IMultiCacheService cache,
+        ILogger<HybridMemoryProvider> logger)
     {
         _scopeFactory = scopeFactory;
         _cache = cache;
+        _logger = logger;
     }
 
     public Task<MemoryContext> LoadAsync(string userId, string workId, CancellationToken cancellationToken = default)
@@ -107,15 +113,29 @@ public sealed class HybridMemoryProvider : IMemoryProvider
             redisExpiry: RedisExpiry);
     }
 
-    public void SaveSnapshot(string userId, string workId, MemoryContext ctx)
+    public async Task SaveSnapshotAsync(string userId, string workId, MemoryContext ctx, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"memory:{userId}:{workId}";
-        _ = _cache.RefreshAsync(cacheKey, ctx, MemExpiry, RedisExpiry);
+        try
+        {
+            await _cache.RefreshAsync(cacheKey, ctx, MemExpiry, RedisExpiry);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Memory SaveSnapshot 失败: UserId={UserId}, WorkId={WorkId}", userId, workId);
+        }
     }
 
-    public void Invalidate(string userId, string workId)
+    public async Task InvalidateAsync(string userId, string workId, CancellationToken cancellationToken = default)
     {
         var cacheKey = $"memory:{userId}:{workId}";
-        _ = _cache.RemoveAsync(cacheKey);
+        try
+        {
+            await _cache.RemoveAsync(cacheKey);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Memory Invalidate 失败: UserId={UserId}, WorkId={WorkId}", userId, workId);
+        }
     }
 }

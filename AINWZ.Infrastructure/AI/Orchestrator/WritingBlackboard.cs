@@ -4,6 +4,8 @@ public sealed class WritingBlackboard
 {
     public string WorkId { get; set; } = string.Empty;
     public string RequestId { get; set; } = string.Empty;
+    public string WorkTitle { get; set; } = string.Empty;
+    public string WorkSummary { get; set; } = string.Empty;
 
     public WorldSettingSection WorldSetting { get; set; } = new();
 

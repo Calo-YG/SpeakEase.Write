@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
@@ -7,8 +8,13 @@ namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 public sealed class WritingBlackboardBuilder
 {
     private readonly SpeakEaseDbContext _db;
+    private readonly ILogger<WritingBlackboardBuilder> _logger;
 
-    public WritingBlackboardBuilder(SpeakEaseDbContext db) => _db = db;
+    public WritingBlackboardBuilder(SpeakEaseDbContext db, ILogger<WritingBlackboardBuilder> logger)
+    {
+        _db = db;
+        _logger = logger;
+    }
 
     public async Task<WritingBlackboard> BuildAsync(string workId, string requestId)
     {
@@ -22,6 +28,9 @@ public sealed class WritingBlackboardBuilder
             .FirstOrDefaultAsync(x => x.Id == workId);
 
         if (work == null) return board;
+
+        board.WorkTitle = work.Title ?? string.Empty;
+        board.WorkSummary = work.Summary ?? string.Empty;
 
         board.Meta = new WritingMetaInfo
         {
@@ -119,7 +128,10 @@ public sealed class WritingBlackboardBuilder
                     if (root.TryGetProperty("factions", out var fac)) wsSection.Factions = fac.GetString() ?? string.Empty;
                     if (root.TryGetProperty("history", out var his)) wsSection.History = his.GetString() ?? string.Empty;
                 }
-                catch { }
+                catch (JsonException ex)
+                {
+                    _logger.LogWarning(ex, "世界观设定 JSON 解析失败: WorkId={WorkId}", workId);
+                }
             }
 
             if (string.IsNullOrEmpty(wsSection.WorldRules) && !string.IsNullOrEmpty(worldSetting.Summary))

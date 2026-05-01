@@ -1,6 +1,7 @@
 using System.Text;
 using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Infrastructure.AI.Memory;
+using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 
 namespace SpeakEase.Write.Infrastructure.AI.Context;
 
@@ -8,11 +9,16 @@ public sealed class CreationAgentContext : ICreationAgentContext
 {
     private readonly IMemoryProvider _memory;
     private readonly IUserContext _user;
+    private readonly BlackboardHolder _blackboardHolder;
 
-    public CreationAgentContext(IMemoryProvider memory, IUserContext user)
+    public CreationAgentContext(
+        IMemoryProvider memory,
+        IUserContext user,
+        BlackboardHolder blackboardHolder)
     {
         _memory = memory;
         _user = user;
+        _blackboardHolder = blackboardHolder;
     }
 
     public async Task<AgentContext> BuildContext(string workId, CancellationToken cancellationToken = default)
@@ -29,10 +35,76 @@ public sealed class CreationAgentContext : ICreationAgentContext
             return ctx;
         }
 
-        var mem = await _memory.LoadAsync(_user.UserId, workId, cancellationToken);
-        ctx.ProjectMemory = FormatProjectMemory(mem);
+        var blackboard = _blackboardHolder.Blackboard;
+        if (blackboard != null && blackboard.WorkId == workId)
+        {
+            ctx.ProjectMemory = FormatFromBlackboard(blackboard);
+        }
+        else
+        {
+            var mem = await _memory.LoadAsync(_user.UserId, workId, cancellationToken);
+            ctx.ProjectMemory = FormatProjectMemory(mem);
+        }
 
         return ctx;
+    }
+
+    private static string FormatFromBlackboard(WritingBlackboard bb)
+    {
+        if (string.IsNullOrEmpty(bb.WorkTitle) && bb.Characters.Count == 0 && bb.RecentChapters.Count == 0)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        sb.AppendLine("# 作品上下文");
+        sb.AppendLine();
+
+        if (!string.IsNullOrEmpty(bb.WorkTitle))
+        {
+            sb.AppendLine($"**作品**：{bb.WorkTitle}");
+            sb.AppendLine($"**类型**：{bb.Meta.Genre} | **视角**：{bb.Meta.Perspective} | **总字数**：{bb.Meta.TotalWordCount}");
+            sb.AppendLine();
+        }
+
+        if (!string.IsNullOrEmpty(bb.WorldSetting.WorldRules))
+        {
+            sb.AppendLine("## 世界观概要");
+            sb.AppendLine(bb.WorldSetting.WorldRules);
+            sb.AppendLine();
+        }
+
+        if (bb.Characters.Count > 0)
+        {
+            sb.AppendLine("## 人物");
+            foreach (var c in bb.Characters)
+            {
+                var roleInfo = string.Join(" | ", new[] { c.Personality, c.Traits }.Where(x => !string.IsNullOrEmpty(x)));
+                var nameLine = string.IsNullOrEmpty(roleInfo) ? c.Name : $"{c.Name}（{roleInfo}）";
+                sb.AppendLine($"- {nameLine}");
+            }
+            sb.AppendLine();
+        }
+
+        if (bb.Outline.OutlineNodes.Count > 0)
+        {
+            sb.AppendLine("## 大纲");
+            foreach (var n in bb.Outline.OutlineNodes)
+            {
+                var descSuffix = string.IsNullOrEmpty(n.Goal) ? "" : $" — {n.Goal}";
+                var chapterTag = string.IsNullOrEmpty(n.NodeChapterId) ? "" : " [已有章节]";
+                sb.AppendLine($"- {n.Title}{descSuffix}{chapterTag}");
+            }
+            sb.AppendLine();
+        }
+
+        if (bb.RecentChapters.Count > 0)
+        {
+            sb.AppendLine("## 最近章节");
+            foreach (var c in bb.RecentChapters)
+                sb.AppendLine($"- 第{c.Sequence}章 {c.Title}（{c.WordCount}字·{c.Status}）{(string.IsNullOrEmpty(c.Summary) ? "" : $"：{c.Summary}")}");
+            sb.AppendLine();
+        }
+
+        return sb.ToString().TrimEnd();
     }
 
     private static string FormatProjectMemory(MemoryContext mem)

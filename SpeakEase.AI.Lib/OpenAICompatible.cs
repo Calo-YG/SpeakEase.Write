@@ -25,9 +25,6 @@ namespace SpeakEase.AI.Lib
         private readonly IOpenAIContext _context = context ?? throw new ArgumentNullException(nameof(context));
         private readonly ILogger<OpenAICompatible> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        /// <summary>
-        /// 命名 HttpClient 标识，与 DI 注册时 <see cref="AIExtensions.AddChatLLM"/> 中的名称对应。
-        /// </summary>
         private const string HttpClientName = "SpeakEase.LLM";
 
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
@@ -53,23 +50,23 @@ namespace SpeakEase.AI.Lib
                 "ChatAsync 开始: Model={Model}, Messages={MsgCount}, Tools={ToolCount}",
                 request.Model, request.Messages?.Count ?? 0, request.Tools?.Count ?? 0);
 
-            var httpClient = CreateConfiguredClient();
-
-            using var response = await httpClient.PostAsJsonAsync(
-                "chat/completions", request, JsonOptions, cancellationToken);
-
-            var rawResponse = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var httpRequest = CreateRequestMessage("chat/completions", request);
+            using var response = await GetClient().SendAsync(
+                httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogError(
                     "ChatAsync LLM 返回 HTTP 错误: {StatusCode} {ReasonPhrase}\n{Body}",
-                    (int)response.StatusCode, response.ReasonPhrase, rawResponse);
+                    (int)response.StatusCode, response.ReasonPhrase, errorBody);
                 throw new InvalidOperationException(
-                    $"LLM 调用失败: {(int)response.StatusCode} {response.ReasonPhrase}\n{rawResponse}");
+                    $"LLM 调用失败: {(int)response.StatusCode} {response.ReasonPhrase}\n{errorBody}");
             }
 
-            var result = JsonSerializer.Deserialize<ChatCompletionResponse>(rawResponse, JsonOptions)
+            await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var result = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
+                responseStream, JsonOptions, cancellationToken)
                 ?? throw new InvalidOperationException("LLM 响应反序列化失败。");
 
             var firstChoice = result.Choices?.FirstOrDefault();
@@ -111,13 +108,8 @@ namespace SpeakEase.AI.Lib
                 "StreamAsync 开始: Model={Model}, Messages={MsgCount}, Tools={ToolCount}",
                 request.Model, request.Messages?.Count ?? 0, request.Tools?.Count ?? 0);
 
-            var httpClient = CreateConfiguredClient();
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "chat/completions")
-            {
-                Content = JsonContent.Create(request, options: JsonOptions)
-            };
-
-            using var response = await httpClient.SendAsync(
+            using var httpRequest = CreateRequestMessage("chat/completions", request);
+            using var response = await GetClient().SendAsync(
                 httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -135,7 +127,6 @@ namespace SpeakEase.AI.Lib
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream, Encoding.UTF8);
 
-            // 累积流式内容
             var contentBuilder = new StringBuilder();
             var toolCallAccumulators = new Dictionary<int, ToolCallAccumulator>();
             string finishReason = null;
@@ -181,7 +172,6 @@ namespace SpeakEase.AI.Lib
                 if (delta == null)
                     continue;
 
-                // 内容增量
                 if (!string.IsNullOrEmpty(delta.Content))
                 {
                     contentBuilder.Append(delta.Content);
@@ -192,7 +182,6 @@ namespace SpeakEase.AI.Lib
                     };
                 }
 
-                // 工具调用增量
                 if (delta.ToolCalls != null)
                 {
                     foreach (var toolCallDelta in delta.ToolCalls)
@@ -218,7 +207,6 @@ namespace SpeakEase.AI.Lib
                 }
             }
 
-            // 流结束，输出本轮完整结果
             var hasToolCalls = toolCallAccumulators.Count > 0 &&
                 (finishReason == "tool_calls" || finishReason == null && toolCallAccumulators.Count > 0);
 
@@ -238,32 +226,25 @@ namespace SpeakEase.AI.Lib
             };
         }
 
-
-
-        private HttpClient CreateConfiguredClient()
+        private HttpClient GetClient()
         {
-            var client = _httpClientFactory.CreateClient(HttpClientName);
-
-            // BaseAddress 和 Auth 每次必须设置：IOpenAIContext 是 Scoped，
-            // ResolveAsync 后才有值，且不同用户配置可能不同。
-            // Timeout 和 Accept 已在命名客户端注册时配置，此处不再重复设置。
-            client.BaseAddress = new Uri(_context.Url.TrimEnd('/') + "/");
-
-            if (!string.IsNullOrWhiteSpace(_context.ApiKey))
-            {
-                client.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", _context.ApiKey);
-            }
-
-            _logger.LogDebug(
-                "HttpClient 已配置: BaseAddress={BaseAddress}, Timeout={Timeout}s", client.BaseAddress, client.Timeout.TotalSeconds);
-
-            return client;
+            return _httpClientFactory.CreateClient(HttpClientName);
         }
 
-        /// <summary>
-        /// 构造 OpenAI ChatCompletionRequest
-        /// </summary>
+        private HttpRequestMessage CreateRequestMessage<T>(string path, T body)
+        {
+            var baseUri = new Uri(_context.Url.TrimEnd('/') + "/");
+            var request = new HttpRequestMessage(HttpMethod.Post, new Uri(baseUri, path))
+            {
+                Content = JsonContent.Create(body, options: JsonOptions)
+            };
+
+            if (!string.IsNullOrWhiteSpace(_context.ApiKey))
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _context.ApiKey);
+
+            return request;
+        }
+
         private ChatCompletionRequest BuildRequest(
             LLMTurnContext context,
             List<ChatMessage> messages,

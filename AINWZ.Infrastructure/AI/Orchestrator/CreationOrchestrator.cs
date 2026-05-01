@@ -62,42 +62,49 @@ public sealed class CreationOrchestrator
         var blackboard = await _blackboardBuilder.BuildAsync(workId, Guid.NewGuid().ToString());
         _blackboardHolder.Blackboard = blackboard;
 
-        var enrichedMessage = userMessage;
-        if (!string.IsNullOrEmpty(workId))
+        try
         {
-            var ctx = await _agentContext.BuildContext(workId, cancellationToken);
-            var contextParts = new List<string>();
-            contextParts.Add($"[系统] 当前作品标识 (work_id) = {workId}");
-            if (!string.IsNullOrEmpty(ctx.ProjectMemory))
-                contextParts.Add(ctx.ProjectMemory);
-            enrichedMessage = $"{userMessage}\n\n{string.Join("\n\n", contextParts)}";
-        }
-
-        var agent = _agents.FirstOrDefault(a => a.Name == route.AgentName);
-        if (agent == null)
-        {
-            yield return new AgentStreamChunk
+            var enrichedMessage = userMessage;
+            if (!string.IsNullOrEmpty(workId))
             {
-                Type = "done",
-                Content = JsonHelper.Serialize(new { error = $"未找到 Agent: {route.AgentName}" })
+                var ctx = await _agentContext.BuildContext(workId, cancellationToken);
+                var contextParts = new List<string>();
+                contextParts.Add($"[系统] 当前作品标识 (work_id) = {workId}");
+                if (!string.IsNullOrEmpty(ctx.ProjectMemory))
+                    contextParts.Add(ctx.ProjectMemory);
+                enrichedMessage = $"{userMessage}\n\n{string.Join("\n\n", contextParts)}";
+            }
+
+            var agent = _agents.FirstOrDefault(a => a.Name == route.AgentName);
+            if (agent == null)
+            {
+                yield return new AgentStreamChunk
+                {
+                    Type = "done",
+                    Content = JsonHelper.Serialize(new { error = $"未找到 Agent: {route.AgentName}" })
+                };
+                yield break;
+            }
+
+            await _llmContext.ResolveAsync(cancellationToken);
+
+            var request = new AgentRequest
+            {
+                UserMessage = enrichedMessage,
+                SystemPrompt = agent.BuildPrompt(),
+                Model = _llmContext.Model,
+                MaxIterations = 10,
+                ConversationHistory = conversationHistory ?? new List<ChatMessage>()
             };
-            yield break;
+
+            await foreach (var chunk in agent.ExecuteStreamAsync(request, cancellationToken))
+            {
+                yield return chunk;
+            }
         }
-
-        await _llmContext.ResolveAsync(cancellationToken);
-
-        var request = new AgentRequest
+        finally
         {
-            UserMessage = enrichedMessage,
-            SystemPrompt = agent.BuildPrompt(),
-            Model = _llmContext.Model,
-            MaxIterations = 10,
-            ConversationHistory = conversationHistory ?? new List<ChatMessage>()
-        };
-
-        await foreach (var chunk in agent.ExecuteStreamAsync(request, cancellationToken))
-        {
-            yield return chunk;
+            _blackboardHolder.Blackboard = null;
         }
     }
 }

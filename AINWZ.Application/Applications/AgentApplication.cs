@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
@@ -27,7 +28,7 @@ public sealed class AgentApplication : IAgentApplication
     public async Task<AgentResponse> ChatAsync(AgentChatRequestDto request, CancellationToken cancellationToken = default)
     {
         var workId = request.WorkId ?? string.Empty;
-        var firstUserMessage = request.Messages?.FirstOrDefault(m => m.Role == "user")?.Content ?? string.Empty;
+        var (userMessage, history) = ExtractMessages(request.Messages);
 
         var correlationId = Guid.NewGuid().ToString();
         var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
@@ -36,22 +37,14 @@ public sealed class AgentApplication : IAgentApplication
         if (!string.IsNullOrWhiteSpace(workId))
             await _snapshotService.CaptureBeforeSnapshotAsync(workId, correlationId);
 
-        var response = new AgentResponse
-        {
-            Content = string.Empty,
-            StopReason = "completed"
-        };
-
         var contentParts = new List<string>();
 
         await foreach (var chunk in _orchestrator.ExecuteAsync(
-            workId, firstUserMessage, cancellationToken))
+            workId, userMessage, history, cancellationToken))
         {
             if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                 contentParts.Add(chunk.Content);
         }
-
-        response.Content = string.Join(string.Empty, contentParts);
 
         if (!string.IsNullOrWhiteSpace(workId))
             await _snapshotService.CaptureAfterSnapshotAsync(workId, correlationId);
@@ -59,7 +52,11 @@ public sealed class AgentApplication : IAgentApplication
         if (sessionId != null)
             await _sessionManager.RecordTurnAsync(sessionId);
 
-        return response;
+        return new AgentResponse
+        {
+            Content = string.Join(string.Empty, contentParts),
+            StopReason = "completed"
+        };
     }
 
     public async IAsyncEnumerable<AgentStreamChunk> StreamChatAsync(
@@ -67,7 +64,7 @@ public sealed class AgentApplication : IAgentApplication
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var workId = request.WorkId ?? string.Empty;
-        var firstUserMessage = request.Messages?.FirstOrDefault(m => m.Role == "user")?.Content ?? string.Empty;
+        var (userMessage, history) = ExtractMessages(request.Messages);
 
         var correlationId = Guid.NewGuid().ToString();
         var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
@@ -78,7 +75,7 @@ public sealed class AgentApplication : IAgentApplication
             await _snapshotService.CaptureBeforeSnapshotAsync(workId, correlationId);
 
         await foreach (var chunk in _orchestrator.ExecuteAsync(
-            workId, firstUserMessage, cancellationToken))
+            workId, userMessage, history, cancellationToken))
         {
             yield return chunk;
         }
@@ -88,5 +85,29 @@ public sealed class AgentApplication : IAgentApplication
 
         if (sessionId != null)
             await _sessionManager.RecordTurnAsync(sessionId);
+    }
+
+    private static (string userMessage, List<ChatMessage> history) ExtractMessages(
+        List<AgentChatMessage> messages)
+    {
+        if (messages == null || messages.Count == 0)
+            return (string.Empty, new List<ChatMessage>());
+
+        var lastUserIndex = messages.FindLastIndex(m => m.Role == "user");
+        var history = new List<ChatMessage>();
+        for (int i = 0; i < lastUserIndex; i++)
+        {
+            var m = messages[i];
+            if (m.Role == "user")
+                history.Add(ChatMessage.User(m.Content));
+            else if (m.Role == "assistant")
+                history.Add(ChatMessage.Assistant(m.Content));
+        }
+
+        var lastUserMsg = string.Empty;
+        if (lastUserIndex >= 0)
+            lastUserMsg = messages[lastUserIndex].Content;
+
+        return (lastUserMsg, history);
     }
 }

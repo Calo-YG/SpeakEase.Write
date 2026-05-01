@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.Shared;
@@ -10,6 +11,7 @@ namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 public sealed class CreationOrchestrator
 {
     private readonly CreationRouter _router;
+    private readonly IOpenAIContext _llmContext;
     private readonly IEnumerable<INovelAgent> _agents;
     private readonly WritingBlackboardBuilder _blackboardBuilder;
     private readonly BlackboardHolder _blackboardHolder;
@@ -17,12 +19,14 @@ public sealed class CreationOrchestrator
 
     public CreationOrchestrator(
         CreationRouter router,
+        IOpenAIContext llmContext,
         IEnumerable<INovelAgent> agents,
         WritingBlackboardBuilder blackboardBuilder,
         BlackboardHolder blackboardHolder,
         ICreationAgentContext agentContext)
     {
         _router = router;
+        _llmContext = llmContext;
         _agents = agents;
         _blackboardBuilder = blackboardBuilder;
         _blackboardHolder = blackboardHolder;
@@ -32,7 +36,8 @@ public sealed class CreationOrchestrator
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
         string userMessage,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        List<ChatMessage> conversationHistory = null,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var route = _router.Decide(userMessage);
 
@@ -51,20 +56,21 @@ public sealed class CreationOrchestrator
         yield return new AgentStreamChunk
         {
             Type = "meta",
-            Content = "{\"stage\":\"loading_context\"}"
+            Content = JsonHelper.Serialize(new { stage = "loading_context" })
         };
 
-        var blackboard = await _blackboardBuilder.BuildAsync(
-            workId, Guid.NewGuid().ToString());
-
+        var blackboard = await _blackboardBuilder.BuildAsync(workId, Guid.NewGuid().ToString());
         _blackboardHolder.Blackboard = blackboard;
 
         var enrichedMessage = userMessage;
         if (!string.IsNullOrEmpty(workId))
         {
             var ctx = await _agentContext.BuildContext(workId, cancellationToken);
+            var contextParts = new List<string>();
+            contextParts.Add($"[系统] 当前作品标识 (work_id) = {workId}");
             if (!string.IsNullOrEmpty(ctx.ProjectMemory))
-                enrichedMessage = $"{userMessage}\n\n{ctx.ProjectMemory}";
+                contextParts.Add(ctx.ProjectMemory);
+            enrichedMessage = $"{userMessage}\n\n{string.Join("\n\n", contextParts)}";
         }
 
         var agent = _agents.FirstOrDefault(a => a.Name == route.AgentName);
@@ -73,29 +79,25 @@ public sealed class CreationOrchestrator
             yield return new AgentStreamChunk
             {
                 Type = "done",
-                Content = $"未找到 Agent: {route.AgentName}"
+                Content = JsonHelper.Serialize(new { error = $"未找到 Agent: {route.AgentName}" })
             };
             yield break;
         }
 
-        var prompt = agent.BuildPrompt();
+        await _llmContext.ResolveAsync(cancellationToken);
 
-        await foreach (var chunk in agent.ExecuteStreamAsync(
-            new AgentRequest
-            {
-                UserMessage = enrichedMessage,
-                SystemPrompt = prompt,
-                Model = blackboard.Meta.PreferredModel,
-                MaxIterations = 10
-            }, cancellationToken))
+        var request = new AgentRequest
+        {
+            UserMessage = enrichedMessage,
+            SystemPrompt = agent.BuildPrompt(),
+            Model = _llmContext.Model,
+            MaxIterations = 10,
+            ConversationHistory = conversationHistory ?? new List<ChatMessage>()
+        };
+
+        await foreach (var chunk in agent.ExecuteStreamAsync(request, cancellationToken))
         {
             yield return chunk;
         }
-
-        yield return new AgentStreamChunk
-        {
-            Type = "done",
-            Content = "generation_complete"
-        };
     }
 }

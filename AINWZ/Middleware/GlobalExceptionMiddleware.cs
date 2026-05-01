@@ -47,6 +47,11 @@ public sealed class GlobalExceptionMiddleware
 
     private static async Task WriteErrorResponse(HttpContext context, HttpStatusCode statusCode, string message)
     {
+        if (context.Response.HasStarted)
+        {
+            return;
+        }
+
         context.Response.StatusCode = (int)statusCode;
         context.Response.ContentType = "application/json; charset=utf-8";
 

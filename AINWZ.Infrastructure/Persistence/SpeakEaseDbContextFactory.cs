@@ -11,7 +11,7 @@ internal sealed class SpeakEaseDbContextFactory : IDesignTimeDbContextFactory<Sp
     public SpeakEaseDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<SpeakEaseDbContext>();
-        optionsBuilder.UseNpgsql("Host=localhost;Port=7452;Database=ainwz;Username=blog;Password=blog123");
+        optionsBuilder.UseNpgsql("Host=localhost;Port=7452;Database=speakeasewrite;Username=blog;Password=blog123");
 
         return new SpeakEaseDbContext(optionsBuilder.Options);
     }

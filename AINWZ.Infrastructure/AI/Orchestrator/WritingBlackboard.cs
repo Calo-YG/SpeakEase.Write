@@ -30,8 +30,21 @@ public sealed class WorldSettingSection
 public sealed class OutlineSection
 {
     public List<VolumeNode> Volumes { get; set; } = new();
+    public List<OutlineNodeSection> OutlineNodes { get; set; } = new();
     public string OverallArc { get; set; } = string.Empty;
     public DateTime LastUpdatedAt { get; set; }
+}
+
+public sealed class OutlineNodeSection
+{
+    public string Id { get; set; } = string.Empty;
+    public string ParentId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Goal { get; set; } = string.Empty;
+    public string KeyEvent { get; set; } = string.Empty;
+    public int Sequence { get; set; }
+    public string StageType { get; set; } = string.Empty;
+    public string NodeChapterId { get; set; } = string.Empty;
 }
 
 public sealed class VolumeNode
@@ -73,6 +86,8 @@ public sealed class ChapterSection
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public string Summary { get; set; } = string.Empty;
+    public int WordCount { get; set; }
+    public string Status { get; set; } = string.Empty;
 }
 
 public sealed class AuditResultSection

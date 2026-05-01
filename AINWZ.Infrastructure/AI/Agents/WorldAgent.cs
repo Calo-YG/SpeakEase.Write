@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -8,19 +9,13 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 public sealed class WorldAgent : IWorldAgent
 {
-    private readonly IReActAgent _react;
-    private readonly IOpenAIContext _llmContext;
-    private readonly IToolCapable _toolCapable;
-    private bool _toolsInitialized;
+    private readonly IChatCompatible _llm;
+    private readonly IToolCapable _tools;
 
-    public WorldAgent(
-        IReActAgent react,
-        IOpenAIContext llmContext,
-        IToolCapable toolCapable)
+    public WorldAgent(IChatCompatible llm, IToolCapable tools)
     {
-        _react = react;
-        _llmContext = llmContext;
-        _toolCapable = toolCapable;
+        _llm = llm;
+        _tools = tools;
     }
 
     public string Name => "world";
@@ -44,17 +39,20 @@ public sealed class WorldAgent : IWorldAgent
 
 # 工作规范
 - 设定必须内在逻辑自洽
-- 如有已有设定，先调用 get_existing_settings 查询，避免冲突
-- 如需参考作品中的角色分布，调用 get_characters_in_world 了解角色情况
-- 如需参考已有时间线，调用 get_timeline_events
+- 如有已有设定，先调用 get_world_setting 或 search_world_setting 查询，避免冲突
+- 如需参考作品中的角色分布，调用 get_character、search_characters 或 get_character_list 了解角色情况
+- 如需参考已有大纲和章节结构，调用 get_outline、search_outline 或 list_volumes
+- 设计完成后必须调用 save_world_setting 保存设定
 
 # 信息获取方式
-你拥有一组查询工具，可在构建过程中按需调用：
-- 需要查看已有世界观设定 → 调用 get_existing_settings
-- 需要了解当前作品中的角色 → 调用 get_characters_in_world
-- 需要了解已有时间线 → 调用 get_timeline_events
+你拥有一组查询和保存工具，可在构建过程中按需调用：
+- 需要查看已有世界观设定 → 调用 get_world_setting
+- 需要按关键词搜索世界设定 → 调用 search_world_setting
+- 需要了解当前作品中的角色 → 调用 get_character、search_characters 或 get_character_list
+- 需要了解已有大纲/章节分布 → 调用 get_outline、search_outline 或 list_volumes
+- 设计完成后保存 → 调用 save_world_setting (传入 work_id + world_rules/geography/factions/history/summary)
 
-# 自生长模式（可选）
+# 自生长模式
 当用户的指令是扩展已有设定时：
 1. 先查已有设定，找到最有「生长潜力」的方向
 2. 推导当前设定自然引出的新设定
@@ -70,25 +68,74 @@ public sealed class WorldAgent : IWorldAgent
 
     public void RegisterTools(IToolCapable toolCapable)
     {
-        if (_toolsInitialized) return;
-        _toolsInitialized = true;
-
+        toolCapable.RegisterTool(GetWorkInfoTool.ToolDefinition);
         toolCapable.RegisterTool(GetWorldSettingTool.ToolDefinition);
         toolCapable.RegisterTool(GetCharacterTool.ToolDefinition);
+        toolCapable.RegisterTool(SearchCharactersTool.ToolDefinition);
+        toolCapable.RegisterTool(GetOutlineTool.ToolDefinition);
+        toolCapable.RegisterTool(SearchOutlineTool.ToolDefinition);
+        toolCapable.RegisterTool(ListVolumesTool.ToolDefinition);
+        toolCapable.RegisterTool(SaveWorldSettingTool.ToolDefinition);
+        toolCapable.RegisterTool(SearchWorldSettingTool.ToolDefinition);
+        toolCapable.RegisterTool(GetCharacterListTool.ToolDefinition);
     }
 
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteStreamAsync(
         AgentRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        RegisterTools(_toolCapable);
+        RegisterTools(_tools);
 
-        await _llmContext.ResolveAsync(cancellationToken);
-        request.Model = _llmContext.Model;
+        var messages = BuildMessages(request);
+        var ctx = new LLMTurnContext { Model = request.Model, Temperature = request.Temperature, MaxTokens = request.MaxTokens };
 
-        await foreach (var chunk in _react.ExecuteStreamAsync(request, cancellationToken))
+        for (int i = 0; i < request.MaxIterations; i++)
         {
-            yield return chunk;
+            LLMTurnResult turnResult = null;
+
+            await foreach (var tc in _llm.StreamAsync(ctx, messages, _tools.Tools, cancellationToken))
+            {
+                switch (tc.Type)
+                {
+                    case "content":
+                        yield return new AgentStreamChunk { Type = "content", Content = tc.Content };
+                        break;
+                    case "tool_call":
+                        yield return new AgentStreamChunk { Type = "tool_call", ToolCallDelta = tc.ToolCallDelta };
+                        break;
+                    case "done":
+                        turnResult = tc.TurnResult;
+                        break;
+                }
+            }
+
+            if (turnResult == null) continue;
+
+            if (turnResult.HasToolCalls)
+            {
+                messages.Add(new AssistantMessage { Content = turnResult.Content ?? string.Empty, ToolCalls = turnResult.ToolCalls });
+                foreach (var tc in turnResult.ToolCalls)
+                {
+                    var tr = await _tools.ExecuteAsync(tc, cancellationToken);
+                    yield return new AgentStreamChunk { Type = "tool_result", ToolResult = tr };
+                    messages.Add(ChatMessage.Tool(tc.Id, tr.Content ?? string.Empty));
+                }
+            }
+            else
+            {
+                messages.Add(ChatMessage.Assistant(turnResult.Content));
+                yield return new AgentStreamChunk { Type = "done", FinalResponse = new AgentResponse { Content = turnResult.Content, Model = turnResult.Model, Iterations = i + 1, StopReason = "completed" } };
+                yield break;
+            }
         }
+    }
+
+    private static List<ChatMessage> BuildMessages(AgentRequest req)
+    {
+        var msgs = new List<ChatMessage>();
+        if (!string.IsNullOrEmpty(req.SystemPrompt)) msgs.Add(ChatMessage.System(req.SystemPrompt));
+        if (req.ConversationHistory?.Count > 0) msgs.AddRange(req.ConversationHistory);
+        if (!string.IsNullOrEmpty(req.UserMessage)) msgs.Add(ChatMessage.User(req.UserMessage));
+        return msgs;
     }
 }

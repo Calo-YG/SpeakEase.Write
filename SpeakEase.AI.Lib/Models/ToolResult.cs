@@ -29,5 +29,15 @@ namespace SpeakEase.AI.Lib.Models
         /// 错误码（执行失败时）。
         /// </summary>
         public string ErrorCode { get; set; }
+
+        public static ToolResult Ok(string content)
+        {
+            return new ToolResult { Success = true, Content = content };
+        }
+
+        public static ToolResult Fail(string message, string errorCode = null)
+        {
+            return new ToolResult { Success = false, Content = message, ErrorCode = errorCode };
+        }
     }
 }

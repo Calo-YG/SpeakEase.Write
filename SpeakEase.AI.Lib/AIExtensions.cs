@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Tools;
 using System.Net.Http.Headers;
@@ -22,9 +22,13 @@ namespace SpeakEase.AI.Lib
                 client.Timeout = TimeSpan.FromSeconds(120);
                 client.DefaultRequestHeaders.Accept.Add(
                     new MediaTypeWithQualityHeaderValue("application/json"));
-            });
+                
+            }).ConfigurePrimaryHttpMessageHandler(_ => new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => { return true; }
+            }); ;
 
-            services.AddTransient<IToolCapable, ToolCapable>();//注册为瞬时涉及到SubAgent调用时注册内部工具
+            services.AddScoped<IToolCapable, ToolCapable>();
             services.AddScoped<ISkilCapable, SkillCapable>();
             services.AddScoped<IChatCompatible, OpenAICompatible>();
             services.AddKeyedTransient<IToolExecutor, CalculateTool>(CalculateTool.ToolDefinition.Function.Name);

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -11,9 +12,11 @@ using SpeakEase.Write.Infrastructure.Persistence;
 namespace SpeakEase.Write.Infrastructure.Migrations
 {
     [DbContext(typeof(SpeakEaseDbContext))]
-    partial class SpeakEaseDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260502120256_AddAICreationMessagesTable")]
+    partial class AddAICreationMessagesTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

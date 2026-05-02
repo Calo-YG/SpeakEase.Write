@@ -1,16 +1,18 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.AI.Orchestrator;
+using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
 public sealed class SearchCharactersTool : IToolExecutor
 {
-    private readonly BlackboardHolder _holder;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public SearchCharactersTool(BlackboardHolder holder) => _holder = holder;
+    public SearchCharactersTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
@@ -24,6 +26,11 @@ public sealed class SearchCharactersTool : IToolExecutor
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
+                    ["work_id"] = new()
+                    {
+                        Type = "string",
+                        Description = "作品ID"
+                    },
                     ["query"] = new()
                     {
                         Type = "string",
@@ -35,80 +42,63 @@ public sealed class SearchCharactersTool : IToolExecutor
                         Description = "返回数量上限（默认 5）"
                     }
                 },
-                Required = new List<string> { "query" }
+                Required = new List<string> { "work_id", "query" }
             }
         }
     };
 
-    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
+    public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var board = _holder.Blackboard;
-        if (board?.Characters == null || board.Characters.Count == 0)
-        {
-            return Task.FromResult(new ToolResult
-            {
-                Success = false,
-                Content = "当前作品暂无角色信息",
-                ErrorCode = "no_characters"
-            });
-        }
-
+        string workId = null;
         string query = null;
         int limit = 5;
         try
         {
             using var doc = JsonDocument.Parse(arguments);
+            if (doc.RootElement.TryGetProperty("work_id", out var w)) workId = w.GetString();
             if (doc.RootElement.TryGetProperty("query", out var qProp))
                 query = qProp.GetString();
             if (doc.RootElement.TryGetProperty("limit", out var lProp))
                 limit = lProp.GetInt32();
         }
-        catch
-        {
-        }
+        catch { }
+
+        if (string.IsNullOrEmpty(workId))
+            return new ToolResult { Success = false, Content = "缺少 work_id 参数", ErrorCode = "missing_parameter" };
 
         if (string.IsNullOrEmpty(query))
-        {
-            return Task.FromResult(new ToolResult
-            {
-                Success = false,
-                Content = "缺少 query 参数",
-                ErrorCode = "missing_parameter"
-            });
-        }
+            return new ToolResult { Success = false, Content = "缺少 query 参数", ErrorCode = "missing_parameter" };
 
         if (limit < 1) limit = 1;
         if (limit > 20) limit = 20;
 
-        var results = board.Characters
-            .Where(c => c.Name.Contains(query, StringComparison.OrdinalIgnoreCase)
-                        || c.CoreSeed.Contains(query, StringComparison.OrdinalIgnoreCase)
-                        || c.Background.Contains(query, StringComparison.OrdinalIgnoreCase)
-                        || c.Personality.Contains(query, StringComparison.OrdinalIgnoreCase))
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+
+        var matched = await db.Characters
+            .Where(c => c.WorkId == workId &&
+                ((c.Name != null && c.Name.Contains(query)) ||
+                 (c.Identity != null && c.Identity.Contains(query)) ||
+                 (c.Personality != null && c.Personality.Contains(query)) ||
+                 (c.BackgroundStory != null && c.BackgroundStory.Contains(query))))
             .Take(limit)
             .Select(c => new
             {
-                c.CharacterId,
+                c.Id,
                 c.Name,
-                c.CoreSeed,
-                c.Personality
+                CoreSeed = c.Identity,
+                c.Personality,
+                Background = c.BackgroundStory ?? string.Empty
             })
-            .ToList();
+            .ToListAsync(ct);
 
-        if (results.Count == 0)
-        {
-            return Task.FromResult(new ToolResult
-            {
-                Success = false,
-                Content = $"未找到匹配「{query}」的角色",
-                ErrorCode = "no_matches"
-            });
-        }
+        if (matched.Count == 0)
+            return new ToolResult { Success = false, Content = $"未找到匹配「{query}」的角色", ErrorCode = "no_matches" };
 
-        return Task.FromResult(new ToolResult
+        return new ToolResult
         {
             Success = true,
-            Content = JsonSerializer.Serialize(results)
-        });
+            Content = JsonSerializer.Serialize(matched)
+        };
     }
 }

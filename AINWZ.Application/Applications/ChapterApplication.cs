@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SpeakEase.Authorization.Authorization;
-using SpeakEase.Write.Application.Contracts.Snapshot;
 using SpeakEase.Write.Application.Contracts.Story;
 using SpeakEase.Write.Application.Contracts.Story.Dto;
 using SpeakEase.Write.Domain.Entities.Works;
@@ -18,8 +17,7 @@ public class ChapterApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
-    ILogger<ChapterApplication> logger,
-    IBlackboardUpdater blackboardUpdater) : IChapterApplication
+    ILogger<ChapterApplication> logger) : IChapterApplication
 {
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
@@ -158,9 +156,6 @@ public class ChapterApplication(
             return new ApiResult<ChapterDetailResponse>("章节保存失败，请稍后重试。", 500);
         }
 
-        if (request.Content is not null)
-            blackboardUpdater.UpdateChapterContent(chapterId, entity.Content, entity.Summary);
-
         return new ApiResult<ChapterDetailResponse>(new ChapterDetailResponse
         {
             Id = entity.Id, WorkId = entity.WorkId, VolumeId = entity.VolumeId, Title = entity.Title,
@@ -212,8 +207,6 @@ public class ChapterApplication(
 
         logger.LogInformation("用户 {UserId} 删除章节：{Title}，Id={Id}，作品 {WorkId} 总字数更新为 {TotalWords}",
             userId, entity.Title, entity.Id, workId, newTotalWords);
-
-        blackboardUpdater.RemoveChapter(chapterId);
 
         return new ApiResult(true);
     }

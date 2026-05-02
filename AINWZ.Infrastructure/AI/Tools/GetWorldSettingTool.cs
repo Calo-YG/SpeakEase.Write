@@ -1,85 +1,115 @@
+using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.AI.Orchestrator;
+using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
 public sealed class GetWorldSettingTool : IToolExecutor
 {
-    private readonly BlackboardHolder _holder;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public GetWorldSettingTool(BlackboardHolder holder) => _holder = holder;
+    public GetWorldSettingTool(IServiceScopeFactory scopeFactory)
+    {
+        _scopeFactory = scopeFactory;
+    }
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
-        Type = "function",
         Function = new FunctionDefinition
         {
             Name = "get_world_setting",
-            Description = "查询世界观设定，可按分区查询（world_rules/geography/factions/history），不传 section 则返回全部",
+            Description = "查询世界观设定。可按分区查询（world_rules/geography/factions/history）。",
             Parameters = new FunctionParameters
             {
-                Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
+                    ["work_id"] = new() { Type = "string", Description = "作品ID" },
                     ["section"] = new()
                     {
                         Type = "string",
-                        Description = "分区名称：world_rules（世界规则）, geography（地理）, factions（势力）, history（历史）"
+                        Description = "分区名称（可选）：world_rules=世界规则、geography=地理、factions=势力、history=历史",
+                        Enum = new List<object> { "world_rules", "geography", "factions", "history" }
                     }
                 },
-                Required = new List<string>()
+                Required = new List<string> { "work_id" }
             }
         }
     };
 
-    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
+    public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var board = _holder.Blackboard;
-        if (board?.WorldSetting == null)
-        {
-            return Task.FromResult(new ToolResult
-            {
-                Success = false,
-                Content = "当前作品暂无世界观设定",
-                ErrorCode = "no_world_setting"
-            });
-        }
-
+        string workId = null;
         string section = null;
         try
         {
             using var doc = JsonDocument.Parse(arguments);
-            if (doc.RootElement.TryGetProperty("section", out var prop))
-                section = prop.GetString();
+            if (doc.RootElement.TryGetProperty("work_id", out var w)) workId = w.GetString();
+            if (doc.RootElement.TryGetProperty("section", out var s)) section = s.GetString();
         }
-        catch
+        catch { }
+
+        if (string.IsNullOrEmpty(workId))
+            return new ToolResult { Success = false, Content = "缺少 work_id 参数", ErrorCode = "missing_parameter" };
+
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+
+        var ws = await db.WorldSettings.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.WorkId == workId, ct);
+        if (ws == null)
+            return new ToolResult { Content = "未找到世界观设定" };
+
+        WorldRules parsed = null;
+        if (!string.IsNullOrEmpty(ws.JsonContent))
         {
+            try { parsed = JsonSerializer.Deserialize<WorldRules>(ws.JsonContent); }
+            catch { }
         }
 
-        var setting = board.WorldSetting;
-        var result = section?.ToLowerInvariant() switch
+        var worldRules = parsed?.WorldRulesText ?? ws.Summary ?? string.Empty;
+        var geography = parsed?.Geography ?? string.Empty;
+        var factions = parsed?.Factions ?? string.Empty;
+        var history = parsed?.History ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(section))
         {
-            "world_rules" => setting.WorldRules,
-            "geography" => setting.Geography,
-            "factions" => setting.Factions,
-            "history" => setting.History,
-            _ => JsonSerializer.Serialize(new
+            return section switch
             {
-                setting.WorldRules,
-                setting.Geography,
-                setting.Factions,
-                setting.History,
-                setting.LastUpdatedAt
-            })
-        };
+                "world_rules" => new ToolResult { Success = true, Content = worldRules },
+                "geography" => new ToolResult { Success = true, Content = geography },
+                "factions" => new ToolResult { Success = true, Content = factions },
+                "history" => new ToolResult { Success = true, Content = history },
+                _ => new ToolResult { Success = false, Content = $"未知分区: {section}，支持: world_rules/geography/factions/history" }
+            };
+        }
 
-        return Task.FromResult(new ToolResult
+        var sb = new StringBuilder();
+        sb.AppendLine(worldRules);
+        if (!string.IsNullOrEmpty(geography)) sb.AppendLine($"地理：{geography}");
+        if (!string.IsNullOrEmpty(factions)) sb.AppendLine($"势力：{factions}");
+        if (!string.IsNullOrEmpty(history)) sb.AppendLine($"历史：{history}");
+
+        return new ToolResult
         {
             Success = true,
-            Content = result
-        });
+            Content = sb.ToString()
+        };
+    }
+
+    private class WorldRules
+    {
+        [System.Text.Json.Serialization.JsonPropertyName("worldRules")]
+        public string WorldRulesText { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("geography")]
+        public string Geography { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("factions")]
+        public string Factions { get; set; }
+        [System.Text.Json.Serialization.JsonPropertyName("history")]
+        public string History { get; set; }
     }
 }

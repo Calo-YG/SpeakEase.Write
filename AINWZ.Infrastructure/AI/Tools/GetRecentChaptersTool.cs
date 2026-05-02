@@ -1,83 +1,98 @@
+using System.Text;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.AI.Orchestrator;
+using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
 public sealed class GetRecentChaptersTool : IToolExecutor
 {
-    private readonly BlackboardHolder _holder;
+    private readonly IServiceScopeFactory _scopeFactory;
 
-    public GetRecentChaptersTool(BlackboardHolder holder) => _holder = holder;
+    public GetRecentChaptersTool(IServiceScopeFactory scopeFactory)
+    {
+        _scopeFactory = scopeFactory;
+    }
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
-        Type = "function",
         Function = new FunctionDefinition
         {
             Name = "get_recent_chapters",
-            Description = "获取最近 N 章的内容，用于回顾前文",
+            Description = "查询最近N个章节的完整内容（含标题、正文、摘要、字数），用于续写时参考上下文。",
             Parameters = new FunctionParameters
             {
-                Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["count"] = new()
-                    {
-                        Type = "integer",
-                        Description = "需要获取的章节数量（默认 3）"
-                    }
+                    ["work_id"] = new() { Type = "string", Description = "作品ID" },
+                    ["count"] = new() { Type = "integer", Description = "查询章节数量（默认3）" }
                 },
-                Required = new List<string>()
+                Required = new List<string> { "work_id" }
             }
         }
     };
 
-    public Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
+    public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var board = _holder.Blackboard;
-        if (board?.RecentChapters == null || board.RecentChapters.Count == 0)
-        {
-            return Task.FromResult(new ToolResult
-            {
-                Success = false,
-                Content = "暂无已写章节",
-                ErrorCode = "no_chapters"
-            });
-        }
-
+        string workId = null;
         int count = 3;
         try
         {
             using var doc = JsonDocument.Parse(arguments);
-            if (doc.RootElement.TryGetProperty("count", out var prop))
-                count = prop.GetInt32();
+            if (doc.RootElement.TryGetProperty("work_id", out var w)) workId = w.GetString();
+            if (doc.RootElement.TryGetProperty("count", out var c) && c.ValueKind == JsonValueKind.Number)
+                count = c.GetInt32();
         }
-        catch
-        {
-        }
+        catch { }
+
+        if (string.IsNullOrEmpty(workId))
+            return new ToolResult { Success = false, Content = "缺少 work_id 参数", ErrorCode = "missing_parameter" };
 
         if (count < 1) count = 1;
         if (count > 10) count = 10;
 
-        var chapters = board.RecentChapters
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+
+        var chapters = await db.Chapters.AsNoTracking()
+            .Where(c => c.WorkId == workId)
             .OrderByDescending(c => c.Sequence)
             .Take(count)
             .OrderBy(c => c.Sequence)
-            .ToList();
-
-        return Task.FromResult(new ToolResult
-        {
-            Success = true,
-            Content = JsonSerializer.Serialize(chapters.Select(c => new
+            .Select(c => new
             {
+                c.Id,
                 c.Sequence,
                 c.Title,
                 c.Summary,
-                c.Content
-            }))
-        });
+                c.WordCount,
+                c.Status,
+                Content = c.Content ?? string.Empty
+            })
+            .ToListAsync(ct);
+
+        if (chapters.Count == 0)
+            return new ToolResult { Content = "暂无章节" };
+
+        var sb = new StringBuilder();
+        foreach (var ch in chapters)
+        {
+            sb.AppendLine($"## 第{ch.Sequence}章：{ch.Title ?? "未命名"}");
+            sb.AppendLine($"状态：{ch.Status ?? "draft"} | 字数：{ch.WordCount}");
+            if (!string.IsNullOrEmpty(ch.Summary))
+                sb.AppendLine($"摘要：{ch.Summary}");
+            sb.AppendLine(ch.Content);
+            sb.AppendLine();
+        }
+
+        return new ToolResult
+        {
+            Success = true,
+            Content = sb.ToString()
+        };
     }
 }

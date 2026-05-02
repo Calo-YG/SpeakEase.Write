@@ -15,11 +15,9 @@ public static class NovelAIServiceCollectionExtensions
 {
     public static IServiceCollection AddNovelAI(this IServiceCollection services)
     {
-        services.AddSingleton<BlackboardHolder>();
         services.AddSingleton<CreationRouter>();
         services.AddSingleton<IMemoryProvider, HybridMemoryProvider>();
 
-        services.AddScoped<WritingBlackboardBuilder>();
         services.AddScoped<CreationOrchestrator>();
         services.AddScoped<ICreationAgentContext, CreationAgentContext>();
         services.AddScoped<IForeshadowAnalysisService, ForeshadowAnalysisService>();
@@ -40,9 +38,9 @@ public static class NovelAIServiceCollectionExtensions
         services.AddKeyedTransient<IToolExecutor, GetWorldSettingTool>(GetWorldSettingTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetOutlineTool>(GetOutlineTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetRecentChaptersTool>(GetRecentChaptersTool.ToolDefinition.Function.Name);
-        services.AddKeyedTransient<IToolExecutor, SearchCharactersTool>(SearchCharactersTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetChapterTool>(GetChapterTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetForeshadowingTool>(GetForeshadowingTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, SearchCharactersTool>(SearchCharactersTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetRelationshipsTool>(GetRelationshipsTool.ToolDefinition.Function.Name);
 
         services.AddKeyedTransient<IToolExecutor, CreateCharacterTool>(CreateCharacterTool.ToolDefinition.Function.Name);

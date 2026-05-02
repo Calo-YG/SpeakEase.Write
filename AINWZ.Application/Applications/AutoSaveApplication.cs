@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SpeakEase.Authorization.Authorization;
-using SpeakEase.Write.Application.Contracts.Snapshot;
 using SpeakEase.Write.Application.Contracts.Story;
 using SpeakEase.Write.Application.Contracts.Story.Dto;
 using SpeakEase.Write.Infrastructure.AI.Memory;
@@ -14,7 +13,6 @@ public sealed class AutoSaveApplication(
     SpeakEaseDbContext db,
     IUserContext user,
     IMemoryProvider memory,
-    IBlackboardUpdater blackboardUpdater,
     ILogger<AutoSaveApplication> logger) : IAutoSaveApplication
 {
     private static readonly HashSet<string> SupportedTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -95,8 +93,6 @@ public sealed class AutoSaveApplication(
                 .Where(w => w.Id == entity.WorkId)
                 .ExecuteUpdateAsync(s => s.SetProperty(w => w.TotalWordCount, totalWords)
                                           .SetProperty(w => w.UpdateAt, now), ct);
-
-            blackboardUpdater.UpdateChapterContent(chapterId, entity.Content, entity.Summary);
         }
 
         await memory.InvalidateAsync(userId, entity.WorkId, ct);

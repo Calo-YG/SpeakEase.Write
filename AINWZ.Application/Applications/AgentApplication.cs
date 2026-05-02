@@ -4,7 +4,6 @@ using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
-using SpeakEase.Write.Application.Contracts.Snapshot;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 using SpeakEase.Write.Infrastructure.Exceptions;
 
@@ -13,16 +12,13 @@ namespace SpeakEase.Write.Application.Applications;
 public sealed class AgentApplication : IAgentApplication
 {
     private readonly CreationOrchestrator _orchestrator;
-    private readonly ISnapshotService _snapshotService;
     private readonly ICreationSessionManager _sessionManager;
 
     public AgentApplication(
         CreationOrchestrator orchestrator,
-        ISnapshotService snapshotService,
         ICreationSessionManager sessionManager)
     {
         _orchestrator = orchestrator;
-        _snapshotService = snapshotService;
         _sessionManager = sessionManager;
     }
 
@@ -32,12 +28,8 @@ public sealed class AgentApplication : IAgentApplication
         var workId = request.WorkId ?? string.Empty;
         var (userMessage, history) = ExtractMessages(request.Messages);
 
-        var correlationId = Guid.NewGuid().ToString();
         var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
         string sessionId = sessionResult.Data?.SessionId ?? (await _sessionManager.StartSessionAsync(workId)).Data?.SessionId;
-
-        if (!string.IsNullOrWhiteSpace(workId))
-            await _snapshotService.CaptureBeforeSnapshotAsync(workId, correlationId);
 
         var contentParts = new List<string>();
 
@@ -47,9 +39,6 @@ public sealed class AgentApplication : IAgentApplication
             if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                 contentParts.Add(chunk.Content);
         }
-
-        if (!string.IsNullOrWhiteSpace(workId))
-            await _snapshotService.CaptureAfterSnapshotAsync(workId, correlationId);
 
         if (sessionId != null)
         {
@@ -74,13 +63,9 @@ public sealed class AgentApplication : IAgentApplication
         var workId = request.WorkId ?? string.Empty;
         var (userMessage, history) = ExtractMessages(request.Messages);
 
-        var correlationId = Guid.NewGuid().ToString();
         var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
         string sessionId = sessionResult.Data?.SessionId
                            ?? (await _sessionManager.StartSessionAsync(workId)).Data?.SessionId;
-
-        if (!string.IsNullOrWhiteSpace(workId))
-            await _snapshotService.CaptureBeforeSnapshotAsync(workId, correlationId);
 
         var accumulatedContent = new System.Text.StringBuilder();
         var toolResults = new List<(string ToolName, bool Success, string Content)>();
@@ -101,9 +86,6 @@ public sealed class AgentApplication : IAgentApplication
 
             yield return chunk;
         }
-
-        if (!string.IsNullOrWhiteSpace(workId))
-            await _snapshotService.CaptureAfterSnapshotAsync(workId, correlationId);
 
         if (sessionId != null)
         {

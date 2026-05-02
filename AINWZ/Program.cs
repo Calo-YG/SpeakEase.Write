@@ -12,7 +12,6 @@ using SpeakEase.Write.Application.Contracts.Auth;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Dashboard;
 using SpeakEase.Write.Application.Contracts.References;
-using SpeakEase.Write.Application.Contracts.Snapshot;
 using SpeakEase.Write.Application.Contracts.Story;
 using SpeakEase.Write.Application.Contracts.Tags;
 using SpeakEase.Write.Application.Contracts.Users;
@@ -151,9 +150,7 @@ try
     builder.Services.AddScoped<IAgentApplication, AgentApplication>();
     builder.Services.AddScoped<ICreationSessionManager, CreationSessionManager>();
     builder.Services.AddScoped<IChapterVersionManager, ChapterVersionManager>();
-    builder.Services.AddScoped<ISnapshotService, SnapshotService>();
     builder.Services.AddScoped<IAdoptionManager, AdoptionManager>();
-    builder.Services.AddScoped<IBlackboardUpdater, BlackboardUpdater>();
     builder.Services.AddScoped<IAutoSaveApplication, AutoSaveApplication>();
     builder.Services.AddScoped<ExportService>();
 
@@ -227,7 +224,6 @@ try
     app.MapDashboardEndPoint();
     app.MapAgentEndPoint();
     app.MapSessionEndPoint();
-    app.MapSnapshotEndPoint();
     app.MapAdoptionEndPoint();
     app.MapVersionEndPoint();
     app.MapAutoSaveEndPoint();

@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class SearchOutlineTool : IToolExecutor
+public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public SearchOutlineTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -30,7 +27,7 @@ public sealed class SearchOutlineTool : IToolExecutor
                     ["keyword"] = new() { Type = "string", Description = "搜索关键词" },
                     ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认10）" }
                 },
-                Required = new List<string> { "work_id", "keyword" }
+                Required = ["work_id", "keyword"]
             }
         }
     };

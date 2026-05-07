@@ -13,10 +13,7 @@ public sealed class GetCharacterTool : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public GetCharacterTool(IServiceScopeFactory scopeFactory)
-    {
-        _scopeFactory = scopeFactory;
-    }
+    public GetCharacterTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
@@ -31,7 +28,7 @@ public sealed class GetCharacterTool : IToolExecutor
                     ["work_id"] = new() { Type = "string", Description = "作品ID" },
                     ["name"] = new() { Type = "string", Description = "角色姓名" }
                 },
-                Required = new List<string> { "work_id", "name" }
+                Required = ["work_id", "name"]
             }
         }
     };

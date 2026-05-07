@@ -13,10 +13,7 @@ public sealed class GetWorldSettingTool : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public GetWorldSettingTool(IServiceScopeFactory scopeFactory)
-    {
-        _scopeFactory = scopeFactory;
-    }
+    public GetWorldSettingTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
@@ -36,7 +33,7 @@ public sealed class GetWorldSettingTool : IToolExecutor
                         Enum = new List<object> { "world_rules", "geography", "factions", "history" }
                     }
                 },
-                Required = new List<string> { "work_id" }
+                Required = ["work_id"]
             }
         }
     };

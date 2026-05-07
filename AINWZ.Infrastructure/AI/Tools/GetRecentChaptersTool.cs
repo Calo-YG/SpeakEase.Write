@@ -13,10 +13,7 @@ public sealed class GetRecentChaptersTool : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public GetRecentChaptersTool(IServiceScopeFactory scopeFactory)
-    {
-        _scopeFactory = scopeFactory;
-    }
+    public GetRecentChaptersTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
@@ -31,7 +28,7 @@ public sealed class GetRecentChaptersTool : IToolExecutor
                     ["work_id"] = new() { Type = "string", Description = "作品ID" },
                     ["count"] = new() { Type = "integer", Description = "查询章节数量（默认3）" }
                 },
-                Required = new List<string> { "work_id" }
+                Required = ["work_id"]
             }
         }
     };

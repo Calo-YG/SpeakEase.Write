@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class SearchWorldSettingTool : IToolExecutor
+public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public SearchWorldSettingTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -29,7 +26,7 @@ public sealed class SearchWorldSettingTool : IToolExecutor
                     ["work_id"] = new() { Type = "string", Description = "作品标识" },
                     ["keyword"] = new() { Type = "string", Description = "搜索关键词" }
                 },
-                Required = new List<string> { "work_id", "keyword" }
+                Required = ["work_id", "keyword"]
             }
         }
     };

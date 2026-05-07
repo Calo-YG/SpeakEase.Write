@@ -9,12 +9,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class SaveWorldSettingTool : IToolExecutor
+public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public SaveWorldSettingTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -34,7 +31,7 @@ public sealed class SaveWorldSettingTool : IToolExecutor
                     ["history"] = new() { Type = "string", Description = "历史与编年事件" },
                     ["summary"] = new() { Type = "string", Description = "世界设定总摘要" }
                 },
-                Required = new List<string> { "work_id" }
+                Required = ["work_id"]
             }
         }
     };

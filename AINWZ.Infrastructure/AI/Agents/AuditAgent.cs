@@ -6,10 +6,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public sealed class AuditAgent : AgentBase, IAuditAgent
+public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools) : AgentBase(llm, tools), IAuditAgent
 {
-    public AuditAgent(IChatCompatible llm, IToolCapable tools) : base(llm, tools) { }
-
     public override string Name => "audit";
 
     public override string DisplayName => "审核Agent";

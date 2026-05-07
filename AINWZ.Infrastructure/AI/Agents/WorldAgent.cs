@@ -5,10 +5,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public sealed class WorldAgent : AgentBase, IWorldAgent
+public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools) : AgentBase(llm, tools), IWorldAgent
 {
-    public WorldAgent(IChatCompatible llm, IToolCapable tools) : base(llm, tools) { }
-
     public override string Name => "world";
 
     public override string DisplayName => "世界观Agent";

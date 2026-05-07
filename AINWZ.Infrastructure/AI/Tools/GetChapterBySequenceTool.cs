@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetChapterBySequenceTool : IToolExecutor
+public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public GetChapterBySequenceTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -29,7 +26,7 @@ public sealed class GetChapterBySequenceTool : IToolExecutor
                     ["work_id"] = new() { Type = "string", Description = "作品标识" },
                     ["sequence"] = new() { Type = "integer", Description = "章节序号" }
                 },
-                Required = new List<string> { "work_id", "sequence" }
+                Required = ["work_id", "sequence"]
             }
         }
     };

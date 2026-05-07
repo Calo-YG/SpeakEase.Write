@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class ResolveForeshadowingTool : IToolExecutor
+public sealed class ResolveForeshadowingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public ResolveForeshadowingTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -31,7 +28,7 @@ public sealed class ResolveForeshadowingTool : IToolExecutor
                     ["payoff_chapter_id"] = new() { Type = "string", Description = "回收章节标识（状态为 resolved 时必填）" },
                     ["hint_detail"] = new() { Type = "string", Description = "本次暗示/回收的具体描述，写入伏笔描述追加" }
                 },
-                Required = new List<string> { "foreshadowing_id", "new_status" }
+                Required = ["foreshadowing_id", "new_status"]
             }
         }
     };

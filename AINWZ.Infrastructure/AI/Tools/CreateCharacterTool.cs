@@ -9,12 +9,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateCharacterTool : IToolExecutor
+public sealed class CreateCharacterTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public CreateCharacterTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -37,7 +34,7 @@ public sealed class CreateCharacterTool : IToolExecutor
                     ["motivation"] = new() { Type = "string", Description = "动机/目标" },
                     ["appearance"] = new() { Type = "string", Description = "外貌描述" }
                 },
-                Required = new List<string> { "work_id", "name" }
+                Required = ["work_id", "name"]
             }
         }
     };

@@ -9,12 +9,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateForeshadowingTool : IToolExecutor
+public sealed class CreateForeshadowingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public CreateForeshadowingTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -34,7 +31,7 @@ public sealed class CreateForeshadowingTool : IToolExecutor
                     ["setup_chapter_id"] = new() { Type = "string", Description = "埋设章节标识" },
                     ["payoff_chapter_id"] = new() { Type = "string", Description = "预期回收章节标识（可选）" }
                 },
-                Required = new List<string> { "work_id", "title", "description" }
+                Required = ["work_id", "title", "description"]
             }
         }
     };

@@ -13,10 +13,7 @@ public sealed class GetForeshadowingTool : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public GetForeshadowingTool(IServiceScopeFactory scopeFactory)
-    {
-        _scopeFactory = scopeFactory;
-    }
+    public GetForeshadowingTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
@@ -36,7 +33,7 @@ public sealed class GetForeshadowingTool : IToolExecutor
                         Enum = new List<object> { "pending", "active", "hinted", "resolved", "paid_off" }
                     }
                 },
-                Required = new List<string> { "work_id" }
+                Required = ["work_id"]
             }
         }
     };

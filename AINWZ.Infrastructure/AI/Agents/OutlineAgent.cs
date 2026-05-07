@@ -1,15 +1,12 @@
 using SpeakEase.AI.Lib.Contract;
-using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public sealed class OutlineAgent : AgentBase, IOutlineAgent
+public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools) : AgentBase(llm, tools), IOutlineAgent
 {
-    public OutlineAgent(IChatCompatible llm, IToolCapable tools) : base(llm, tools) { }
-
     public override string Name => "outline";
 
     public override string DisplayName => "大纲Agent";

@@ -6,16 +6,10 @@ using SpeakEase.Write.Infrastructure.AI.Contract;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public abstract class AgentBase : INovelAgent
+public abstract class AgentBase(IChatCompatible llm, IToolCapable tools) : INovelAgent
 {
-    protected readonly IChatCompatible Llm;
-    protected readonly IToolCapable Tools;
-
-    protected AgentBase(IChatCompatible llm, IToolCapable tools)
-    {
-        Llm = llm;
-        Tools = tools;
-    }
+    protected readonly IChatCompatible Llm = llm;
+    protected readonly IToolCapable Tools = tools;
 
     public abstract string Name { get; }
     public abstract string DisplayName { get; }
@@ -109,9 +103,21 @@ public abstract class AgentBase : INovelAgent
     private static List<ChatMessage> BuildMessages(AgentRequest req)
     {
         var msgs = new List<ChatMessage>();
-        if (!string.IsNullOrEmpty(req.SystemPrompt)) msgs.Add(ChatMessage.System(req.SystemPrompt));
-        if (req.ConversationHistory?.Count > 0) msgs.AddRange(req.ConversationHistory);
-        if (!string.IsNullOrEmpty(req.UserMessage)) msgs.Add(ChatMessage.User(req.UserMessage));
+        if (!string.IsNullOrEmpty(req.SystemPrompt))
+        {
+            msgs.Add(ChatMessage.System(req.SystemPrompt));
+        }
+
+        if (req.ConversationHistory?.Count > 0)
+        {
+            msgs.AddRange(req.ConversationHistory);
+        }
+
+        if (!string.IsNullOrEmpty(req.UserMessage))
+        {
+            msgs.Add(ChatMessage.User(req.UserMessage));
+        }
+
         return msgs;
     }
 }

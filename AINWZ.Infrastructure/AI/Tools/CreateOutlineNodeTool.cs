@@ -9,12 +9,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateOutlineNodeTool : IToolExecutor
+public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -34,7 +31,7 @@ public sealed class CreateOutlineNodeTool : IToolExecutor
                     ["key_event"] = new() { Type = "string", Description = "关键事件" },
                     ["sequence"] = new() { Type = "integer", Description = "排序序号" }
                 },
-                Required = new List<string> { "work_id", "title" }
+                Required = ["work_id", "title"]
             }
         }
     };

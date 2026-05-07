@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class ListVolumesTool : IToolExecutor
+public sealed class ListVolumesTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public ListVolumesTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -28,7 +25,7 @@ public sealed class ListVolumesTool : IToolExecutor
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品标识" }
                 },
-                Required = new List<string> { "work_id" }
+                Required = ["work_id"]
             }
         }
     };

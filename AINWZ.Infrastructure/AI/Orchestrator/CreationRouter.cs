@@ -10,17 +10,10 @@ namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 /// <summary>
 /// 创作路由决策，支持关键词匹配 + LLM 意图分类两阶段路由。
 /// </summary>
-public sealed class CreationRouter
+public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<CreationRouter> logger)
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly ILogger<CreationRouter> _logger;
-
-    public CreationRouter(IServiceScopeFactory scopeFactory, ILogger<CreationRouter> logger)
-    {
-        _scopeFactory = scopeFactory;
-        _logger = logger;
-    }
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
+    private readonly ILogger<CreationRouter> _logger = logger;
     private static readonly List<(string Keyword, string Agent, string ContentType)> KeywordRules = new()
     {
         ("续写",    "write",    "chapter"),
@@ -79,7 +72,7 @@ public sealed class CreationRouter
         ["audit"] = "audit"
     };
 
-    public RouteResult Decide(string userMessage)
+    public static RouteResult Decide(string userMessage)
     {
         if (string.IsNullOrWhiteSpace(userMessage))
             return new RouteResult

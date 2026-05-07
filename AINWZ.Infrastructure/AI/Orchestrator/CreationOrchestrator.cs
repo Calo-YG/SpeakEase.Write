@@ -8,32 +8,19 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 
-public sealed class CreationOrchestrator
+public sealed class CreationOrchestrator(
+    CreationRouter router,
+    IOpenAIContext llmContext,
+    IEnumerable<INovelAgent> agents,
+    ICreationAgentContext agentContext)
 {
-    private readonly CreationRouter _router;
-    private readonly IOpenAIContext _llmContext;
-    private readonly IEnumerable<INovelAgent> _agents;
-    private readonly ICreationAgentContext _agentContext;
-
-    public CreationOrchestrator(
-        CreationRouter router,
-        IOpenAIContext llmContext,
-        IEnumerable<INovelAgent> agents,
-        ICreationAgentContext agentContext)
-    {
-        _router = router;
-        _llmContext = llmContext;
-        _agents = agents;
-        _agentContext = agentContext;
-    }
-
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
         string userMessage,
         List<ChatMessage> conversationHistory = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        var route = await _router.DecideWithLLMAsync(userMessage, cancellationToken);
+        var route = await router.DecideWithLLMAsync(userMessage, cancellationToken);
 
         yield return new AgentStreamChunk
         {
@@ -57,7 +44,7 @@ public sealed class CreationOrchestrator
         var enrichedMessage = userMessage;
         if (!string.IsNullOrEmpty(workId))
         {
-            var ctx = await _agentContext.BuildContext(workId, cancellationToken);
+            var ctx = await agentContext.BuildContext(workId, cancellationToken);
             var contextParts = new List<string>();
             contextParts.Add($"[系统] 当前作品标识 (work_id) = {workId}");
             if (!string.IsNullOrEmpty(ctx.ProjectMemory))
@@ -65,7 +52,7 @@ public sealed class CreationOrchestrator
             enrichedMessage = $"{userMessage}\n\n{string.Join("\n\n", contextParts)}";
         }
 
-        await _llmContext.ResolveAsync(cancellationToken);
+        await llmContext.ResolveAsync(cancellationToken);
 
         var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
 
@@ -73,7 +60,7 @@ public sealed class CreationOrchestrator
         for (var i = 0; i < pipeline.Count; i++)
         {
             var agentName = pipeline[i];
-            var agent = _agents.FirstOrDefault(a => a.Name == agentName);
+            var agent = agents.FirstOrDefault(a => a.Name == agentName);
             if (agent == null)
             {
                 yield return new AgentStreamChunk
@@ -101,7 +88,7 @@ public sealed class CreationOrchestrator
             {
                 UserMessage = chainMessage,
                 SystemPrompt = agent.BuildPrompt(),
-                Model = _llmContext.Model,
+                Model = llmContext.Model,
                 MaxIterations = 10,
                 ConversationHistory = conversationHistory ?? new List<ChatMessage>()
             };

@@ -5,10 +5,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public sealed class WriteAgent : AgentBase, IWriteAgent
+public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools) : AgentBase(llm, tools), IWriteAgent
 {
-    public WriteAgent(IChatCompatible llm, IToolCapable tools) : base(llm, tools) { }
-
     public override string Name => "write";
 
     public override string DisplayName => "写作Agent";

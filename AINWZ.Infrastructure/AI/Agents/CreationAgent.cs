@@ -1,15 +1,12 @@
 using SpeakEase.AI.Lib.Contract;
-using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public sealed class CreationAgent : AgentBase, ICreationAgent
+public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools) : AgentBase(llm, tools), ICreationAgent
 {
-    public CreationAgent(IChatCompatible llm, IToolCapable tools) : base(llm, tools) { }
-
     public override string Name => "creation";
 
     public override string DisplayName => "创意Agent";

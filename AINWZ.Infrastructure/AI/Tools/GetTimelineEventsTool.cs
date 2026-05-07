@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetTimelineEventsTool : IToolExecutor
+public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public GetTimelineEventsTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -30,7 +27,7 @@ public sealed class GetTimelineEventsTool : IToolExecutor
                     ["event_type"] = new() { Type = "string", Description = "按事件类型过滤: plot/character/world/backstory（不传返回全部）" },
                     ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认 20，最大 50）" }
                 },
-                Required = new List<string> { "work_id" }
+                Required = ["work_id"]
             }
         }
     };

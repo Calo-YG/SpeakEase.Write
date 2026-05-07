@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class SearchCharactersTool : IToolExecutor
+public sealed class SearchCharactersTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public SearchCharactersTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -42,7 +39,7 @@ public sealed class SearchCharactersTool : IToolExecutor
                         Description = "返回数量上限（默认 5）"
                     }
                 },
-                Required = new List<string> { "work_id", "query" }
+                Required = ["work_id", "query"]
             }
         }
     };

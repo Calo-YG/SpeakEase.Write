@@ -9,12 +9,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateChapterOutlineTool : IToolExecutor
+public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -33,7 +30,7 @@ public sealed class CreateChapterOutlineTool : IToolExecutor
                     ["summary"] = new() { Type = "string", Description = "章节内容摘要" },
                     ["sequence"] = new() { Type = "integer", Description = "章节序号（可选，默认自动递增）" }
                 },
-                Required = new List<string> { "work_id", "title" }
+                Required = ["work_id", "title"]
             }
         }
     };

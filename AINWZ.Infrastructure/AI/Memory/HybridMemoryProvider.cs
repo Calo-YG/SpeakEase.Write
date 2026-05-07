@@ -6,23 +6,16 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Memory;
 
-public sealed class HybridMemoryProvider : IMemoryProvider
+public sealed class HybridMemoryProvider(
+    IServiceScopeFactory scopeFactory,
+    IMultiCacheService cache,
+    ILogger<HybridMemoryProvider> logger) : IMemoryProvider
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-    private readonly IMultiCacheService _cache;
-    private readonly ILogger<HybridMemoryProvider> _logger;
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
+    private readonly IMultiCacheService _cache = cache;
+    private readonly ILogger<HybridMemoryProvider> _logger = logger;
     private static readonly TimeSpan MemExpiry = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RedisExpiry = TimeSpan.FromMinutes(10);
-
-    public HybridMemoryProvider(
-        IServiceScopeFactory scopeFactory,
-        IMultiCacheService cache,
-        ILogger<HybridMemoryProvider> logger)
-    {
-        _scopeFactory = scopeFactory;
-        _cache = cache;
-        _logger = logger;
-    }
 
     public Task<MemoryContext> LoadAsync(string userId, string workId, CancellationToken cancellationToken = default)
     {

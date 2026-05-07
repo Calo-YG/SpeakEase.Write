@@ -8,12 +8,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetRelationshipsTool : IToolExecutor
+public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public GetRelationshipsTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -37,7 +34,7 @@ public sealed class GetRelationshipsTool : IToolExecutor
                         Description = "角色名称"
                     }
                 },
-                Required = new List<string> { "work_id", "character_name" }
+                Required = ["work_id", "character_name"]
             }
         }
     };

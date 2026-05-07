@@ -250,7 +250,7 @@ public class CreationSessionManager(
                 .SetProperty(x => x.LastActivityAt, DateTime.UtcNow));
     }
 
-    public async Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)>? toolResults = null)
+    public async Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)> toolResults = null)
     {
         var now = DateTime.UtcNow;
         var messages = new List<AICreationMessageEntity>
@@ -321,7 +321,7 @@ public class CreationSessionManager(
         return new ApiResult<List<SessionMessageResponse>>(result);
     }
 
-    private async Task<AICreationSessionEntity?> GetOwnedSessionAsync(string sessionId, string userId)
+    private async Task<AICreationSessionEntity> GetOwnedSessionAsync(string sessionId, string userId)
     {
         var session = await db.AICreationSessions.FindAsync(sessionId);
         if (session is null || session.UserId != userId) return null;

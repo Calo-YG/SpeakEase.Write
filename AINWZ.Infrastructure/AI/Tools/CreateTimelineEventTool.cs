@@ -10,12 +10,9 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateTimelineEventTool : IToolExecutor
+public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public CreateTimelineEventTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",
@@ -41,7 +38,7 @@ public sealed class CreateTimelineEventTool : IToolExecutor
                         Items = new ParameterSchema { Type = "string" }
                     }
                 },
-                Required = new List<string> { "work_id", "title", "description", "event_type" }
+                Required = ["work_id", "title", "description", "event_type"]
             }
         }
     };

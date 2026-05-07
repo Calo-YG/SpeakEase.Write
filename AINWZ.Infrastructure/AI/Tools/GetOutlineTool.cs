@@ -13,10 +13,7 @@ public sealed class GetOutlineTool : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory;
 
-    public GetOutlineTool(IServiceScopeFactory scopeFactory)
-    {
-        _scopeFactory = scopeFactory;
-    }
+    public GetOutlineTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
 
     public static readonly ToolDefinition ToolDefinition = new()
     {
@@ -32,7 +29,7 @@ public sealed class GetOutlineTool : IToolExecutor
                     ["volume_seq"] = new() { Type = "integer", Description = "卷序号（可选）" },
                     ["keyword"] = new() { Type = "string", Description = "关键词（可选），在大纲节点的标题/目标/关键事件中搜索" }
                 },
-                Required = new List<string> { "work_id" }
+                Required = ["work_id"]
             }
         }
     };

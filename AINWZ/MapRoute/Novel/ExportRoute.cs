@@ -13,19 +13,23 @@ public static class ExportRoute
 
         group.MapGet("{workId}/txt", async (
             string workId,
+            int? start,
+            int? end,
             ExportService exportService,
             CancellationToken ct) =>
         {
-            var (content, fileName, contentType) = await exportService.ExportTxtAsync(workId, ct);
+            var (content, fileName, contentType) = await exportService.ExportTxtAsync(workId, start, end, ct);
             return Results.File(content, contentType, fileName);
         }).WithName("export_txt");
 
         group.MapGet("{workId}/epub", async (
             string workId,
+            int? start,
+            int? end,
             ExportService exportService,
             CancellationToken ct) =>
         {
-            var (content, fileName, contentType) = await exportService.ExportEpubAsync(workId, ct);
+            var (content, fileName, contentType) = await exportService.ExportEpubAsync(workId, start, end, ct);
             return Results.File(content, contentType, fileName);
         }).WithName("export_epub");
     }

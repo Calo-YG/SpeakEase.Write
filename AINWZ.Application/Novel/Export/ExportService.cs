@@ -1,4 +1,6 @@
+using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using SpeakEase.Write.Infrastructure.Persistence;
 
@@ -7,23 +9,12 @@ namespace SpeakEase.Write.Application.Novel.Export;
 public class ExportService(SpeakEaseDbContext db)
 {
     public async Task<(byte[] Content, string FileName, string ContentType)> ExportTxtAsync(
-        string workId, CancellationToken ct = default)
+        string workId, int? startSequence = null, int? endSequence = null, CancellationToken ct = default)
     {
         var work = await db.Works.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workId, ct)
             ?? throw new InvalidOperationException($"作品(id={workId})不存在");
 
-        var chapters = await db.Chapters.AsNoTracking()
-            .Where(c => c.WorkId == workId && c.Status == "published")
-            .OrderBy(c => c.Sequence)
-            .ToListAsync(ct);
-
-        if (chapters.Count == 0)
-        {
-            chapters = await db.Chapters.AsNoTracking()
-                .Where(c => c.WorkId == workId)
-                .OrderBy(c => c.Sequence)
-                .ToListAsync(ct);
-        }
+        var chapters = await QueryChaptersAsync(workId, startSequence, endSequence, ct);
 
         var sb = new StringBuilder();
         sb.AppendLine($"《{work.Title}》");
@@ -53,28 +44,17 @@ public class ExportService(SpeakEaseDbContext db)
         }
 
         var content = Encoding.UTF8.GetBytes(sb.ToString());
-        var fileName = $"{SanitizeFileName(work.Title)}.txt";
+        var fileName = BuildFileName(work.Title, "txt", startSequence, endSequence);
         return (content, fileName, "text/plain; charset=utf-8");
     }
 
     public async Task<(byte[] Content, string FileName, string ContentType)> ExportEpubAsync(
-        string workId, CancellationToken ct = default)
+        string workId, int? startSequence = null, int? endSequence = null, CancellationToken ct = default)
     {
         var work = await db.Works.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workId, ct)
             ?? throw new InvalidOperationException($"作品(id={workId})不存在");
 
-        var chapters = await db.Chapters.AsNoTracking()
-            .Where(c => c.WorkId == workId && c.Status == "published")
-            .OrderBy(c => c.Sequence)
-            .ToListAsync(ct);
-
-        if (chapters.Count == 0)
-        {
-            chapters = await db.Chapters.AsNoTracking()
-                .Where(c => c.WorkId == workId)
-                .OrderBy(c => c.Sequence)
-                .ToListAsync(ct);
-        }
+        var chapters = await QueryChaptersAsync(workId, startSequence, endSequence, ct);
 
         using var ms = new MemoryStream();
         using (var archive = new System.IO.Compression.ZipArchive(ms, System.IO.Compression.ZipArchiveMode.Create, true))
@@ -108,7 +88,7 @@ public class ExportService(SpeakEaseDbContext db)
                 {
                     writer.Write($"""
     <navPoint id="ch{i + 1}" playOrder="{i + 1}">
-      <navLabel><text>{EscapeXml(chapters[i].Title ?? $"第{i + 1}章")}</text></navLabel>
+      <navLabel><text>{EscapeXml(chapters[i].Title ?? $"第{chapters[i].Sequence}章")}</text></navLabel>
       <content src="chapter{i + 1}.xhtml"/>
     </navPoint>
 """);
@@ -150,9 +130,9 @@ public class ExportService(SpeakEaseDbContext db)
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-CN">
-<head><title>{EscapeXml(chapter.Title ?? $"第{i + 1}章")}</title></head>
+<head><title>{EscapeXml(chapter.Title ?? $"第{chapter.Sequence}章")}</title></head>
 <body>
-<h1>{EscapeXml(chapter.Title ?? $"第{i + 1}章")}</h1>
+<h1>{EscapeXml(chapter.Title ?? $"第{chapter.Sequence}章")}</h1>
 {bodyHtml}
 </body>
 </html>
@@ -161,16 +141,57 @@ public class ExportService(SpeakEaseDbContext db)
         }
 
         var content = ms.ToArray();
-        var fileName = $"{SanitizeFileName(work.Title)}.epub";
+        var fileName = BuildFileName(work.Title, "epub", startSequence, endSequence);
         return (content, fileName, "application/epub+zip");
+    }
+
+    private async Task<List<Domain.Entities.Works.ChapterEntity>> QueryChaptersAsync(
+        string workId, int? startSequence, int? endSequence, CancellationToken ct)
+    {
+        var query = db.Chapters.AsNoTracking().Where(c => c.WorkId == workId);
+
+        if (startSequence.HasValue)
+            query = query.Where(c => c.Sequence >= startSequence.Value);
+        if (endSequence.HasValue)
+            query = query.Where(c => c.Sequence <= endSequence.Value);
+
+        var chapters = await query
+            .Where(c => c.Status == "published")
+            .OrderBy(c => c.Sequence)
+            .ToListAsync(ct);
+
+        if (chapters.Count == 0)
+        {
+            query = db.Chapters.AsNoTracking().Where(c => c.WorkId == workId);
+            if (startSequence.HasValue)
+                query = query.Where(c => c.Sequence >= startSequence.Value);
+            if (endSequence.HasValue)
+                query = query.Where(c => c.Sequence <= endSequence.Value);
+
+            chapters = await query.OrderBy(c => c.Sequence).ToListAsync(ct);
+        }
+
+        return chapters;
+    }
+
+    private static string BuildFileName(string title, string ext, int? startSequence, int? endSequence)
+    {
+        var baseName = SanitizeFileName(title);
+        if (startSequence.HasValue && endSequence.HasValue)
+            return $"{baseName}_第{startSequence}-{endSequence}章.{ext}";
+        if (startSequence.HasValue)
+            return $"{baseName}_第{startSequence}章起.{ext}";
+        if (endSequence.HasValue)
+            return $"{baseName}_至第{endSequence}章.{ext}";
+        return $"{baseName}.{ext}";
     }
 
     private static string HtmlToPlainText(string html)
     {
-        var text = System.Text.RegularExpressions.Regex.Replace(html, "<br\\s*/?>", "\n");
-        text = System.Text.RegularExpressions.Regex.Replace(text, "</p>", "\n\n");
-        text = System.Text.RegularExpressions.Regex.Replace(text, "<[^>]+>", "");
-        text = System.Net.WebUtility.HtmlDecode(text);
+        var text = Regex.Replace(html, "<br\\s*/?>", "\n");
+        text = Regex.Replace(text, "</p>", "\n\n");
+        text = Regex.Replace(text, "<[^>]+>", "");
+        text = WebUtility.HtmlDecode(text);
         return text.Trim();
     }
 

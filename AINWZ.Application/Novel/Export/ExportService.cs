@@ -214,6 +214,6 @@ public class ExportService(SpeakEaseDbContext db)
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();
-        return new string(name.Where(c => !invalid.Contains(c)).ToArray());
+        return new string([.. name.Where(c => !invalid.Contains(c))]);
     }
 }

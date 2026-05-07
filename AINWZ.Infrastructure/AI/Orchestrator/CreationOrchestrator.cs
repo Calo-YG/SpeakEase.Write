@@ -12,7 +12,8 @@ public sealed class CreationOrchestrator(
     CreationRouter router,
     IOpenAIContext llmContext,
     IEnumerable<INovelAgent> agents,
-    ICreationAgentContext agentContext)
+    ICreationAgentContext agentContext,
+    IContextCompressor compressor)
 {
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
@@ -53,6 +54,27 @@ public sealed class CreationOrchestrator(
         }
 
         await llmContext.ResolveAsync(cancellationToken);
+
+        var originalHistoryCount = conversationHistory?.Count ?? 0;
+        if (conversationHistory is { Count: > 0 })
+        {
+            conversationHistory = await compressor.CompressAsync(
+                conversationHistory, llmContext.Model, cancellationToken);
+
+            if (conversationHistory.Count < originalHistoryCount)
+            {
+                yield return new AgentStreamChunk
+                {
+                    Type = "meta",
+                    Content = JsonHelper.Serialize(new
+                    {
+                        stage = "context_compressed",
+                        originalCount = originalHistoryCount,
+                        compressedCount = conversationHistory.Count
+                    })
+                };
+            }
+        }
 
         var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
 

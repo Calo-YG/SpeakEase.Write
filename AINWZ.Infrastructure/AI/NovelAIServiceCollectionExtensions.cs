@@ -18,6 +18,7 @@ public static class NovelAIServiceCollectionExtensions
 
         services.AddScoped<CreationOrchestrator>();
         services.AddScoped<ICreationAgentContext, CreationAgentContext>();
+        services.AddScoped<IContextCompressor, ContextCompressor>();
         services.AddScoped<IForeshadowAnalysisService, ForeshadowAnalysisService>();
 
         services.AddScoped<INovelAgent, WriteAgent>();

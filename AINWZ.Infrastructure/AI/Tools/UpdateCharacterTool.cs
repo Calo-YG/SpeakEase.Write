@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -17,74 +16,57 @@ public sealed class UpdateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
         Function = new FunctionDefinition
         {
             Name = "update_character",
-            Description = "更新已有角色信息，只传需要修改的字段即可",
+            Description = "更新已有角色的设定信息，按 work_id + name 精确匹配。至少需要一个更新字段。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["character_id"] = new() { Type = "string", Description = "角色 ID" },
-                    ["name"] = new() { Type = "string", Description = "角色姓名" },
-                    ["identity"] = new() { Type = "string", Description = "身份/称号" },
-                    ["gender"] = new() { Type = "string", Description = "性别" },
-                    ["age"] = new() { Type = "string", Description = "年龄描述" },
-                    ["personality"] = new() { Type = "string", Description = "性格描述" },
-                    ["background"] = new() { Type = "string", Description = "背景故事" },
-                    ["motivation"] = new() { Type = "string", Description = "动机/目标" },
-                    ["appearance"] = new() { Type = "string", Description = "外貌描述" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["name"] = new() { Type = "string", Description = "角色名称（必填），需与已有角色精确匹配" },
+                    ["personality"] = new() { Type = "string", Description = "性格描述（可选）" },
+                    ["appearance"] = new() { Type = "string", Description = "外貌特征（可选）" },
+                    ["motivation"] = new() { Type = "string", Description = "角色动机（可选）" },
+                    ["background_story"] = new() { Type = "string", Description = "背景故事（可选）" },
+                    ["coreSeed"] = new() { Type = "string", Description = "身份/核心种子（可选）" }
                 },
-                Required = ["work_id", "character_id"]
+                Required = ["work_id", "name"]
             }
         }
     };
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var name = args.GetString("name", required: true);
+        var personality = args.GetString("personality");
+        var appearance = args.GetString("appearance");
+        var motivation = args.GetString("motivation");
+        var backgroundStory = args.GetString("background_story");
+        var coreSeed = args.GetString("coreSeed");
+        if (args.HasErrors) return args.ToErrorResult();
+
+        if (string.IsNullOrEmpty(personality) && string.IsNullOrEmpty(appearance) &&
+            string.IsNullOrEmpty(motivation) && string.IsNullOrEmpty(backgroundStory) && string.IsNullOrEmpty(coreSeed))
+            return ToolResult.Fail("至少需要提供一个更新字段（personality/appearance/motivation/background_story/coreSeed）", "no_fields");
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        string workId = null, characterId = null;
-        string name = null, identity = null, gender = null,
-            age = null, personality = null, background = null, motivation = null, appearance = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("character_id", out var c)) characterId = c.GetString();
-            if (root.TryGetProperty("name", out var n)) name = n.GetString();
-            if (root.TryGetProperty("identity", out var i)) identity = i.GetString();
-            if (root.TryGetProperty("gender", out var g)) gender = g.GetString();
-            if (root.TryGetProperty("age", out var a)) age = a.GetString();
-            if (root.TryGetProperty("personality", out var p)) personality = p.GetString();
-            if (root.TryGetProperty("background", out var b)) background = b.GetString();
-            if (root.TryGetProperty("motivation", out var m)) motivation = m.GetString();
-            if (root.TryGetProperty("appearance", out var ap)) appearance = ap.GetString();
-        }
-        catch { }
+        var character = await db.Characters.FirstOrDefaultAsync(
+            c => c.WorkId == workId && c.Name == name, ct);
 
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (string.IsNullOrEmpty(characterId)) return ToolResult.Fail("缺少 character_id 参数");
+        if (character == null)
+            return ToolResult.Fail($"未找到角色「{name}」，请确认角色名称和作品ID", "not_found");
 
-        var entity = await db.Characters
-            .FirstOrDefaultAsync(x => x.Id == characterId && x.WorkId == workId, ct);
-
-        if (entity is null)
-            return ToolResult.Fail($"角色(id={characterId})不存在");
-
-        if (name is not null) entity.Name = name;
-        if (identity is not null) entity.Identity = identity;
-        if (gender is not null) entity.Gender = gender;
-        if (age is not null) entity.AgeDescription = age;
-        if (personality is not null) entity.Personality = personality;
-        if (background is not null) entity.BackgroundStory = background;
-        if (motivation is not null) entity.Motivation = motivation;
-        if (appearance is not null) entity.Appearance = appearance;
-        entity.UpdateAt = DateTime.UtcNow;
+        if (!string.IsNullOrEmpty(personality)) character.Personality = personality;
+        if (!string.IsNullOrEmpty(appearance)) character.Appearance = appearance;
+        if (!string.IsNullOrEmpty(motivation)) character.Motivation = motivation;
+        if (!string.IsNullOrEmpty(backgroundStory)) character.BackgroundStory = backgroundStory;
+        if (!string.IsNullOrEmpty(coreSeed)) character.Identity = coreSeed;
 
         await db.SaveChangesAsync(ct);
-
-        return ToolResult.Ok($"角色「{entity.Name}」更新成功。身份：{entity.Identity}，性格：{entity.Personality}，动机：{entity.Motivation}");
+        return ToolResult.Ok($"角色「{name}」已更新");
     }
 }

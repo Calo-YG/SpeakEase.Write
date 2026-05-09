@@ -15,4 +15,14 @@ public sealed class AgentRequest
     public int? MaxTokens { get; set; }
     public int MaxIterations { get; set; } = 10;
     public string SkillName { get; set; }
+
+    /// <summary>
+    /// 关联的作品标识，供 Agent 内部工具链使用
+    /// </summary>
+    public string WorkId { get; set; }
+
+    /// <summary>
+    /// 发起请求的用户标识
+    /// </summary>
+    public string UserId { get; set; }
 }

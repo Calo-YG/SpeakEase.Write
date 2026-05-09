@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -24,9 +24,9 @@ public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory,IOptions
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["keyword"] = new() { Type = "string", Description = "搜索关键词" },
-                    ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认10）" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["keyword"] = new() { Type = "string", Description = "搜索关键词（必填）" },
+                    ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认10，范围1-30）" }
                 },
                 Required = ["work_id", "keyword"]
             }
@@ -35,25 +35,14 @@ public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory,IOptions
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var keyword = args.GetString("keyword", required: true);
+        var limit = args.GetInt32("limit", defaultValue: 10, min: 1, max: 30);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
-
-        string workId = null, keyword = null;
-        int limit = 10;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("keyword", out var k)) keyword = k.GetString();
-            if (root.TryGetProperty("limit", out var l)) limit = l.GetInt32();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (string.IsNullOrEmpty(keyword)) return ToolResult.Fail("缺少 keyword 参数");
-        if (limit < 1) limit = 1;
-        if (limit > 30) limit = 30;
 
         var nodes = await db.OutlineNodes.AsNoTracking()
             .Where(x => x.WorkId == workId
@@ -73,8 +62,8 @@ public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory,IOptions
             .ToListAsync(ct);
 
         if (nodes.Count == 0)
-            return ToolResult.Fail(string.Format("未找到匹配「{0}」的大纲节点", keyword));
+            return ToolResult.Fail($"未找到匹配「{keyword}」的大纲节点", "no_matches");
 
-        return ToolResult.Ok(JsonSerializer.Serialize(nodes,snapshot.Value));
+        return ToolResult.Ok(JsonSerializer.Serialize(nodes, snapshot.Value));
     }
 }

@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -24,16 +24,8 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory,IOpti
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new()
-                    {
-                        Type = "string",
-                        Description = "作品ID"
-                    },
-                    ["character_name"] = new()
-                    {
-                        Type = "string",
-                        Description = "角色名称"
-                    }
+                    ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" },
+                    ["character_name"] = new() { Type = "string", Description = "角色名称（必填）" }
                 },
                 Required = ["work_id", "character_name"]
             }
@@ -42,22 +34,10 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory,IOpti
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        string workId = null;
-        string name = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            if (doc.RootElement.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (doc.RootElement.TryGetProperty("character_name", out var prop))
-                name = prop.GetString();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId))
-            return new ToolResult { Success = false, Content = "缺少 work_id 参数", ErrorCode = "missing_parameter" };
-
-        if (string.IsNullOrEmpty(name))
-            return new ToolResult { Success = false, Content = "缺少 character_name 参数", ErrorCode = "missing_parameter" };
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var name = args.GetString("character_name", required: true);
+        if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
@@ -67,7 +47,7 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory,IOpti
             ?? await db.Characters.FirstOrDefaultAsync(c => c.WorkId == workId && c.Name != null && c.Name.Contains(name), ct);
 
         if (character == null)
-            return new ToolResult { Success = false, Content = $"未找到角色「{name}」", ErrorCode = "character_not_found" };
+            return ToolResult.Fail($"未找到角色「{name}」", "character_not_found");
 
         var relationships = await db.CharacterRelationships
             .Where(r => r.WorkId == workId && (r.SourceCharacterId == character.Id || r.TargetCharacterId == character.Id))
@@ -103,14 +83,10 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory,IOpti
             });
         }
 
-        return new ToolResult
+        return ToolResult.Ok(JsonSerializer.Serialize(new
         {
-            Success = true,
-            Content = JsonSerializer.Serialize(new
-            {
-                character.Name,
-                Relationships = relList
-            },snapshot.Value)
-        };
+            character.Name,
+            Relationships = relList
+        }, snapshot.Value));
     }
 }

@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -24,7 +24,7 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory,IOptionsSn
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" }
                 },
                 Required = ["work_id"]
             }
@@ -33,24 +33,18 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory,IOptionsSn
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
-
-        string workId = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            if (doc.RootElement.TryGetProperty("work_id", out var w)) workId = w.GetString();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
 
         var work = await db.Works.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == workId, ct);
 
         if (work == null)
-            return ToolResult.Fail(string.Format("未找到作品 {0}", workId));
+            return ToolResult.Fail($"未找到作品 {workId}", "not_found");
 
         var chapterCount = await db.Chapters.AsNoTracking()
             .CountAsync(x => x.WorkId == workId, ct);
@@ -74,6 +68,6 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory,IOptionsSn
             chapterCount,
             volumeCount,
             characterCount
-        },snapshot.Value));
+        }, snapshot.Value));
     }
 }

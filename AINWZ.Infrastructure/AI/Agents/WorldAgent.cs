@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
@@ -5,7 +6,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools) : AgentBase(llm, tools), IWorldAgent
+public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<WorldAgent> logger)
+    : AgentBase(llm, tools, logger), IWorldAgent
 {
     public override string Name => "world";
 

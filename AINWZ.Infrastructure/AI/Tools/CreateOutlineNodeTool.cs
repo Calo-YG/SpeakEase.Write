@@ -1,10 +1,10 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
+using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -18,18 +18,23 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
         Function = new FunctionDefinition
         {
             Name = "create_outline_node",
-            Description = "创建一个新的大纲节点",
+            Description = "创建大纲节点。stage_type 枚举: act/climax/resolution.",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["parent_id"] = new() { Type = "string", Description = "父节点标识，根节点可留空" },
-                    ["title"] = new() { Type = "string", Description = "节点标题" },
-                    ["description"] = new() { Type = "string", Description = "节点描述/目标" },
-                    ["key_event"] = new() { Type = "string", Description = "关键事件" },
-                    ["sequence"] = new() { Type = "integer", Description = "排序序号" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["title"] = new() { Type = "string", Description = "节点标题（必填）" },
+                    ["goal"] = new() { Type = "string", Description = "目标（可选）" },
+                    ["key_event"] = new() { Type = "string", Description = "关键事件（可选）" },
+                    ["stage_type"] = new()
+                    {
+                        Type = "string",
+                        Description = "阶段类型（可选），枚举值: act/climax/resolution",
+                        Enum = new List<object> { "act", "climax", "resolution" }
+                    },
+                    ["sequence"] = new() { Type = "integer", Description = "排序序号（可选，默认为当前最大序号+1）" }
                 },
                 Required = ["work_id", "title"]
             }
@@ -38,49 +43,37 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var title = args.GetString("title", required: true);
+        var goal = args.GetString("goal");
+        var keyEvent = args.GetString("key_event");
+        var stageType = args.GetString("stage_type");
+        var sequence = args.GetInt32("sequence", min: 0);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
-        string workId = null, parentId = null, title = null, desc = null, keyEvent = null;
-        int sequence = 0;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("parent_id", out var p)) parentId = p.GetString();
-            if (root.TryGetProperty("title", out var t)) title = t.GetString();
-            if (root.TryGetProperty("description", out var d)) desc = d.GetString();
-            if (root.TryGetProperty("key_event", out var k)) keyEvent = k.GetString();
-            if (root.TryGetProperty("sequence", out var s)) sequence = s.GetInt32();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (string.IsNullOrEmpty(title)) return ToolResult.Fail("缺少 title 参数");
-
-        if (sequence <= 0)
-        {
-            var maxSeq = await db.OutlineNodes.AsNoTracking()
-                .Where(x => x.WorkId == workId)
-                .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
-            sequence = maxSeq + 1;
-        }
+        var maxSeq = await db.OutlineNodes.AsNoTracking()
+            .Where(x => x.WorkId == workId)
+            .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
 
         var entity = new OutlineNodeEntity
         {
-            Id = Guid.NewGuid().ToString(),
+            Id = idGen.NextIdString(),
             WorkId = workId,
-            ParentNodeId = parentId ?? string.Empty,
             Title = title,
-            Goal = desc ?? string.Empty,
+            Goal = goal ?? string.Empty,
             KeyEvent = keyEvent ?? string.Empty,
-            Sequence = sequence
+            StageType = stageType ?? string.Empty,
+            Sequence = sequence > 0 ? sequence : maxSeq + 1
         };
 
-        db.OutlineNodes.Add(entity);
+        await db.OutlineNodes.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok(string.Format("大纲节点「{0}」已创建，id: {1}, sequence: {2}", title, entity.Id, sequence));
+        return ToolResult.Ok($"大纲节点「{title}」已创建，ID: {entity.Id}，序号: {entity.Sequence}");
     }
 }

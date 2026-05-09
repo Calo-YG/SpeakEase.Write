@@ -1,5 +1,4 @@
 using System.Text;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -9,24 +8,23 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetOutlineTool : IToolExecutor
+public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
-    private readonly IServiceScopeFactory _scopeFactory;
-
-    public GetOutlineTool(IServiceScopeFactory scopeFactory) => _scopeFactory = scopeFactory;
-
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
     {
+        Type = "function",
         Function = new FunctionDefinition
         {
             Name = "get_outline",
             Description = "查询大纲结构（总体走向、分卷安排、关键情节节点）。可通过 volume_seq 按卷查询，或用 keyword 按关键词搜索大纲节点。",
             Parameters = new FunctionParameters
             {
+                Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品ID" },
-                    ["volume_seq"] = new() { Type = "integer", Description = "卷序号（可选）" },
+                    ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" },
+                    ["volume_seq"] = new() { Type = "integer", Description = "卷序号（可选，大于0）" },
                     ["keyword"] = new() { Type = "string", Description = "关键词（可选），在大纲节点的标题/目标/关键事件中搜索" }
                 },
                 Required = ["work_id"]
@@ -36,21 +34,11 @@ public sealed class GetOutlineTool : IToolExecutor
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        string workId = null;
-        int? volumeSeq = null;
-        string keyword = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            if (doc.RootElement.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (doc.RootElement.TryGetProperty("volume_seq", out var v) && v.ValueKind == JsonValueKind.Number)
-                volumeSeq = v.GetInt32();
-            if (doc.RootElement.TryGetProperty("keyword", out var k)) keyword = k.GetString();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId))
-            return new ToolResult { Success = false, Content = "缺少 work_id 参数", ErrorCode = "missing_parameter" };
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var volumeSeq = args.GetInt32("volume_seq", min: 0);
+        var keyword = args.GetString("keyword");
+        if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
@@ -58,7 +46,7 @@ public sealed class GetOutlineTool : IToolExecutor
         var work = await db.Outlines.AsNoTracking()
             .FirstOrDefaultAsync(x => x.WorkId == workId, ct);
         if (work == null)
-            return new ToolResult { Content = "未找到大纲" };
+            return ToolResult.Fail("未找到大纲", "not_found");
 
         var sb = new StringBuilder();
         sb.AppendLine($"大纲：{work.Title ?? "未设置"}");
@@ -69,11 +57,11 @@ public sealed class GetOutlineTool : IToolExecutor
             .OrderBy(x => x.Sequence)
             .ToListAsync(ct);
 
-        if (volumeSeq.HasValue)
+        if (volumeSeq > 0)
         {
-            var vol = volumes.FirstOrDefault(v => v.Sequence == volumeSeq.Value);
+            var vol = volumes.FirstOrDefault(v => v.Sequence == volumeSeq);
             if (vol == null)
-                return new ToolResult { Content = $"未找到第{volumeSeq}卷的大纲" };
+                return ToolResult.Fail($"未找到第{volumeSeq}卷的大纲", "not_found");
 
             sb.AppendLine($"\n第{vol.Sequence}卷「{vol.Title}」：{vol.Summary ?? "无概述"}");
 
@@ -131,10 +119,6 @@ public sealed class GetOutlineTool : IToolExecutor
             }
         }
 
-        return new ToolResult
-        {
-            Success = true,
-            Content = sb.ToString()
-        };
+        return ToolResult.Ok(sb.ToString());
     }
 }

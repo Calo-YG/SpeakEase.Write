@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
@@ -5,7 +6,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
-public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools) : AgentBase(llm, tools), IOutlineAgent
+public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogger<OutlineAgent> logger)
+    : AgentBase(llm, tools, logger), IOutlineAgent
 {
     public override string Name => "outline";
 

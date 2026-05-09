@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -24,9 +24,14 @@ public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory,IOpt
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["event_type"] = new() { Type = "string", Description = "按事件类型过滤: plot/character/world/backstory（不传返回全部）" },
-                    ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认 20，最大 50）" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["event_type"] = new()
+                    {
+                        Type = "string",
+                        Description = "按事件类型过滤（可选），枚举值: plot/character/world/backstory",
+                        Enum = new List<object> { "plot", "character", "world", "backstory" }
+                    },
+                    ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认20，范围1-50）" }
                 },
                 Required = ["work_id"]
             }
@@ -35,24 +40,14 @@ public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory,IOpt
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var eventType = args.GetString("event_type");
+        var limit = args.GetInt32("limit", defaultValue: 20, min: 1, max: 50);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
-
-        string workId = null, eventType = null;
-        int limit = 20;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("event_type", out var et)) eventType = et.GetString();
-            if (root.TryGetProperty("limit", out var l)) limit = l.GetInt32();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (limit < 1) limit = 1;
-        if (limit > 50) limit = 50;
 
         var query = db.TimelineEvents.AsNoTracking()
             .Where(x => x.WorkId == workId);
@@ -78,6 +73,6 @@ public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory,IOpt
         if (events.Count == 0)
             return ToolResult.Ok("暂无时间线事件记录。");
 
-        return ToolResult.Ok(JsonSerializer.Serialize<object>(events,snapshot.Value));
+        return ToolResult.Ok(JsonSerializer.Serialize<object>(events, snapshot.Value));
     }
 }

@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -24,8 +24,8 @@ public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory,IOpti
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认30）" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["limit"] = new() { Type = "integer", Description = "返回数量上限（默认30，范围1-100）" }
                 },
                 Required = ["work_id"]
             }
@@ -34,23 +34,13 @@ public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory,IOpti
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var limit = args.GetInt32("limit", defaultValue: 30, min: 1, max: 100);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
-
-        string workId = null;
-        int limit = 30;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("limit", out var l)) limit = l.GetInt32();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (limit < 1) limit = 1;
-        if (limit > 100) limit = 100;
 
         var characters = await db.Characters.AsNoTracking()
             .Where(x => x.WorkId == workId)
@@ -67,8 +57,8 @@ public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory,IOpti
             .ToListAsync(ct);
 
         if (characters.Count == 0)
-            return ToolResult.Fail("当前作品暂无角色");
+            return ToolResult.Fail("当前作品暂无角色", "no_characters");
 
-        return ToolResult.Ok(JsonSerializer.Serialize(characters,snapshot.Value));
+        return ToolResult.Ok(JsonSerializer.Serialize(characters, snapshot.Value));
     }
 }

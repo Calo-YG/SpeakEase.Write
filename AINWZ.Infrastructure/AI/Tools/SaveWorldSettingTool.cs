@@ -5,6 +5,7 @@ using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.World;
+using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -24,12 +25,12 @@ public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IT
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["world_rules"] = new() { Type = "string", Description = "世界规则/力量体系" },
-                    ["geography"] = new() { Type = "string", Description = "地理与文明分布" },
-                    ["factions"] = new() { Type = "string", Description = "势力与政治格局" },
-                    ["history"] = new() { Type = "string", Description = "历史与编年事件" },
-                    ["summary"] = new() { Type = "string", Description = "世界设定总摘要" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["world_rules"] = new() { Type = "string", Description = "世界规则/力量体系（可选）" },
+                    ["geography"] = new() { Type = "string", Description = "地理与文明分布（可选）" },
+                    ["factions"] = new() { Type = "string", Description = "势力与政治格局（可选）" },
+                    ["history"] = new() { Type = "string", Description = "历史与编年事件（可选）" },
+                    ["summary"] = new() { Type = "string", Description = "世界设定总摘要（可选）" }
                 },
                 Required = ["work_id"]
             }
@@ -38,24 +39,18 @@ public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IT
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var worldRules = args.GetString("world_rules");
+        var geography = args.GetString("geography");
+        var factions = args.GetString("factions");
+        var history = args.GetString("history");
+        var summary = args.GetString("summary");
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
-
-        string workId = null, worldRules = null, geography = null, factions = null, history = null, summary = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("world_rules", out var wr)) worldRules = wr.GetString();
-            if (root.TryGetProperty("geography", out var g)) geography = g.GetString();
-            if (root.TryGetProperty("factions", out var f)) factions = f.GetString();
-            if (root.TryGetProperty("history", out var h)) history = h.GetString();
-            if (root.TryGetProperty("summary", out var s)) summary = s.GetString();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
+        var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var entity = await db.WorldSettings.FirstOrDefaultAsync(x => x.WorkId == workId, ct);
 
@@ -63,7 +58,7 @@ public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IT
         {
             entity = new WorldSettingEntity
             {
-                Id = Guid.NewGuid().ToString(),
+                Id = idGen.NextIdString(),
                 WorkId = workId,
             };
             db.WorldSettings.Add(entity);

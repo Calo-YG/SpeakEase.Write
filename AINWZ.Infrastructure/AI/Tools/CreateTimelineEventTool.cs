@@ -1,7 +1,5 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
@@ -11,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> options) : IToolExecutor
+public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -20,105 +18,66 @@ public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory,IO
         Function = new FunctionDefinition
         {
             Name = "create_timeline_event",
-            Description = "创建一个时间线事件，用于追踪故事中的关键时间节点。事件类型包括：plot（情节推进）、character（角色转折）、world（世界变动）、backstory（前史揭秘）。",
+            Description = "为当前作品创建时间线事件，用于记录故事中发生的重要事件。事件按时间正序排列，可用于确保前后事件不冲突、维护时间脉络。event_type 枚举: plot/character/world/backstory。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["title"] = new() { Type = "string", Description = "事件标题（简洁概括）" },
-                    ["description"] = new() { Type = "string", Description = "事件详细描述" },
-                    ["event_time"] = new() { Type = "string", Description = "事件发生时间（故事内时间，ISO格式或自由文本）" },
-                    ["event_type"] = new() { Type = "string", Description = "事件类型: plot/character/world/backstory" },
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["title"] = new() { Type = "string", Description = "事件标题（必填）" },
+                    ["description"] = new() { Type = "string", Description = "事件描述（必填）" },
+                    ["event_time"] = new() { Type = "string", Description = "事件发生时间（必填），格式建议为故事内时间或相对标记（如“第一章末”、“大战后第三天”）" },
+                    ["event_type"] = new()
+                    {
+                        Type = "string",
+                        Description = "事件类型（可选，默认 plot），枚举值: plot=情节、character=角色相关、world=世界设定、backstory=前史/回忆",
+                        Enum = new List<object> { "plot", "character", "world", "backstory" }
+                    },
                     ["chapter_id"] = new() { Type = "string", Description = "关联章节标识（可选）" },
                     ["related_character_ids"] = new()
                     {
                         Type = "array",
-                        Description = "关联角色标识数组（可选）",
-                        Items = new ParameterSchema { Type = "string" }
+                        Items = new ParameterSchema { Type = "string" },
+                        Description = "关联角色标识列表（可选），数组格式"
                     }
                 },
-                Required = ["work_id", "title", "description", "event_type"]
+                Required = ["work_id", "title", "description", "event_time"]
             }
         }
     };
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var title = args.GetString("title", required: true);
+        var description = args.GetString("description", required: true);
+        var eventTime = args.GetString("event_time", required: true);
+        var eventType = args.GetString("event_type") ?? "plot";
+        var chapterId = args.GetString("chapter_id");
+        var relatedCharacterIds = args.GetStringArray("related_character_ids");
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
-
-        string workId = null, title = null, description = null, eventTimeStr = null, eventType = null, chapterId = null;
-        List<string> relatedCharacterIds = new();
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("title", out var t)) title = t.GetString();
-            if (root.TryGetProperty("description", out var d)) description = d.GetString();
-            if (root.TryGetProperty("event_time", out var et)) eventTimeStr = et.GetString();
-            if (root.TryGetProperty("event_type", out var etype)) eventType = etype.GetString();
-            if (root.TryGetProperty("chapter_id", out var ch)) chapterId = ch.GetString();
-            if (root.TryGetProperty("related_character_ids", out var rc) && rc.ValueKind == JsonValueKind.Array)
-            {
-                foreach (var item in rc.EnumerateArray())
-                {
-                    var id = item.GetString();
-                    if (!string.IsNullOrEmpty(id))
-                        relatedCharacterIds.Add(id);
-                }
-            }
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (string.IsNullOrEmpty(title)) return ToolResult.Fail("缺少 title 参数");
-        if (string.IsNullOrEmpty(description)) return ToolResult.Fail("缺少 description 参数");
-
-        var allowedTypes = new HashSet<string> { "plot", "character", "world", "backstory" };
-        eventType = (eventType ?? "plot").ToLowerInvariant();
-        if (!allowedTypes.Contains(eventType))
-            eventType = "plot";
-
-        DateTime eventTime = DateTime.UtcNow;
-        if (!string.IsNullOrEmpty(eventTimeStr))
-        {
-            if (DateTime.TryParse(eventTimeStr, out var parsed))
-                eventTime = parsed;
-        }
-
-        if (!string.IsNullOrEmpty(chapterId))
-        {
-            var chapterExists = await db.Chapters.AnyAsync(c => c.Id == chapterId && c.WorkId == workId, ct);
-            if (!chapterExists)
-                chapterId = string.Empty;
-        }
 
         var entity = new TimelineEventEntity
         {
             Id = idGen.NextIdString(),
             WorkId = workId,
-            ChapterId = chapterId ?? string.Empty,
             Title = title,
             Description = description,
-            EventTime = eventTime,
+            EventTime = DateTime.TryParse(eventTime, out var dt) ? dt : DateTime.UtcNow,
             EventType = eventType,
+            ChapterId = chapterId,
             RelatedCharacterIds = relatedCharacterIds
         };
 
-        db.TimelineEvents.Add(entity);
+        await db.TimelineEvents.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok(JsonSerializer.Serialize(new
-        {
-            id = entity.Id,
-            title = entity.Title,
-            event_type = entity.EventType,
-            event_time = entity.EventTime,
-            message = $"时间线事件「{entity.Title}」已创建"
-        }, options.Value));
+        return ToolResult.Ok($"时间线事件「{title}」已创建，ID: {entity.Id}，时间: {eventTime}");
     }
 }

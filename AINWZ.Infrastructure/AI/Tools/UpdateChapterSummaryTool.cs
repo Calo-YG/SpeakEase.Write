@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -17,15 +16,15 @@ public sealed class UpdateChapterSummaryTool(IServiceScopeFactory scopeFactory) 
         Function = new FunctionDefinition
         {
             Name = "update_chapter_summary",
-            Description = "为指定章节生成或更新摘要，摘要应简洁概括本章核心情节，100-200字",
+            Description = "更新章节的摘要信息。章节正文写完后，应调用此工具生成精炼的章节摘要，供后续章节写作参考。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["chapter_id"] = new() { Type = "string", Description = "章节标识" },
-                    ["summary"] = new() { Type = "string", Description = "章节摘要内容，100-200字" }
+                    ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" },
+                    ["chapter_id"] = new() { Type = "string", Description = "章节ID（必填）" },
+                    ["summary"] = new() { Type = "string", Description = "新的章节摘要内容（必填），包含关键情节、人物行为和重要对话" }
                 },
                 Required = ["work_id", "chapter_id", "summary"]
             }
@@ -34,35 +33,24 @@ public sealed class UpdateChapterSummaryTool(IServiceScopeFactory scopeFactory) 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var chapterId = args.GetString("chapter_id", required: true);
+        var summary = args.GetString("summary", required: true);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        string workId = null, chapterId = null, summary = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("chapter_id", out var c)) chapterId = c.GetString();
-            if (root.TryGetProperty("summary", out var s)) summary = s.GetString();
-        }
-        catch { }
+        var chapter = await db.Chapters.FirstOrDefaultAsync(
+            c => c.Id == chapterId && c.WorkId == workId, ct);
 
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (string.IsNullOrEmpty(chapterId)) return ToolResult.Fail("缺少 chapter_id 参数");
-        if (string.IsNullOrEmpty(summary)) return ToolResult.Fail("缺少 summary 参数");
+        if (chapter == null)
+            return ToolResult.Fail($"未找到章节 {chapterId}", "not_found");
 
-        var entity = await db.Chapters
-            .FirstOrDefaultAsync(x => x.Id == chapterId && x.WorkId == workId, ct);
-
-        if (entity is null)
-            return ToolResult.Fail($"章节(id={chapterId})不存在");
-
-        entity.Summary = summary;
-        entity.UpdateAt = DateTime.UtcNow;
-
+        chapter.Summary = summary;
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"章节「{entity.Title}」摘要已更新");
+        return ToolResult.Ok($"章节「{chapter.Title}」摘要已更新");
     }
 }

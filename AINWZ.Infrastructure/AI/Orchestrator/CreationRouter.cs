@@ -14,17 +14,23 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     private readonly ILogger<CreationRouter> _logger = logger;
+
     private static readonly List<(string Keyword, string Agent, string ContentType)> KeywordRules = new()
     {
+        ("帮我写",  "write",    "chapter"),
         ("续写",    "write",    "chapter"),
         ("润色",    "write",    "chapter"),
         ("改写",    "write",    "chapter"),
         ("扩写",    "write",    "chapter"),
         ("重写",    "write",    "chapter"),
         ("写一",    "write",    "chapter"),
-        ("帮我写",  "write",    "chapter"),
         ("章节",    "write",    "chapter"),
         ("正文",    "write",    "chapter"),
+
+        ("世界观",  "world",    "setting"),
+        ("设定",    "world",    "setting"),
+        ("势力",    "world",    "setting"),
+        ("地理",    "world",    "setting"),
 
         ("大纲",    "outline",  "outline"),
         ("情节",    "outline",  "outline"),
@@ -32,11 +38,6 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         ("结构",    "outline",  "outline"),
         ("高潮",    "outline",  "outline"),
         ("转折",    "outline",  "outline"),
-
-        ("世界观",  "world",    "setting"),
-        ("设定",    "world",    "setting"),
-        ("势力",    "world",    "setting"),
-        ("地理",    "world",    "setting"),
 
         ("角色",    "creation", "character"),
         ("人物",    "creation", "character"),
@@ -82,17 +83,25 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
                 Reason = "空输入，默认路由到写作Agent"
             };
 
+        var bestMatch = default((string Keyword, string Agent, string ContentType)?);
         foreach (var (keyword, agent, contentType) in KeywordRules)
         {
-            if (userMessage.Contains(keyword))
+            if (!userMessage.Contains(keyword))
+                continue;
+
+            if (!bestMatch.HasValue || keyword.Length > bestMatch.Value.Keyword.Length)
+                bestMatch = (keyword, agent, contentType);
+        }
+
+        if (bestMatch.HasValue)
+        {
+            var (keyword, agent, contentType) = bestMatch.Value;
+            return new RouteResult
             {
-                return new RouteResult
-                {
-                    AgentName = agent,
-                    ContentType = contentType,
-                    Reason = $"关键词「{keyword}」匹配 → {agent}"
-                };
-            }
+                AgentName = agent,
+                ContentType = contentType,
+                Reason = $"关键词「{keyword}」匹配 → {agent}"
+            };
         }
 
         return new RouteResult

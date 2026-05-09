@@ -23,8 +23,8 @@ public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : 
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["keyword"] = new() { Type = "string", Description = "搜索关键词" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["keyword"] = new() { Type = "string", Description = "搜索关键词（必填）" }
                 },
                 Required = ["work_id", "keyword"]
             }
@@ -33,27 +33,19 @@ public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var keyword = args.GetString("keyword", required: true);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
-
-        string workId = null, keyword = null;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("keyword", out var k)) keyword = k.GetString();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (string.IsNullOrEmpty(keyword)) return ToolResult.Fail("缺少 keyword 参数");
 
         var setting = await db.WorldSettings.AsNoTracking()
             .FirstOrDefaultAsync(x => x.WorkId == workId, ct);
 
         if (setting == null)
-            return ToolResult.Fail("当前作品暂无世界观设定");
+            return ToolResult.Fail("当前作品暂无世界观设定", "not_found");
 
         var parts = new List<string>();
         var keywords = keyword.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -83,7 +75,7 @@ public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : 
         }
 
         if (parts.Count == 0)
-            return ToolResult.Fail(string.Format("世界设定中未找到「{0}」相关内容", keyword));
+            return ToolResult.Fail($"世界设定中未找到「{keyword}」相关内容", "no_matches");
 
         return ToolResult.Ok(string.Join("\n\n", parts));
     }

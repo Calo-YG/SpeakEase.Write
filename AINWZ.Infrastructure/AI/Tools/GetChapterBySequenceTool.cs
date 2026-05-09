@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -24,8 +24,8 @@ public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory,I
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["sequence"] = new() { Type = "integer", Description = "章节序号" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["sequence"] = new() { Type = "integer", Description = "章节序号（必填，大于0的整数）" }
                 },
                 Required = ["work_id", "sequence"]
             }
@@ -34,22 +34,13 @@ public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory,I
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var sequence = args.GetInt32("sequence", required: true, min: 1);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
-
-        string workId = null;
-        int sequence = 0;
-        try
-        {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("sequence", out var s)) sequence = s.GetInt32();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (sequence <= 0) return ToolResult.Fail("缺少有效的 sequence 参数");
 
         var chapter = await db.Chapters.AsNoTracking()
             .Where(x => x.WorkId == workId && x.Sequence == sequence)
@@ -66,8 +57,8 @@ public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory,I
             .FirstOrDefaultAsync(ct);
 
         if (chapter == null)
-            return ToolResult.Fail(string.Format("未找到作品 {0} 的第 {1} 章", workId, sequence));
+            return ToolResult.Fail($"未找到作品 {workId} 的第 {sequence} 章", "not_found");
 
-        return ToolResult.Ok(JsonSerializer.Serialize(chapter,snapshot.Value));
+        return ToolResult.Ok(JsonSerializer.Serialize(chapter, snapshot.Value));
     }
 }

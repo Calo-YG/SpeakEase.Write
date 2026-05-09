@@ -1,10 +1,10 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Works;
+using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -18,68 +18,74 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
         Function = new FunctionDefinition
         {
             Name = "create_chapter_outline",
-            Description = "创建一个章节骨架/占位（标题+摘要），会自动排序",
+            Description = "创建章节大纲。将自动计算章节序号，并在新卷时自动创建卷。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识" },
-                    ["volume_id"] = new() { Type = "string", Description = "所属卷标识（可选，无卷则留空）" },
-                    ["title"] = new() { Type = "string", Description = "章节标题" },
-                    ["summary"] = new() { Type = "string", Description = "章节内容摘要" },
-                    ["sequence"] = new() { Type = "integer", Description = "章节序号（可选，默认自动递增）" }
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["volume_seq"] = new() { Type = "integer", Description = "卷序号（必填，大于0）" },
+                    ["volume_title"] = new() { Type = "string", Description = "卷标题（新卷时必填）" },
+                    ["chapter_title"] = new() { Type = "string", Description = "章节标题（必填）" },
+                    ["summary"] = new() { Type = "string", Description = "章节摘要/大纲内容（必填）" }
                 },
-                Required = ["work_id", "title"]
+                Required = ["work_id", "volume_seq", "chapter_title", "summary"]
             }
         }
     };
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
+        var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
+        var volumeSeq = args.GetInt32("volume_seq", required: true, min: 1);
+        var volumeTitle = args.GetString("volume_title");
+        var chapterTitle = args.GetString("chapter_title", required: true);
+        var summary = args.GetString("summary", required: true);
+        if (args.HasErrors) return args.ToErrorResult();
+
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
-        string workId = null, volumeId = null, title = null, summary = null;
-        int sequence = 0;
-        try
+        var volume = await db.Volumes.FirstOrDefaultAsync(
+            x => x.WorkId == workId && x.Sequence == volumeSeq, ct);
+
+        if (volume == null)
         {
-            using var doc = JsonDocument.Parse(arguments);
-            var root = doc.RootElement;
-            if (root.TryGetProperty("work_id", out var w)) workId = w.GetString();
-            if (root.TryGetProperty("volume_id", out var v)) volumeId = v.GetString();
-            if (root.TryGetProperty("title", out var t)) title = t.GetString();
-            if (root.TryGetProperty("summary", out var s)) summary = s.GetString();
-            if (root.TryGetProperty("sequence", out var sq)) sequence = sq.GetInt32();
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(workId)) return ToolResult.Fail("缺少 work_id 参数");
-        if (string.IsNullOrEmpty(title)) return ToolResult.Fail("缺少 title 参数");
-
-        if (sequence <= 0)
-        {
-            var maxSeq = await db.Chapters.AsNoTracking()
-                .Where(x => x.WorkId == workId)
-                .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
-            sequence = maxSeq + 1;
+            volume = new VolumeEntity
+            {
+                Id = idGen.NextIdString(),
+                WorkId = workId,
+                Sequence = volumeSeq,
+                Title = volumeTitle ?? $"第{volumeSeq}卷",
+                Summary = string.Empty
+            };
+            await db.Volumes.AddAsync(volume, ct);
+            await db.SaveChangesAsync(ct);
         }
 
-        var entity = new ChapterEntity
+        var maxChapterSeq = await db.Chapters.AsNoTracking()
+            .Where(x => x.WorkId == workId)
+            .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
+
+        var chapter = new ChapterEntity
         {
-            Id = Guid.NewGuid().ToString(),
+            Id = idGen.NextIdString(),
             WorkId = workId,
-            VolumeId = volumeId ?? string.Empty,
-            Title = title,
-            Summary = summary ?? string.Empty,
-            Sequence = sequence,
-            Status = "outline",
-            Content = string.Empty
+            VolumeId = volume.Id,
+            Sequence = maxChapterSeq + 1,
+            Title = chapterTitle,
+            Summary = summary,
+            WordCount = 0,
+            Status = "outline"
         };
 
-        db.Chapters.Add(entity);
+        await db.Chapters.AddAsync(chapter, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok(string.Format("章节骨架「{0}」已创建，sequence: {1}, id: {2}", title, sequence, entity.Id));
+        return ToolResult.Ok(
+            $"章节大纲已创建，卷: 第{volumeSeq}卷「{volume.Title}」，章节: 第{chapter.Sequence}章「{chapterTitle}」，章节ID: {chapter.Id}");
     }
 }

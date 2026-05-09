@@ -6,7 +6,6 @@ using Serilog.Events;
 using SpeakEase.AI.Lib;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.Write.Application.Applications;
-using SpeakEase.Write.Application.Novel.Export;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.Auth;
 using SpeakEase.Write.Application.Contracts.Creation;
@@ -17,6 +16,7 @@ using SpeakEase.Write.Application.Contracts.Tags;
 using SpeakEase.Write.Application.Contracts.Users;
 using SpeakEase.Write.Application.Contracts.Version;
 using SpeakEase.Write.Application.Contracts.Works;
+using SpeakEase.Write.Application.Novel.Export;
 using SpeakEase.Write.HealthChecks;
 using SpeakEase.Write.Infrastructure.AI;
 using SpeakEase.Write.Infrastructure.Authorization;
@@ -26,12 +26,14 @@ using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.MapRoute.AI;
 using SpeakEase.Write.MapRoute.Auth;
 using SpeakEase.Write.MapRoute.Dashboard;
+using SpeakEase.Write.MapRoute.Novel;
 using SpeakEase.Write.MapRoute.References;
 using SpeakEase.Write.MapRoute.Tags;
 using SpeakEase.Write.MapRoute.Users;
 using SpeakEase.Write.MapRoute.Works;
-using SpeakEase.Write.MapRoute.Novel;
 using SpeakEase.Write.Middleware;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 
 var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
 
@@ -120,6 +122,7 @@ try
     builder.Services.AddInfrastructurePersistence(builder.Configuration);
     builder.Services.ConfigureHttpJsonOptions(op =>
     {
+        op.SerializerOptions.Encoder = JavaScriptEncoder.Create(UnicodeRanges.All);
         op.SerializerOptions.Converters.Add(new DateTimeConverter());
         op.SerializerOptions.Converters.Add(new DateTimeNullConverter());
         op.SerializerOptions.Converters.Add(new LongConverter());

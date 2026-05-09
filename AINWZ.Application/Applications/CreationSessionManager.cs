@@ -4,6 +4,7 @@ using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Creation.Dto;
 using SpeakEase.Write.Domain.Entities.AI;
+using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.Infrastructure.Shared;
 
@@ -12,7 +13,8 @@ namespace SpeakEase.Write.Application.Applications;
 public class CreationSessionManager(
     SpeakEaseDbContext db,
     ILogger<CreationSessionManager> logger,
-    IUserContext userContext) : ICreationSessionManager
+    IUserContext userContext,
+    ISnowflakeIdGenerator snowflakeIdGenerator) : ICreationSessionManager
 {
     private const int MaxTurnsBeforeArchive = 10;
     private static readonly TimeSpan SessionExpiration = TimeSpan.FromHours(24);
@@ -257,6 +259,7 @@ public class CreationSessionManager(
         {
             new()
             {
+                Id = snowflakeIdGenerator.NextIdString(),
                 SessionId = sessionId,
                 Role = "user",
                 Content = userMessage,
@@ -271,6 +274,7 @@ public class CreationSessionManager(
             {
                 messages.Add(new AICreationMessageEntity
                 {
+                    Id = snowflakeIdGenerator.NextIdString(),
                     SessionId = sessionId,
                     Role = "tool",
                     Content = content,
@@ -284,6 +288,7 @@ public class CreationSessionManager(
 
         messages.Add(new AICreationMessageEntity
         {
+            Id = snowflakeIdGenerator.NextIdString(),
             SessionId = sessionId,
             Role = "assistant",
             Content = aiMessage,

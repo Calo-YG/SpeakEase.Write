@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
@@ -10,7 +11,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) : IToolExecutor
+public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory,IOptionsSnapshot<JsonSerializerOptions> options) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -118,6 +119,6 @@ public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) :
             event_type = entity.EventType,
             event_time = entity.EventTime,
             message = $"时间线事件「{entity.Title}」已创建"
-        }));
+        }, options.Value));
     }
 }

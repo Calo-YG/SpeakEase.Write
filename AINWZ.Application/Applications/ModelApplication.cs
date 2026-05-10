@@ -95,12 +95,12 @@ namespace SpeakEase.Write.Application.Applications
                 return new ApiResult<ModelProviderResponse>("ApiKey 不能为空。", 400);
             }
 
-            var exists = await dbContext.AIModelDefinitions
-                .AnyAsync(x => x.Provider == request.Provider, cancellationToken);
-            if (exists)
-            {
-                return new ApiResult<ModelProviderResponse>($"提供商标识 {request.Provider} 已存在。", 400);
-            }
+            //var exists = await dbContext.AIModelDefinitions
+            //    .AnyAsync(x => x.Provider == request.Provider, cancellationToken);
+            //if (exists)
+            //{
+            //    return new ApiResult<ModelProviderResponse>($"提供商标识 {request.Provider} 已存在。", 400);
+            //}
 
             // 验证 API 可用性
             var validationResult = await ValidateApiConnectivityAsync(request.ApiBaseUrl, request.ApiKey, cancellationToken);

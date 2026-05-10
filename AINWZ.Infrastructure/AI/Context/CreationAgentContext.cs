@@ -114,6 +114,16 @@ public sealed class CreationAgentContext : ICreationAgentContext
             sb.AppendLine();
         }
 
+        if (!string.IsNullOrEmpty(mem.StyleReference))
+        {
+            sb.AppendLine("## 文风参考（以下摘自最新已完成章节正文，写作时严格模仿其句式、节奏、用词和叙述风格）");
+            sb.AppendLine();
+            sb.AppendLine("```");
+            sb.AppendLine(mem.StyleReference);
+            sb.AppendLine("```");
+            sb.AppendLine();
+        }
+
         return sb.ToString().TrimEnd();
     }
 }

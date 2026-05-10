@@ -102,6 +102,21 @@ public sealed class HybridMemoryProvider(
                     })
                     .ToListAsync(cancellationToken);
 
+                var styleRef = await db.Chapters.AsNoTracking()
+                    .Where(c => c.WorkId == workId && c.Content != null && c.Content != string.Empty)
+                    .OrderByDescending(c => c.Sequence)
+                    .Select(c => c.Content)
+                    .FirstOrDefaultAsync(cancellationToken);
+
+                var styleReference = string.Empty;
+                if (!string.IsNullOrEmpty(styleRef))
+                {
+                    const int maxLen = 1500;
+                    styleReference = styleRef.Length <= maxLen
+                        ? styleRef
+                        : styleRef[..maxLen];
+                }
+
                 return new MemoryContext
                 {
                     WorkTitle = work.Title,
@@ -114,7 +129,8 @@ public sealed class HybridMemoryProvider(
                     OutlineNodes = outlines,
                     WorldSettingSummary = worldSetting ?? string.Empty,
                     ActiveForeshadowings = foreshadowings,
-                    TimelineEvents = timelineEvents
+                    TimelineEvents = timelineEvents,
+                    StyleReference = styleReference
                 };
             },
             memoryExpiry: MemExpiry,

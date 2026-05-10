@@ -13,6 +13,11 @@ public sealed class LLMTurnResult
     public string Content { get; set; }
 
     /// <summary>
+    /// DeepSeek 等模型的思维链内容（thinking mode），回传时必须原样传回
+    /// </summary>
+    public string ReasoningContent { get; set; }
+
+    /// <summary>
     /// 本轮模型请求执行的工具调用列表
     /// </summary>
     public List<ToolCall> ToolCalls { get; set; }

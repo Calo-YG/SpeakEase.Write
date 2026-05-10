@@ -85,6 +85,7 @@ namespace SpeakEase.AI.Lib
             return new LLMTurnResult
             {
                 Content = firstChoice?.Message?.Content ?? string.Empty,
+                ReasoningContent = firstChoice?.Message?.ReasoningContent,
                 ToolCalls = firstChoice?.Message?.ToolCalls,
                 Model = result.Model,
                 Usage = result.Usage
@@ -128,6 +129,7 @@ namespace SpeakEase.AI.Lib
             using var reader = new StreamReader(stream, Encoding.UTF8);
 
             var contentBuilder = new StringBuilder();
+            var reasoningBuilder = new StringBuilder();
             var toolCallAccumulators = new Dictionary<int, ToolCallAccumulator>();
             string finishReason = null;
             string responseModel = context.Model;
@@ -171,6 +173,11 @@ namespace SpeakEase.AI.Lib
                 var delta = choice.Delta;
                 if (delta == null)
                     continue;
+
+                if (!string.IsNullOrEmpty(delta.ReasoningContent))
+                {
+                    reasoningBuilder.Append(delta.ReasoningContent);
+                }
 
                 if (!string.IsNullOrEmpty(delta.Content))
                 {
@@ -219,6 +226,7 @@ namespace SpeakEase.AI.Lib
                 TurnResult = new LLMTurnResult
                 {
                     Content = contentBuilder.ToString(),
+                    ReasoningContent = reasoningBuilder.Length > 0 ? reasoningBuilder.ToString() : null,
                     ToolCalls = hasToolCalls ? StreamToolCallHelper.ToToolCalls(toolCallAccumulators) : null,
                     Model = responseModel,
                     Usage = usage

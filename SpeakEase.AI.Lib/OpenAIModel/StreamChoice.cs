@@ -29,6 +29,10 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string Content { get; set; }
 
+        [JsonPropertyName("reasoning_content")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string ReasoningContent { get; set; }
+
         [JsonPropertyName("tool_calls")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public List<StreamToolCallDelta> ToolCalls { get; set; }

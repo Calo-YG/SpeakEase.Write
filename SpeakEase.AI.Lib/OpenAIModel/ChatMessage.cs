@@ -16,6 +16,7 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         public static UserMessage User(string content) => new() { Content = content };
         public static UserMessage User(List<ContentPart> content) => new() { Content = content };
         public static AssistantMessage Assistant(string content) => new() { Content = content };
+        public static AssistantMessage Assistant(string content, string reasoningContent) => new() { Content = content, ReasoningContent = reasoningContent };
         public static AssistantMessage Assistant(List<ToolCall> toolCalls) => new() { ToolCalls = toolCalls, Content = string.Empty };
         public static ToolMessage Tool(string toolCallId, string content) => new() { ToolCallId = toolCallId, Content = content };
     }

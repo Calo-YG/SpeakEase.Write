@@ -105,7 +105,12 @@ public abstract class AgentBase(
                 Logger.LogDebug("[{Agent}] 迭代 {Iter} 调用 {ToolCount} 个工具, elapsed={Elapsed}ms",
                     Name, i + 1, turnResult.ToolCalls.Count, iterStopwatch.ElapsedMilliseconds);
 
-                messages.Add(new AssistantMessage { Content = turnResult.Content ?? string.Empty, ToolCalls = turnResult.ToolCalls });
+                messages.Add(new AssistantMessage
+                {
+                    Content = turnResult.Content ?? string.Empty,
+                    ReasoningContent = turnResult.ReasoningContent,
+                    ToolCalls = turnResult.ToolCalls
+                });
                 foreach (var tc in turnResult.ToolCalls)
                 {
                     var toolStopwatch = Stopwatch.StartNew();
@@ -133,7 +138,7 @@ public abstract class AgentBase(
                 Logger.LogInformation("[{Agent}] 迭代 {Iter} 完成, elapsed={Elapsed}ms, reason=无工具调用,结束循环",
                     Name, i + 1, iterStopwatch.ElapsedMilliseconds);
 
-                messages.Add(ChatMessage.Assistant(turnResult.Content));
+                messages.Add(ChatMessage.Assistant(turnResult.Content, turnResult.ReasoningContent));
                 yield return new AgentStreamChunk
                 {
                     Type = "done",

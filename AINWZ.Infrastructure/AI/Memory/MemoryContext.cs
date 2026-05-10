@@ -14,6 +14,8 @@ public sealed class MemoryContext
     public string WorldSettingSummary { get; set; } = string.Empty;
     public List<MemoryForeshadowing> ActiveForeshadowings { get; set; } = new();
     public List<MemoryTimelineEvent> TimelineEvents { get; set; } = new();
+
+    public string StyleReference { get; set; } = string.Empty;
 }
 
 public sealed class MemoryChapter

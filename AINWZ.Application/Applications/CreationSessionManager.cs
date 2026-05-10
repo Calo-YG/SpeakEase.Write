@@ -29,6 +29,7 @@ public class CreationSessionManager(
 
         var entity = new AICreationSessionEntity
         {
+            Id = snowflakeIdGenerator.NextIdString(),
             WorkId = workId,
             UserId = userId,
             Status = "active",
@@ -56,25 +57,31 @@ public class CreationSessionManager(
 
         session.TurnCount++;
         session.LastActivityAt = DateTime.UtcNow;
+        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
+
+        await db.SaveChangesAsync();
 
         if (session.TurnCount % MaxTurnsBeforeArchive == 0)
         {
             logger.LogInformation("session {SessionId} reached {TurnCount} turns, performing archive check", sessionId, session.TurnCount);
-            await PerformArchiveAsync(session, userId);
+            var archived = await PerformArchiveAsync(session, userId);
+            if (archived)
+            {
+                return await GetActiveSessionAfterArchiveAsync(session.WorkId, userId);
+            }
         }
 
-        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
-        await db.SaveChangesAsync();
         return MapToResult(session);
     }
 
-    private async Task PerformArchiveAsync(AICreationSessionEntity currentSession, string userId)
+    private async Task<bool> PerformArchiveAsync(AICreationSessionEntity currentSession, string userId)
     {
         if (currentSession.TurnCount >= MaxTurnsBeforeArchive * 2)
         {
             await CloseActiveSessionForWorkAsync(currentSession.WorkId, userId, "expired", "archive_turns_limit");
             var entity = new AICreationSessionEntity
             {
+                Id = snowflakeIdGenerator.NextIdString(),
                 WorkId = currentSession.WorkId,
                 UserId = userId,
                 Status = "active",
@@ -85,8 +92,25 @@ public class CreationSessionManager(
                 ExpiresAt = DateTime.UtcNow.Add(SessionExpiration),
             };
             db.AICreationSessions.Add(entity);
+            await db.SaveChangesAsync();
             logger.LogInformation("session archived for work {WorkId}, new session created", currentSession.WorkId);
+            return true;
         }
+
+        return false;
+    }
+
+    private async Task<ApiResult<CreationSessionDto>> GetActiveSessionAfterArchiveAsync(string workId, string userId)
+    {
+        var newSession = await db.AICreationSessions
+            .AsNoTracking()
+            .Where(x => x.WorkId == workId && x.UserId == userId && x.Status == "active")
+            .OrderByDescending(x => x.LastActivityAt)
+            .FirstOrDefaultAsync();
+
+        return newSession is null
+            ? new ApiResult<CreationSessionDto>("归档后未找到新会话。", 500)
+            : MapToResult(newSession);
     }
 
     public async Task<ApiResult> AdoptContentAsync(string sessionId, AdoptContentRequest request)
@@ -335,16 +359,12 @@ public class CreationSessionManager(
 
     private async Task CloseActiveSessionForWorkAsync(string workId, string userId, string status, string reason)
     {
-        var active = await db.AICreationSessions
+        await db.AICreationSessions
             .Where(x => x.WorkId == workId && x.UserId == userId && x.Status == "active")
-            .ToListAsync();
-
-        foreach (var s in active)
-        {
-            s.Status = status;
-            s.CloseReason = reason;
-            s.LastActivityAt = DateTime.UtcNow;
-        }
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(x => x.Status, status)
+                .SetProperty(x => x.CloseReason, reason)
+                .SetProperty(x => x.LastActivityAt, DateTime.UtcNow));
     }
 
     private static List<AdoptedItem> DeserializeAdopted(string json)

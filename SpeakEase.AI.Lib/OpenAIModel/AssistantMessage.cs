@@ -11,6 +11,10 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string Content { get; set; } = string.Empty;
 
+        [JsonPropertyName("reasoning_content")]
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+        public string ReasoningContent { get; set; }
+
         [JsonPropertyName("refusal")]
         [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string Refusal { get; set; }

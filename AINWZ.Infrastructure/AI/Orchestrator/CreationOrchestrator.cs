@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
@@ -51,9 +52,9 @@ public sealed class CreationOrchestrator(
         };
 
         var enrichedMessage = userMessage;
-        AgentStreamChunk contextErrorChunk = null;
         if (!string.IsNullOrEmpty(workId))
         {
+            string contextError = null;
             try
             {
                 var ctx = await agentContext.BuildContext(workId, cancellationToken);
@@ -66,50 +67,48 @@ public sealed class CreationOrchestrator(
             catch (Exception ex)
             {
                 logger.LogError(ex, "构建上下文失败, workId={WorkId}", workId);
-                contextErrorChunk = new AgentStreamChunk
+                contextError = ex.Message;
+            }
+
+            if (contextError != null)
+            {
+                yield return new AgentStreamChunk
                 {
                     Type = "meta",
-                    Content = JsonHelper.Serialize(new { stage = "context_error", error = ex.Message })
+                    Content = JsonHelper.Serialize(new { stage = "context_error", error = contextError })
                 };
             }
         }
 
-        if (contextErrorChunk != null)
-            yield return contextErrorChunk;
-
         await llmContext.ResolveAsync(cancellationToken);
 
-        var originalHistoryCount = conversationHistory?.Count ?? 0;
-        AgentStreamChunk compressedChunk = null;
         if (conversationHistory is { Count: > 0 })
         {
+            var originalCount = conversationHistory.Count;
             try
             {
                 conversationHistory = await compressor.CompressAsync(
                     conversationHistory, llmContext.Model, cancellationToken);
-
-                if (conversationHistory.Count < originalHistoryCount)
-                {
-                    compressedChunk = new AgentStreamChunk
-                    {
-                        Type = "meta",
-                        Content = JsonHelper.Serialize(new
-                        {
-                            stage = "context_compressed",
-                            originalCount = originalHistoryCount,
-                            compressedCount = conversationHistory.Count
-                        })
-                    };
-                }
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "会话压缩失败，使用原始历史");
             }
-        }
 
-        if (compressedChunk != null)
-            yield return compressedChunk;
+            if (conversationHistory.Count < originalCount)
+            {
+                yield return new AgentStreamChunk
+                {
+                    Type = "meta",
+                    Content = JsonHelper.Serialize(new
+                    {
+                        stage = "context_compressed",
+                        originalCount,
+                        compressedCount = conversationHistory.Count
+                    })
+                };
+            }
+        }
 
         var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
 
@@ -158,32 +157,22 @@ public sealed class CreationOrchestrator(
             var stepStopwatch = Stopwatch.StartNew();
             previousResult = "";
 
-            var (chunks, error) = await ExecuteAgentStepAsync(agent, request, cancellationToken);
-
-            foreach (var chunk in chunks)
+            var hadError = false;
+            await foreach (var chunk in StreamAgentChunks(agent, request, cancellationToken))
             {
                 if (chunk.Type == "content")
                     previousResult += chunk.Content;
+
+                if (chunk.Type == "error")
+                    hadError = true;
+
                 yield return chunk;
             }
 
-            if (error != null)
+            if (hadError)
             {
-                logger.LogError(error, "Pipeline 步骤 {Step}/{Total}: Agent [{Agent}] 执行异常, elapsed={Elapsed}ms",
+                logger.LogError("Pipeline 步骤 {Step}/{Total}: Agent [{Agent}] 执行异常, elapsed={Elapsed}ms",
                     i + 1, pipeline.Count, agentName, stepStopwatch.ElapsedMilliseconds);
-
-                yield return new AgentStreamChunk
-                {
-                    Type = "meta",
-                    Content = JsonHelper.Serialize(new
-                    {
-                        stage = "pipeline_error",
-                        agent = agentName,
-                        step = i + 1,
-                        total = pipeline.Count,
-                        error = error.Message
-                    })
-                };
             }
             else
             {
@@ -195,21 +184,54 @@ public sealed class CreationOrchestrator(
         logger.LogInformation("Pipeline 全部完成, totalElapsed={Elapsed}ms", pipelineStopwatch.ElapsedMilliseconds);
     }
 
-    private static async Task<(List<AgentStreamChunk> Chunks, Exception Error)> ExecuteAgentStepAsync(
+    private async IAsyncEnumerable<AgentStreamChunk> StreamAgentChunks(
         INovelAgent agent,
         AgentRequest request,
-        CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken ct)
     {
-        var chunks = new List<AgentStreamChunk>();
-        try
+        var channel = Channel.CreateUnbounded<AgentStreamChunk>(new UnboundedChannelOptions
         {
-            await foreach (var chunk in agent.ExecuteStreamAsync(request, ct))
-                chunks.Add(chunk);
-            return (chunks, null);
-        }
-        catch (Exception ex)
+            SingleWriter = true,
+            SingleReader = true
+        });
+
+        var agentTask = Task.Run(async () =>
         {
-            return (chunks, ex);
+            try
+            {
+                await foreach (var chunk in agent.ExecuteStreamAsync(request, ct))
+                {
+                    if (!channel.Writer.TryWrite(chunk))
+                        await channel.Writer.WriteAsync(chunk, ct);
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "[Orchestrator] Agent [{Agent}] 执行异常", agent.Name);
+                try
+                {
+                    channel.Writer.TryWrite(new AgentStreamChunk
+                    {
+                        Type = "error",
+                        Content = $"Agent 执行异常: {ex.Message}"
+                    });
+                }
+                catch { }
+            }
+            finally
+            {
+                channel.Writer.TryComplete();
+            }
+        });
+
+        await foreach (var chunk in channel.Reader.ReadAllAsync(ct))
+        {
+            yield return chunk;
         }
+
+        try { await agentTask; }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { logger.LogError(ex, "Agent task faulted"); }
     }
 }

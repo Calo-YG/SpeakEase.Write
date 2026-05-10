@@ -27,10 +27,15 @@ public sealed class CreateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
                     ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" },
                     ["name"] = new() { Type = "string", Description = "角色名称（必填）" },
                     ["coreSeed"] = new() { Type = "string", Description = "身份/核心种子（必填），简要描述角色在故事中的身份" },
+                    ["alias"] = new() { Type = "string", Description = "角色别名/外号（可选），如: 剑仙、小李飞刀" },
+                    ["gender"] = new() { Type = "string", Description = "性别描述（可选），如: 男、女、未知" },
+                    ["ageDescription"] = new() { Type = "string", Description = "年龄描述（可选），如: 二十出头、年过半百" },
                     ["appearance"] = new() { Type = "string", Description = "外貌特征（可选）" },
                     ["motivation"] = new() { Type = "string", Description = "角色动机（可选）" },
                     ["backgroundStory"] = new() { Type = "string", Description = "背景故事（可选）" },
-                    ["personality"] = new() { Type = "string", Description = "性格描述（可选）" }
+                    ["personality"] = new() { Type = "string", Description = "性格描述（可选）" },
+                    ["abilityDescription"] = new() { Type = "string", Description = "能力/武功/技能描述（可选）" },
+                    ["tags"] = new() { Type = "array", Items = new ParameterSchema { Type = "string" }, Description = "角色标签（可选），如 [\"主角\", \"反派\", \"亦正亦邪\"]" }
                 },
                 Required = ["work_id", "name", "coreSeed"]
             }
@@ -43,10 +48,15 @@ public sealed class CreateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
         var workId = args.GetString("work_id", required: true);
         var name = args.GetString("name", required: true);
         var coreSeed = args.GetString("coreSeed", required: true);
+        var alias = args.GetString("alias");
+        var gender = args.GetString("gender");
+        var ageDescription = args.GetString("ageDescription");
         var appearance = args.GetString("appearance");
         var motivation = args.GetString("motivation");
         var backgroundStory = args.GetString("backgroundStory");
         var personality = args.GetString("personality");
+        var abilityDescription = args.GetString("abilityDescription");
+        var tags = args.GetStringArray("tags");
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
@@ -58,11 +68,16 @@ public sealed class CreateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
             Id = idGen.NextIdString(),
             WorkId = workId,
             Name = name,
+            Alias = alias ?? string.Empty,
+            Gender = gender ?? string.Empty,
+            AgeDescription = ageDescription ?? string.Empty,
             Identity = coreSeed,
             Appearance = appearance,
             Motivation = motivation,
             BackgroundStory = backgroundStory,
-            Personality = personality
+            Personality = personality,
+            AbilityDescription = abilityDescription ?? string.Empty,
+            Tags = tags ?? new List<string>()
         };
 
         await db.Characters.AddAsync(character, ct);

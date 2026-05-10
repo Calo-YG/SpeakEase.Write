@@ -48,12 +48,16 @@ public sealed class GetCharacterTool(IServiceScopeFactory scopeFactory) : IToolE
             {
                 c.Id,
                 c.Name,
+                c.Alias,
+                c.Gender,
+                c.AgeDescription,
                 c.Identity,
                 c.BackgroundStory,
                 c.Personality,
-                c.Gender,
                 c.Appearance,
-                c.Motivation
+                c.Motivation,
+                c.AbilityDescription,
+                c.Tags
             })
             .FirstOrDefaultAsync(ct);
 
@@ -83,8 +87,12 @@ public sealed class GetCharacterTool(IServiceScopeFactory scopeFactory) : IToolE
 
         var sb = new StringBuilder();
         sb.AppendLine($"角色：{character.Name}");
+        if (!string.IsNullOrEmpty(character.Alias))
+            sb.AppendLine($"别名：{character.Alias}");
         sb.AppendLine($"身份：{character.Identity ?? "未设置"}");
         sb.AppendLine($"性别：{character.Gender ?? "未设置"}");
+        if (!string.IsNullOrEmpty(character.AgeDescription))
+            sb.AppendLine($"年龄：{character.AgeDescription}");
 
         if (!string.IsNullOrEmpty(character.Appearance))
             sb.AppendLine($"外貌：{character.Appearance}");
@@ -98,6 +106,12 @@ public sealed class GetCharacterTool(IServiceScopeFactory scopeFactory) : IToolE
         if (!string.IsNullOrEmpty(character.Motivation))
             sb.AppendLine($"动机：{character.Motivation}");
 
+        if (!string.IsNullOrEmpty(character.AbilityDescription))
+            sb.AppendLine($"能力：{character.AbilityDescription}");
+
+        if (character.Tags is { Count: > 0 })
+            sb.AppendLine($"标签：{string.Join("、", character.Tags)}");
+
         if (relationships.Count > 0)
         {
             sb.AppendLine("人物关系：");
@@ -105,7 +119,7 @@ public sealed class GetCharacterTool(IServiceScopeFactory scopeFactory) : IToolE
             {
                 var otherId = rel.SourceCharacterId == character.Id ? rel.TargetCharacterId : rel.SourceCharacterId;
                 var otherName = relatedCharacters.GetValueOrDefault(otherId ?? string.Empty, otherId ?? "未知");
-                sb.AppendLine($"  与{otherName}：{rel.RelationshipType ?? "未知"} — {rel.Description ?? "无描述"}");
+                sb.AppendLine($"  与{otherName}：{rel.RelationshipType ?? "未知"}（强度：{rel.Intensity}）— {rel.Description ?? "无描述"}");
             }
         }
 

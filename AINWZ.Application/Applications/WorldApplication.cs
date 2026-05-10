@@ -545,7 +545,7 @@ public class WorldApplication(
             Title = request.Title.Trim(),
             Description = request.Description ?? string.Empty,
             EraLabel = request.EraLabel ?? string.Empty,
-            EventTime = request.EventTime ?? DateTime.UtcNow,
+            EventTime = request.EventTime ?? string.Empty,
             ImpactSummary = request.ImpactSummary ?? string.Empty,
             CreateBy = userId,
             UpdateBy = userId
@@ -576,7 +576,7 @@ public class WorldApplication(
         if (request.Title is not null) entity.Title = request.Title.Trim();
         if (request.Description is not null) entity.Description = request.Description;
         if (request.EraLabel is not null) entity.EraLabel = request.EraLabel;
-        if (request.EventTime.HasValue) entity.EventTime = request.EventTime.Value;
+        if (request.EventTime is not null) entity.EventTime = request.EventTime;
         if (request.ImpactSummary is not null) entity.ImpactSummary = request.ImpactSummary;
         entity.UpdateBy = userId;
         entity.UpdateAt = DateTime.UtcNow;

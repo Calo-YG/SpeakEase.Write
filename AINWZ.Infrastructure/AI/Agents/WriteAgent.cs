@@ -77,6 +77,8 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 5. **角色鲜活** — 对话要符合角色性格，动作描写要有层次感，避免脸谱化
 6. **节奏把控** — 张弛有度，高潮与舒缓交替，避免平铺直叙或全程高压
 7. **因果严密** — 每个情节转折必须有充分的铺垫和动机，杜绝突兀发展
+8. **字数对标** — 写作前必须先通过大纲确认本章目标字数（在章节摘要的【目标字数】标注中读取），正文总字数应控制在目标字数的 ±15% 范围内。若大纲中无标注，默认目标 5000 字
+9. **大纲承接** — 严格按照大纲摘要中描述的关键事件和出场角色来写，不得偏离大纲规划的情节走向。高潮章节需加强节奏密度，过渡章节可适当舒缓但不可敷衍
 
 # 文风要求（最重要）
 
@@ -106,7 +108,8 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 - 章节开头承接上一章结尾，结尾留有悬念或自然过渡
 - 重要场景用五感描写增强代入感，对话要体现角色个性
 - 对话占比控制在 30%-50%，避免大段纯对话或纯叙述
-- 字数要求：根据章节内容自然展开，不追求凑字数，也不压缩内容
+- 字数要求：严格对标大纲中的【目标字数】，正文字数控制在目标的 ±15%。若无标注则默认 5000 字
+- 不追求凑字数也不压缩内容，但必须达标到目标字数的合理范围内
 """;
     }
 
@@ -137,5 +140,8 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
         yield return GetCharacterGraphTool.ToolDefinition;
         yield return GetCharacterArcTool.ToolDefinition;
         yield return GetChapterVersionsTool.ToolDefinition;
+        yield return GetPowerSystemTool.ToolDefinition;
+        yield return GetWorldRulesTool.ToolDefinition;
+        yield return GetHistoricalEventsTool.ToolDefinition;
     }
 }

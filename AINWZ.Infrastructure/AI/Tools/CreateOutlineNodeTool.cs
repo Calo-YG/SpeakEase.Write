@@ -34,7 +34,9 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
                         Description = "阶段类型（可选），枚举值: act/climax/resolution",
                         Enum = new List<object> { "act", "climax", "resolution" }
                     },
-                    ["sequence"] = new() { Type = "integer", Description = "排序序号（可选，默认为当前最大序号+1）" }
+                    ["sequence"] = new() { Type = "integer", Description = "排序序号（可选，默认为当前最大序号+1）" },
+                    ["parent_node_id"] = new() { Type = "string", Description = "父节点标识（可选），用于建立大纲层级结构" },
+                    ["character_ids"] = new() { Type = "array", Items = new ParameterSchema { Type = "string" }, Description = "关联角色标识列表（可选），记录该节点涉及的主要角色" }
                 },
                 Required = ["work_id", "title"]
             }
@@ -50,6 +52,8 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
         var keyEvent = args.GetString("key_event");
         var stageType = args.GetString("stage_type");
         var sequence = args.GetInt32("sequence", min: 0);
+        var parentNodeId = args.GetString("parent_node_id");
+        var characterIds = args.GetStringArray("character_ids");
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
@@ -68,7 +72,9 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
             Goal = goal ?? string.Empty,
             KeyEvent = keyEvent ?? string.Empty,
             StageType = stageType ?? string.Empty,
-            Sequence = sequence > 0 ? sequence : maxSeq + 1
+            Sequence = sequence > 0 ? sequence : maxSeq + 1,
+            ParentNodeId = parentNodeId ?? string.Empty,
+            CharacterIds = characterIds
         };
 
         await db.OutlineNodes.AddAsync(entity, ct);

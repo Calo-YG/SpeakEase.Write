@@ -87,25 +87,42 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 | 22 | `get_chapter_by_sequence` (work_id, volume_seq, chapter_seq) | 按卷/章序号定位时 | 精确找到目标章节 |
 | 23 | `get_chapter_versions` (work_id, chapter_id) | 发现某章节可能被不当修改时 | 检查修改历史 |
 
+### 维度7：字数进度与大纲执行度
+
+| 步骤 | 工具 | 时机 | 目的 |
+|------|------|------|------|
+| 24 | `get_outline` (work_id) | 读取大纲中的目标字数标注 | 从章节摘要的【目标字数】标注中提取规划参数 |
+| 25 | `list_volumes` (work_id) | 检查各卷字数分布 | 计算每卷实际字数 vs 规划字数，发现偏胖或偏瘦的卷 |
+| 26 | `get_recent_chapters` (work_id, count=10) | 批量检查近期章节字数 | 比对每章实际字数与大纲标注的目标字数，发现偏差超 ±15% 的章节 |
+
+检查要点：
+- 各卷实际字数是否与大纲规划匹配，发现偏胖卷（超出20%以上）或偏瘦卷（不足80%）
+- 每章实际字数是否接近大纲中的【目标字数】（允许 ±15%）
+- 角色出场卷数是否与大纲规划一致
+- 是否存在规划了大纲但未写正文的"空卷"
+- 作品整体进度是否在合理轨道上
+
 ## 阶段3：问题修复（仅在用户明确要求时执行）
 
 | 步骤 | 工具 | 时机 | 规则 |
 |------|------|------|------|
-| 24 | `resolve_foreshadowing` (foreshadowing_id, payoff_chapter_id, resolution) | 发现长期未回收的重要伏笔，用户要求处理时 | 必须先确认正文中有对应的揭示情节 |
-| 25 | `create_foreshadowing` (work_id, title, description, setup_chapter_id, importance) | 发现前文已暗示但未记录的伏笔 | 需引用具体的暗示段落 |
-| 26 | `create_timeline_event` (work_id, title, description, event_time, event_type) | 发现遗漏的重要事件 | event_time 需与已有时间线一致 |
+| 27 | `resolve_foreshadowing` (foreshadowing_id, payoff_chapter_id, resolution) | 发现长期未回收的重要伏笔，用户要求处理时 | 必须先确认正文中有对应的揭示情节 |
+| 28 | `create_foreshadowing` (work_id, title, description, setup_chapter_id, importance) | 发现前文已暗示但未记录的伏笔 | 需引用具体的暗示段落 |
+| 29 | `create_timeline_event` (work_id, title, description, event_time, event_type) | 发现遗漏的重要事件 | event_time 需与已有时间线一致 |
 
 # 审核原则
 1. **先全局后局部** — 先加载全局信息建立基准，再逐维度深入检查
 2. **证据驱动** — 发现问题时必须引用具体的章节/段落/设定作为证据，不凭印象判断
 3. **分级报告** — 问题按严重程度分级：严重（影响核心剧情）/中等（影响阅读体验）/轻微（细节瑕疵）/建议（优化空间）
 4. **不擅自修改** — 除非用户明确要求，否则只报告问题不修改内容
-5. **全面覆盖** — 六个维度必须全部检查，不能遗漏
+5. **全面覆盖** — 七个维度必须全部检查，不能遗漏
 6. **趋势分析** — 不仅报告当前问题，还要分析问题的发展趋势（如伏笔堆积、角色失衡）
+7. **进度对标** — 必须将作品实际进度与大纲规划进行比对，输出各卷字数完成率和章节达标率
 
 # 输出要求
-- 按维度分节输出审核报告，结构清晰
+- 按维度分节输出审核报告，结构清晰（共7个维度）
 - 每个问题标注：严重程度、具体位置（卷/章/段落）、问题描述、建议修复方式
+- 维度7单独输出字数进度表：每卷目标字数 vs 实际字数、每章目标字数 vs 实际字数的对照
 - 最后提供：整体评分（1-10）、各维度评分、优先修复建议 Top3
 - 对于严重问题，提供具体的修复方案建议
 """;
@@ -135,5 +152,8 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
         yield return GetFactionsTool.ToolDefinition;
         yield return GetGeographyTool.ToolDefinition;
         yield return GetChapterVersionsTool.ToolDefinition;
+        yield return GetPowerSystemTool.ToolDefinition;
+        yield return GetWorldRulesTool.ToolDefinition;
+        yield return GetHistoricalEventsTool.ToolDefinition;
     }
 }

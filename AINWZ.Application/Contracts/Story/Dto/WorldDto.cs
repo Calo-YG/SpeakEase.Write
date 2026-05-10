@@ -103,7 +103,7 @@ public sealed class HistoricalEventResponse
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string EraLabel { get; set; } = string.Empty;
-    public DateTime EventTime { get; set; }
+    public string EventTime { get; set; } = string.Empty;
     public string ImpactSummary { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
 }
@@ -113,6 +113,6 @@ public sealed class SaveHistoricalEventRequest
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; }
     public string EraLabel { get; set; }
-    public DateTime? EventTime { get; set; }
+    public string EventTime { get; set; }
     public string ImpactSummary { get; set; }
 }

@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : IToolExecutor
+public sealed class CreateWorldRuleTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -17,20 +17,20 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
         Type = "function",
         Function = new FunctionDefinition
         {
-            Name = "create_faction",
-            Description = "创建势力条目（门派/家族/国家/组织），用于世界观构建。faction_type 建议: 宗门/家族/帝国/商会/佣兵团/暗组织。",
+            Name = "create_world_rule",
+            Description = "创建天道法则/世界限制机制，用于世界观构建。rule_type 建议: 物理法则/天道规则/魔法法则/社会禁忌。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
-                    ["name"] = new() { Type = "string", Description = "势力名称（必填）" },
-                    ["faction_type"] = new() { Type = "string", Description = "势力类型（必填），如: 宗门/家族/帝国/商会/佣兵团/暗组织" },
-                    ["description"] = new() { Type = "string", Description = "势力描述（必填），包含历史、实力、特点等" },
-                    ["relationship_json"] = new() { Type = "string", Description = "势力间关系描述（可选），如 \"与XX宗世代同盟，与YY门为敌对关系\"" }
+                    ["rule_name"] = new() { Type = "string", Description = "法则名称（必填），如: 灵气复苏、天劫机制" },
+                    ["rule_type"] = new() { Type = "string", Description = "法则类型（必填），如: 物理法则/天道规则/魔法法则/社会禁忌" },
+                    ["description"] = new() { Type = "string", Description = "法则描述（必填），详细说明该法则的内容与影响" },
+                    ["constraint_json"] = new() { Type = "string", Description = "约束条件JSON（可选），结构化的限制条件" }
                 },
-                Required = ["work_id", "name", "faction_type", "description"]
+                Required = ["work_id", "rule_name", "rule_type", "description"]
             }
         }
     };
@@ -39,10 +39,10 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
     {
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
-        var name = args.GetString("name", required: true);
-        var factionType = args.GetString("faction_type", required: true);
+        var ruleName = args.GetString("rule_name", required: true);
+        var ruleType = args.GetString("rule_type", required: true);
         var description = args.GetString("description", required: true);
-        var relationshipJson = args.GetString("relationship_json");
+        var constraintJson = args.GetString("constraint_json");
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
@@ -51,20 +51,20 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
 
         var worldSetting = await db.WorldSettings.FirstOrDefaultAsync(w => w.WorkId == workId, ct);
 
-        var entity = new FactionEntity
+        var entity = new WorldRuleEntity
         {
             Id = idGen.NextIdString(),
             WorkId = workId,
             WorldSettingId = worldSetting?.Id ?? string.Empty,
-            Name = name,
-            FactionType = factionType,
+            RuleName = ruleName,
+            RuleType = ruleType,
             Description = description,
-            RelationshipJson = relationshipJson ?? string.Empty
+            ConstraintJson = constraintJson ?? string.Empty
         };
 
-        await db.Factions.AddAsync(entity, ct);
+        await db.WorldRules.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"势力「{name}」（{factionType}）已创建，ID: {entity.Id}");
+        return ToolResult.Ok($"天道法则「{ruleName}」（{ruleType}）已创建，ID: {entity.Id}");
     }
 }

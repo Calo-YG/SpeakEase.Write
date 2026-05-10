@@ -79,7 +79,8 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory, IOpt
             {
                 Target = otherName,
                 r.RelationshipType,
-                r.Description
+                r.Description,
+                r.Intensity
             });
         }
 

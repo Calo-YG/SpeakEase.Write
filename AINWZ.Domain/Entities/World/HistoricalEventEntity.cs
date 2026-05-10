@@ -38,9 +38,9 @@ namespace SpeakEase.Write.Domain.Entities.World
         public string EraLabel { get; set; } = string.Empty;
 
         /// <summary>
-        /// 事件发生时间。
+        /// 事件发生时间描述。
         /// </summary>
-        public DateTime EventTime { get; set; } = DateTime.UtcNow;
+        public string EventTime { get; set; } = string.Empty;
 
         /// <summary>
         /// 影响摘要。

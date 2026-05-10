@@ -81,7 +81,7 @@ public sealed class GetCharacterGraphTool(IServiceScopeFactory scopeFactory) : I
             {
                 var sourceName = characterMap.GetValueOrDefault(rel.SourceCharacterId, rel.SourceCharacterId);
                 var targetName = characterMap.GetValueOrDefault(rel.TargetCharacterId, rel.TargetCharacterId);
-                sb.AppendLine($"  {sourceName} →[{rel.RelationshipType}]→ {targetName}");
+                sb.AppendLine($"  {sourceName} →[{rel.RelationshipType}]→ {targetName}（强度：{rel.Intensity}）");
                 if (!string.IsNullOrEmpty(rel.Description))
                     sb.AppendLine($"    备注: {rel.Description}");
             }

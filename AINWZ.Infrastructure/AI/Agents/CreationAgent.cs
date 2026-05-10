@@ -82,10 +82,13 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
 5. **避免重复** — 创建前检查是否已有类似定位的角色，每个角色应有不可替代性
 6. **五感丰富** — 外貌描写要有记忆点，避免泛泛而谈
 7. **性格立体** — 优缺点并存，有内在矛盾的角色更真实
+8. **卷结构对齐** — 角色出场和退场需与大纲的卷结构对齐：创建角色时需确认该角色在哪一卷首次出场、在哪一卷达到高光、在哪一卷退场或转型。角色戏份密度应与大纲中的规划一致
+9. **规模可控** — 角色数量需与作品总字数匹配：每20万字新增3-5个有名字的配角为宜；避免前期铺太多角色导致后期无法充分展开
 
 # 输出要求
 - 创建角色后输出：角色名称、身份定位、核心种子、关键设定
 - 同时给出与已有角色的关系建议
+- 同时标注该角色的卷出场规划（首次出场卷、高光卷、退场/转型卷）
 - 创意生成时可直接输出，不必等工具调用
 - 角色档案格式清晰，方便后续查询
 """;
@@ -106,5 +109,7 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
         yield return GetCharacterGraphTool.ToolDefinition;
         yield return CreateCharacterArcTool.ToolDefinition;
         yield return GetCharacterArcTool.ToolDefinition;
+        yield return GetPowerSystemTool.ToolDefinition;
+        yield return GetWorldRulesTool.ToolDefinition;
     }
 }

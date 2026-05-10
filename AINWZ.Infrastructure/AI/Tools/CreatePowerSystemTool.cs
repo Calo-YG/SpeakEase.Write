@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : IToolExecutor
+public sealed class CreatePowerSystemTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -17,20 +17,20 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
         Type = "function",
         Function = new FunctionDefinition
         {
-            Name = "create_faction",
-            Description = "创建势力条目（门派/家族/国家/组织），用于世界观构建。faction_type 建议: 宗门/家族/帝国/商会/佣兵团/暗组织。",
+            Name = "create_power_system",
+            Description = "创建力量体系/修炼体系条目，用于世界观构建。可存储修仙等级、武功境界、魔法体系等结构化定义。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
-                    ["name"] = new() { Type = "string", Description = "势力名称（必填）" },
-                    ["faction_type"] = new() { Type = "string", Description = "势力类型（必填），如: 宗门/家族/帝国/商会/佣兵团/暗组织" },
-                    ["description"] = new() { Type = "string", Description = "势力描述（必填），包含历史、实力、特点等" },
-                    ["relationship_json"] = new() { Type = "string", Description = "势力间关系描述（可选），如 \"与XX宗世代同盟，与YY门为敌对关系\"" }
+                    ["name"] = new() { Type = "string", Description = "体系名称（必填），如: 修仙境界、武道等级" },
+                    ["level_definition"] = new() { Type = "string", Description = "等级定义（必填），JSON格式，如 {\"levels\":[\"炼气\",\"筑基\",\"金丹\",\"元婴\"]}" },
+                    ["ability_rule"] = new() { Type = "string", Description = "能力规则（可选），如: 金丹期可御剑飞行" },
+                    ["resource_system"] = new() { Type = "string", Description = "资源体系（可选），如: 灵石为通用货币" }
                 },
-                Required = ["work_id", "name", "faction_type", "description"]
+                Required = ["work_id", "name", "level_definition"]
             }
         }
     };
@@ -40,9 +40,9 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
         var name = args.GetString("name", required: true);
-        var factionType = args.GetString("faction_type", required: true);
-        var description = args.GetString("description", required: true);
-        var relationshipJson = args.GetString("relationship_json");
+        var levelDefinition = args.GetString("level_definition", required: true);
+        var abilityRule = args.GetString("ability_rule");
+        var resourceSystem = args.GetString("resource_system");
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
@@ -51,20 +51,20 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
 
         var worldSetting = await db.WorldSettings.FirstOrDefaultAsync(w => w.WorkId == workId, ct);
 
-        var entity = new FactionEntity
+        var entity = new PowerSystemEntity
         {
             Id = idGen.NextIdString(),
             WorkId = workId,
             WorldSettingId = worldSetting?.Id ?? string.Empty,
             Name = name,
-            FactionType = factionType,
-            Description = description,
-            RelationshipJson = relationshipJson ?? string.Empty
+            LevelDefinitionJson = levelDefinition,
+            AbilityRule = abilityRule ?? string.Empty,
+            ResourceSystem = resourceSystem ?? string.Empty
         };
 
-        await db.Factions.AddAsync(entity, ct);
+        await db.PowerSystems.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"势力「{name}」（{factionType}）已创建，ID: {entity.Id}");
+        return ToolResult.Ok($"力量体系「{name}」已创建，ID: {entity.Id}");
     }
 }

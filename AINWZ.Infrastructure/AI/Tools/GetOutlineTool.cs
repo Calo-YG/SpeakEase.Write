@@ -50,7 +50,10 @@ public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExe
 
         var sb = new StringBuilder();
         sb.AppendLine($"大纲：{work.Title ?? "未设置"}");
+        if (!string.IsNullOrEmpty(work.StructureTemplate))
+            sb.AppendLine($"结构模板：{work.StructureTemplate}");
         sb.AppendLine($"走向：{work.Summary ?? "未设置"}");
+        sb.AppendLine($"主大纲：{(work.IsPrimary ? "是" : "否")}");
 
         var volumes = await db.Volumes.AsNoTracking()
             .Where(x => x.WorkId == workId)

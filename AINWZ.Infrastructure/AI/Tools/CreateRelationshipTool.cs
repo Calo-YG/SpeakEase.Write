@@ -28,7 +28,8 @@ public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : 
                     ["source_name"] = new() { Type = "string", Description = "关系发起方角色名称（必填）" },
                     ["target_name"] = new() { Type = "string", Description = "关系目标方角色名称（必填）" },
                     ["relationship_type"] = new() { Type = "string", Description = "关系类型（必填），如: 父子/师徒/夫妻/宿敌/挚友/上下级/同门/恋人/仇人" },
-                    ["description"] = new() { Type = "string", Description = "关系描述（可选），补充说明两人关系的具体情况" }
+                    ["description"] = new() { Type = "string", Description = "关系描述（可选），补充说明两人关系的具体情况" },
+                    ["intensity"] = new() { Type = "integer", Description = "关系强度（可选，1-10，默认5），10为最强烈，如生死之交、刻骨仇恨等" }
                 },
                 Required = ["work_id", "source_name", "target_name", "relationship_type"]
             }
@@ -43,6 +44,7 @@ public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : 
         var targetName = args.GetString("target_name", required: true);
         var relType = args.GetString("relationship_type", required: true);
         var description = args.GetString("description");
+        var intensity = args.GetInt32("intensity", defaultValue: 5, min: 1, max: 10);
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
@@ -74,10 +76,11 @@ public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : 
         if (existing != null)
         {
             existing.RelationshipType = relType;
+            existing.Intensity = intensity;
             if (!string.IsNullOrEmpty(description))
                 existing.Description = description;
             await db.SaveChangesAsync(ct);
-            return ToolResult.Ok($"关系已更新: {source.Name} →[{relType}]→ {target.Name}");
+            return ToolResult.Ok($"关系已更新: {source.Name} →[{relType}]→ {target.Name}，强度: {intensity}");
         }
 
         var entity = new CharacterRelationshipEntity
@@ -87,12 +90,13 @@ public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : 
             SourceCharacterId = source.Id,
             TargetCharacterId = target.Id,
             RelationshipType = relType,
-            Description = description ?? string.Empty
+            Description = description ?? string.Empty,
+            Intensity = intensity
         };
 
         await db.CharacterRelationships.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"关系已创建: {source.Name} →[{relType}]→ {target.Name}, ID: {entity.Id}");
+        return ToolResult.Ok($"关系已创建: {source.Name} →[{relType}]→ {target.Name}，强度: {intensity}，ID: {entity.Id}");
     }
 }

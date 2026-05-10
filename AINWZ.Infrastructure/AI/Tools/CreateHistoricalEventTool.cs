@@ -9,7 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : IToolExecutor
+public sealed class CreateHistoricalEventTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -17,20 +17,21 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
         Type = "function",
         Function = new FunctionDefinition
         {
-            Name = "create_faction",
-            Description = "创建势力条目（门派/家族/国家/组织），用于世界观构建。faction_type 建议: 宗门/家族/帝国/商会/佣兵团/暗组织。",
+            Name = "create_historical_event",
+            Description = "创建世界历史事件（背景历史，非故事剧情时间线）。用于构建世界观的历史底蕴，如上古大战、王朝更替、灵气复苏等。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
-                    ["name"] = new() { Type = "string", Description = "势力名称（必填）" },
-                    ["faction_type"] = new() { Type = "string", Description = "势力类型（必填），如: 宗门/家族/帝国/商会/佣兵团/暗组织" },
-                    ["description"] = new() { Type = "string", Description = "势力描述（必填），包含历史、实力、特点等" },
-                    ["relationship_json"] = new() { Type = "string", Description = "势力间关系描述（可选），如 \"与XX宗世代同盟，与YY门为敌对关系\"" }
+                    ["title"] = new() { Type = "string", Description = "事件标题（必填），如: 神魔大战、灵气复苏" },
+                    ["description"] = new() { Type = "string", Description = "事件描述（必填），详细说明事件经过" },
+                    ["era_label"] = new() { Type = "string", Description = "时代标签（可选），如: 上古、中古、近世" },
+                    ["event_time"] = new() { Type = "string", Description = "事件时间（可选），如: 万年前、三千年前" },
+                    ["impact_summary"] = new() { Type = "string", Description = "影响概述（可选），该事件对世界格局的影响" }
                 },
-                Required = ["work_id", "name", "faction_type", "description"]
+                Required = ["work_id", "title", "description"]
             }
         }
     };
@@ -39,10 +40,11 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
     {
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
-        var name = args.GetString("name", required: true);
-        var factionType = args.GetString("faction_type", required: true);
+        var title = args.GetString("title", required: true);
         var description = args.GetString("description", required: true);
-        var relationshipJson = args.GetString("relationship_json");
+        var eraLabel = args.GetString("era_label");
+        var eventTime = args.GetString("event_time");
+        var impactSummary = args.GetString("impact_summary");
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
@@ -51,20 +53,21 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
 
         var worldSetting = await db.WorldSettings.FirstOrDefaultAsync(w => w.WorkId == workId, ct);
 
-        var entity = new FactionEntity
+        var entity = new HistoricalEventEntity
         {
             Id = idGen.NextIdString(),
             WorkId = workId,
             WorldSettingId = worldSetting?.Id ?? string.Empty,
-            Name = name,
-            FactionType = factionType,
+            Title = title,
             Description = description,
-            RelationshipJson = relationshipJson ?? string.Empty
+            EraLabel = eraLabel ?? string.Empty,
+            EventTime = eventTime ?? string.Empty,
+            ImpactSummary = impactSummary ?? string.Empty
         };
 
-        await db.Factions.AddAsync(entity, ct);
+        await db.HistoricalEvents.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"势力「{name}」（{factionType}）已创建，ID: {entity.Id}");
+        return ToolResult.Ok($"历史事件「{title}」已创建，ID: {entity.Id}");
     }
 }

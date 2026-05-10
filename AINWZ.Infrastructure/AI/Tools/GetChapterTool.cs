@@ -50,6 +50,9 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
                 c.Summary,
                 c.WordCount,
                 c.Status,
+                c.VolumeId,
+                c.OutlineNodeIds,
+                c.AuthorNotes,
                 Content = c.Content ?? string.Empty
             })
             .FirstOrDefaultAsync(ct);
@@ -57,10 +60,15 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
         if (chapter == null)
             return ToolResult.Fail($"未找到章节 {chapterId}", "not_found");
 
-        return ToolResult.Ok(
-            $"## 第{chapter.Sequence}章：{chapter.Title ?? "未命名"}\n" +
+        var result = $"## 第{chapter.Sequence}章：{chapter.Title ?? "未命名"}\n" +
             $"状态：{chapter.Status ?? "draft"} | 字数：{chapter.WordCount}\n" +
+            $"卷ID：{chapter.VolumeId}\n" +
             (!string.IsNullOrEmpty(chapter.Summary) ? $"摘要：{chapter.Summary}\n" : "") +
-            chapter.Content);
+            (chapter.OutlineNodeIds is { Count: > 0 }
+                ? $"关联大纲节点：{string.Join(", ", chapter.OutlineNodeIds)}\n" : "") +
+            (!string.IsNullOrEmpty(chapter.AuthorNotes) ? $"作者备注：{chapter.AuthorNotes}\n" : "") +
+            chapter.Content;
+
+        return ToolResult.Ok(result);
     }
 }

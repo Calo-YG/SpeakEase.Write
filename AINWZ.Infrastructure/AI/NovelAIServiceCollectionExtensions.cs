@@ -64,6 +64,13 @@ public static class NovelAIServiceCollectionExtensions
         services.AddKeyedTransient<IToolExecutor, GetGeographyTool>(GetGeographyTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetChapterVersionsTool>(GetChapterVersionsTool.ToolDefinition.Function.Name);
 
+        services.AddKeyedTransient<IToolExecutor, CreatePowerSystemTool>(CreatePowerSystemTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, GetPowerSystemTool>(GetPowerSystemTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, CreateWorldRuleTool>(CreateWorldRuleTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, GetWorldRulesTool>(GetWorldRulesTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, CreateHistoricalEventTool>(CreateHistoricalEventTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, GetHistoricalEventsTool>(GetHistoricalEventsTool.ToolDefinition.Function.Name);
+
         return services;
     }
 }

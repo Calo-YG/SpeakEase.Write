@@ -384,3 +384,7 @@ FodyWeavers.xsd
 /AINWZ.Infrastructure/Persistence/Migrations/20260418114502_AddAgentLoopFields.cs
 /AINWZ.Infrastructure/Persistence/Migrations/20260425041004_AddTagsAndUserFavorites.cs
 /AINWZ.Infrastructure/Persistence/Migrations/SpeakEaseDbContextModelSnapshot.cs
+/AINWZ.Infrastructure/AI/Agents/ARCHITECTURE.md
+/AINWZ.Infrastructure/AI/Agents/BLACKBOARD_HOLDER.md
+/AINWZ.Infrastructure/AI/Agents/PROJECT_AUDIT.md
+/AINWZ.Infrastructure/AI/Agents/ROADMAP.md

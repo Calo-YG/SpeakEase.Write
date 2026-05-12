@@ -8,6 +8,7 @@ using SpeakEase.AI.Lib.OpenAIModel;
 public sealed class AgentResponse
 {
     public string Content { get; set; }
+    public string ReasoningContent { get; set; }
     public string Model { get; set; }
     public List<ToolResult> ToolResults { get; set; } = new();
     public List<ChatMessage> ConversationHistory { get; set; } = new();

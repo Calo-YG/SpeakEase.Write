@@ -88,6 +88,9 @@ public abstract class AgentBase(
                     case "content":
                         yield return new AgentStreamChunk { Type = "content", Content = tc.Content };
                         break;
+                    case "reasoning":
+                        yield return new AgentStreamChunk { Type = "reasoning", Content = tc.Content };
+                        break;
                     case "tool_call":
                         yield return new AgentStreamChunk { Type = "tool_call", ToolCallDelta = tc.ToolCallDelta };
                         break;
@@ -148,6 +151,7 @@ public abstract class AgentBase(
                     FinalResponse = new AgentResponse
                     {
                         Content = turnResult.Content,
+                        ReasoningContent = turnResult.ReasoningContent,
                         Model = turnResult.Model,
                         Iterations = i + 1,
                         StopReason = "completed"

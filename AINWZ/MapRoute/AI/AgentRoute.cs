@@ -42,6 +42,7 @@ public static class AgentRoute
                 {
                     "meta" => "meta",
                     "content" => "content",
+                    "reasoning" => "reasoning",
                     "tool_call" => "tool_call",
                     "tool_result" => "tool_result",
                     "done" => "done",

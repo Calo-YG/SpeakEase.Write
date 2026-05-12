@@ -177,6 +177,11 @@ namespace SpeakEase.AI.Lib
                 if (!string.IsNullOrEmpty(delta.ReasoningContent))
                 {
                     reasoningBuilder.Append(delta.ReasoningContent);
+                    yield return new LLMTurnChunk
+                    {
+                        Type = "reasoning",
+                        Content = delta.ReasoningContent
+                    };
                 }
 
                 if (!string.IsNullOrEmpty(delta.Content))

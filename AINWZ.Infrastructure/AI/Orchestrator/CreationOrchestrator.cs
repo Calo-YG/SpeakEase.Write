@@ -112,19 +112,6 @@ public sealed class CreationOrchestrator(
 
         var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
 
-        if (pipeline.Count == 1 && pipeline[0] == "write")
-        {
-            pipeline = new List<string> { "write", "critique", "write" };
-            logger.LogInformation("自动启用文风精修流水线: write → critique → write");
-        }
-        else if (pipeline.Contains("write") && !pipeline.Contains("critique"))
-        {
-            var writeIndex = pipeline.LastIndexOf("write");
-            pipeline.Insert(writeIndex + 1, "critique");
-            pipeline.Insert(writeIndex + 2, "write");
-            logger.LogInformation("自动在写作步骤后插入文风精修: +critique +write");
-        }
-
         var previousResult = "";
         for (var i = 0; i < pipeline.Count; i++)
         {

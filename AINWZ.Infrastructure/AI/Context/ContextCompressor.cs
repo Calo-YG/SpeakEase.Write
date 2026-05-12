@@ -22,7 +22,9 @@ public sealed class ContextCompressor(IChatCompatible llm, ILogger<ContextCompre
         2. 已完成的关键决策
         3. 尚未解决的问题
         4. 对后续写作有参考价值的信息
+        5. 重要：保留前文写作中使用的叙事视角、时态、语言风格特征（如"第三人称有限视角""过去时""冷峻克制""口语化对话多"等标签）
         限制在 500 字以内，使用简洁的要点式表述。
+        在摘要末尾用一行单独标注：[风格标签] 视角/时态/语言特征
         """;
 
     public async Task<List<ChatMessage>> CompressAsync(

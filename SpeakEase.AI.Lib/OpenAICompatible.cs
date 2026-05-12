@@ -265,6 +265,9 @@ namespace SpeakEase.AI.Lib
             ToolChoice = context.ToolChoice,
             Temperature = context.Temperature,
             MaxTokens = context.MaxTokens,
+            TopP = context.TopP,
+            FrequencyPenalty = context.FrequencyPenalty,
+            PresencePenalty = context.PresencePenalty,
             Stream = stream
         };
     }

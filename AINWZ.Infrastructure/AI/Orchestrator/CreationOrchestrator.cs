@@ -112,6 +112,19 @@ public sealed class CreationOrchestrator(
 
         var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
 
+        if (pipeline.Count == 1 && pipeline[0] == "write")
+        {
+            pipeline = new List<string> { "write", "critique", "write" };
+            logger.LogInformation("自动启用文风精修流水线: write → critique → write");
+        }
+        else if (pipeline.Contains("write") && !pipeline.Contains("critique"))
+        {
+            var writeIndex = pipeline.LastIndexOf("write");
+            pipeline.Insert(writeIndex + 1, "critique");
+            pipeline.Insert(writeIndex + 2, "write");
+            logger.LogInformation("自动在写作步骤后插入文风精修: +critique +write");
+        }
+
         var previousResult = "";
         for (var i = 0; i < pipeline.Count; i++)
         {
@@ -144,15 +157,21 @@ public sealed class CreationOrchestrator(
                 ? $"{enrichedMessage}\n\n[前一步Agent结果]\n{previousResult}"
                 : enrichedMessage;
 
+            var agentHistory = agentName == "write"
+                ? FilterConversationHistory(conversationHistory)
+                : (conversationHistory ?? new List<ChatMessage>());
+
             var request = new AgentRequest
             {
                 UserMessage = chainMessage,
                 SystemPrompt = agent.BuildPrompt(),
                 Model = llmContext.Model,
                 MaxIterations = 10,
-                ConversationHistory = conversationHistory ?? new List<ChatMessage>(),
+                ConversationHistory = agentHistory,
                 WorkId = workId,
             };
+
+            SetAgentParameters(request, agentName);
 
             var stepStopwatch = Stopwatch.StartNew();
             previousResult = "";
@@ -233,5 +252,72 @@ public sealed class CreationOrchestrator(
         try { await agentTask; }
         catch (OperationCanceledException) { }
         catch (Exception ex) { logger.LogError(ex, "Agent task faulted"); }
+    }
+
+    private static void SetAgentParameters(AgentRequest request, string agentName)
+    {
+        switch (agentName)
+        {
+            case "write":
+                request.Temperature = 0.9;
+                request.TopP = 0.92;
+                request.FrequencyPenalty = 0.45;
+                request.PresencePenalty = 0.35;
+                request.MaxTokens = 4096;
+                break;
+            case "critique":
+                request.Temperature = 0.3;
+                request.TopP = 0.85;
+                request.FrequencyPenalty = 0.0;
+                request.PresencePenalty = 0.0;
+                request.MaxTokens = 2048;
+                break;
+            case "audit":
+                request.Temperature = 0.2;
+                request.MaxTokens = 4096;
+                break;
+            case "outline":
+                request.Temperature = 0.7;
+                request.MaxTokens = 4096;
+                break;
+            case "world":
+                request.Temperature = 0.7;
+                request.MaxTokens = 4096;
+                break;
+            default:
+                request.Temperature = 0.7;
+                request.MaxTokens = 2048;
+                break;
+        }
+    }
+
+    private static List<ChatMessage> FilterConversationHistory(List<ChatMessage> history)
+    {
+        if (history == null || history.Count == 0)
+            return new List<ChatMessage>();
+
+        var filtered = new List<ChatMessage>();
+        foreach (var msg in history)
+        {
+            if (msg is not AssistantMessage assistant || string.IsNullOrEmpty(assistant.Content))
+            {
+                filtered.Add(msg);
+                continue;
+            }
+
+            var content = assistant.Content;
+            if (content.Length < 150 &&
+                (content.Contains("我来") || content.Contains("帮你") ||
+                 content.Contains("接下来") || content.Contains("好的") ||
+                 content.Contains("以下") || content.Contains("让我") ||
+                 content.Contains("首先") || content.Contains("这一章")))
+            {
+                continue;
+            }
+
+            filtered.Add(msg);
+        }
+
+        return filtered;
     }
 }

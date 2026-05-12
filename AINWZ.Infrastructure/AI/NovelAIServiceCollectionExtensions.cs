@@ -26,6 +26,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<INovelAgent, OutlineAgent>();
         services.AddScoped<INovelAgent, CreationAgent>();
         services.AddScoped<INovelAgent, AuditAgent>();
+        services.AddScoped<INovelAgent, CritiqueAgent>();
 
         services.AddKeyedTransient<IToolExecutor, GetCharacterTool>(GetCharacterTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetWorldSettingTool>(GetWorldSettingTool.ToolDefinition.Function.Name);

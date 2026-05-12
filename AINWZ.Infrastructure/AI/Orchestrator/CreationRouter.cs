@@ -58,6 +58,10 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         ("漏洞",    "audit",    "audit_report"),
         ("矛盾",    "audit",    "audit_report"),
 
+        ("去AI味",  "critique", "critique"),
+        ("文风",    "critique", "critique"),
+        ("自然",    "critique", "critique"),
+
         ("写",      "write",    "chapter"),
         ("世界",    "world",    "setting"),
         ("设计",    "creation", "character"),
@@ -70,7 +74,8 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         ["outline"] = "outline",
         ["world"] = "world",
         ["creation"] = "creation",
-        ["audit"] = "audit"
+        ["audit"] = "audit",
+        ["critique"] = "critique"
     };
 
     public static RouteResult Decide(string userMessage)
@@ -141,6 +146,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
 - world: 管理世界观/世界设定/势力/地理
 - creation: 创建角色/人物设计/创意灵感
 - audit: 检查一致性/审查漏洞/发现矛盾
+- critique: 检查文风AI味/让文字更自然更像人写
 
 用户可能包含多个意图（如"帮我写完这章然后检查一致性"），请识别并返回 pipeline。
 
@@ -212,6 +218,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         "world" => "setting",
         "creation" => "character",
         "audit" => "audit_report",
+        "critique" => "critique",
         _ => "plain"
     };
 }

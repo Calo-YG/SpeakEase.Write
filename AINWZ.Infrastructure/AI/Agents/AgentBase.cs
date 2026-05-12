@@ -60,7 +60,10 @@ public abstract class AgentBase(
         {
             Model = request.Model,
             Temperature = request.Temperature,
-            MaxTokens = request.MaxTokens
+            MaxTokens = request.MaxTokens,
+            TopP = request.TopP,
+            FrequencyPenalty = request.FrequencyPenalty,
+            PresencePenalty = request.PresencePenalty
         };
 
         var agentStopwatch = Stopwatch.StartNew();

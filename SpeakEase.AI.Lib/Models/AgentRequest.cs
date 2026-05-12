@@ -13,6 +13,9 @@ public sealed class AgentRequest
     public List<ChatMessage> ConversationHistory { get; set; } = new();
     public double? Temperature { get; set; }
     public int? MaxTokens { get; set; }
+    public double? TopP { get; set; }
+    public double? FrequencyPenalty { get; set; }
+    public double? PresencePenalty { get; set; }
     public int MaxIterations { get; set; } = 10;
     public string SkillName { get; set; }
 

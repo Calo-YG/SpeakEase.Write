@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Infrastructure.AI.Memory;
 
@@ -122,8 +123,67 @@ public sealed class CreationAgentContext : ICreationAgentContext
             sb.AppendLine(mem.StyleReference);
             sb.AppendLine("```");
             sb.AppendLine();
+
+            var fingerprint = ExtractStyleFingerprint(mem.StyleReference);
+            if (!string.IsNullOrEmpty(fingerprint))
+            {
+                sb.AppendLine("## 风格指纹（前文章节的量化风格特征，写作时务必匹配）");
+                sb.AppendLine(fingerprint);
+                sb.AppendLine();
+            }
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    private static string ExtractStyleFingerprint(string styleText)
+    {
+        if (string.IsNullOrEmpty(styleText) || styleText.Length < 200)
+            return string.Empty;
+
+        var sentences = Regex.Split(styleText, @"[。！？；\n]+")
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToList();
+
+        if (sentences.Count < 5)
+            return string.Empty;
+
+        var shortCount = sentences.Count(s => s.Length <= 15);
+        var mediumCount = sentences.Count(s => s.Length > 15 && s.Length <= 35);
+        var longCount = sentences.Count(s => s.Length > 35);
+
+        var totalSentences = sentences.Count;
+        var shortPct = (int)(shortCount * 100.0 / totalSentences);
+        var mediumPct = (int)(mediumCount * 100.0 / totalSentences);
+        var longPct = (int)(longCount * 100.0 / totalSentences);
+
+        var quoteMatches = Regex.Matches(styleText, @"[""「『""'']");
+        var dialogueLineCount = Regex.Matches(styleText, @"[""「『][^""」』]*[""」』]").Count;
+        var dialogueDensity = (int)(dialogueLineCount * 100.0 / Math.Max(1, sentences.Count));
+
+        var paragraphs = styleText.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Trim())
+            .Where(p => p.Length > 0)
+            .ToList();
+        var minParaLen = paragraphs.Count > 0 ? paragraphs.Min(p => p.Length) : 0;
+        var maxParaLen = paragraphs.Count > 0 ? paragraphs.Max(p => p.Length) : 0;
+
+        var sentenceStructure = "";
+        if (shortPct >= 40)
+            sentenceStructure = "短句主导（短句≥40%），节奏快，推进力强";
+        else if (longPct >= 30)
+            sentenceStructure = "长句铺陈（长句≥30%），描写细致，节奏舒缓";
+        else
+            sentenceStructure = "长短均衡（短句和长句各占一定比例），节奏平稳";
+
+        var dialogueStyle = dialogueDensity >= 15 ? "对话密集" : "叙述为主";
+
+        return $"""
+- **句式分布**：短句（≤15字）{shortPct}% | 中句（15-35字）{mediumPct}% | 长句（>35字）{longPct}%（共{totalSentences}句）
+- **句式特征**：{sentenceStructure}
+- **对话密度**：对话行占比约 {dialogueDensity}%（{dialogueStyle}）
+- **段落呼吸**：最短段 {minParaLen} 字 | 最长段 {maxParaLen} 字（共{paragraphs.Count}段）
+""";
     }
 }

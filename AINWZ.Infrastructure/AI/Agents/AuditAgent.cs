@@ -3,6 +3,7 @@ using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
@@ -15,6 +16,20 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
     public override string DisplayName => "审核Agent";
 
     public string AuditScope { get; set; } = "all";
+
+    public override AgentMetadata Metadata => new()
+    {
+        RouteKeywords = new List<RouteKeyword>
+        {
+            new("检查", "audit_report"), new("审阅", "audit_report"), new("审核", "audit_report"),
+            new("审查", "audit_report"), new("一致", "audit_report"), new("漏洞", "audit_report"),
+            new("矛盾", "audit_report"),
+        },
+        ContentType = "audit_report",
+        DefaultParameters = new(0.2, MaxTokens: 4096)
+    };
+
+    public override string RouteDescription => "检查一致性/审查漏洞/发现矛盾";
 
     public override string BuildPrompt()
     {

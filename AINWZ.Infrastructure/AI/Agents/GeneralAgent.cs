@@ -14,6 +14,17 @@ public sealed class GeneralAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
     public override string DisplayName => "通用助手";
 
+    public override AgentMetadata Metadata => new()
+    {
+        RouteKeywords = [],
+        ContentType = "plain",
+        NeedsProjectMemory = false,
+        ShouldFilterHistory = false,
+        DefaultParameters = new(0.7, MaxTokens: 2048)
+    };
+
+    public override string RouteDescription => "通用问答/闲聊/非写作类问题";
+
     public override string BuildPrompt()
     {
         return """

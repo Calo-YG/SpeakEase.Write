@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
@@ -14,6 +15,19 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
     public override string DisplayName => "大纲Agent";
 
     public string OutlineDomain => "故事结构与情节规划";
+
+    public override AgentMetadata Metadata => new()
+    {
+        RouteKeywords = new List<RouteKeyword>
+        {
+            new("大纲", "outline"), new("情节", "outline"), new("规划", "outline"),
+            new("结构", "outline"), new("高潮", "outline"), new("转折", "outline"),
+        },
+        ContentType = "outline",
+        DefaultParameters = new(0.7, MaxTokens: 4096)
+    };
+
+    public override string RouteDescription => "管理大纲/情节规划/章节结构";
 
     public override string BuildPrompt()
     {

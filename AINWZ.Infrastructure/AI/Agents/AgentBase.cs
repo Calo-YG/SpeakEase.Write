@@ -23,6 +23,17 @@ public abstract class AgentBase(
     public abstract string DisplayName { get; }
     public abstract string BuildPrompt();
 
+    public virtual AgentMetadata Metadata => new()
+    {
+        RouteKeywords = [],
+        ContentType = "plain",
+        NeedsProjectMemory = true,
+        ShouldFilterHistory = false,
+        DefaultParameters = AgentParameters.Default
+    };
+
+    public virtual string RouteDescription => DisplayName;
+
     public virtual void RegisterTools(IToolCapable toolCapable)
     {
         if (_toolsRegistered) return;

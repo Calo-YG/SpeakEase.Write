@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
@@ -14,6 +15,19 @@ public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<
     public override string DisplayName => "世界观Agent";
 
     public string WorldDomain => "世界观设定";
+
+    public override AgentMetadata Metadata => new()
+    {
+        RouteKeywords = new List<RouteKeyword>
+        {
+            new("世界观", "setting"), new("设定", "setting"), new("势力", "setting"),
+            new("地理", "setting"), new("世界", "setting"),
+        },
+        ContentType = "setting",
+        DefaultParameters = new(0.7, MaxTokens: 4096)
+    };
+
+    public override string RouteDescription => "管理世界观/世界设定/势力/地理";
 
     public override string BuildPrompt()
     {

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+using SpeakEase.Write.Infrastructure.AI.Contract;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
@@ -11,6 +12,18 @@ public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogg
     public override string Name => "critique";
 
     public override string DisplayName => "文风审查Agent";
+
+    public override AgentMetadata Metadata => new()
+    {
+        RouteKeywords = new List<RouteKeyword>
+        {
+            new("去AI味", "critique"), new("文风", "critique"), new("自然", "critique"),
+        },
+        ContentType = "critique",
+        DefaultParameters = new(0.3, 0.85, 0.0, 0.0, 2048)
+    };
+
+    public override string RouteDescription => "检查文风AI味/让文字更自然更像人写";
 
     public override string BuildPrompt()
     {

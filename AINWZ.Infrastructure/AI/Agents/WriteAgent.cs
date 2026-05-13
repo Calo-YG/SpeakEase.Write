@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
@@ -14,6 +15,22 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
     public override string DisplayName => "写作Agent";
 
     public string WritingStyle => "文学性创作";
+
+    public override AgentMetadata Metadata => new()
+    {
+        RouteKeywords = new List<RouteKeyword>
+        {
+            new("写", "chapter"), new("续写", "chapter"), new("润色", "chapter"),
+            new("改写", "chapter"), new("扩写", "chapter"), new("重写", "chapter"),
+            new("写一", "chapter"), new("章节", "chapter"), new("正文", "chapter"),
+            new("帮我写", "chapter"),
+        },
+        ContentType = "chapter",
+        ShouldFilterHistory = true,
+        DefaultParameters = new(0.9, 0.92, 0.45, 0.35, 4096)
+    };
+
+    public override string RouteDescription => "写作/续写/润色/扩写章节正文";
 
     public override string BuildPrompt()
     {

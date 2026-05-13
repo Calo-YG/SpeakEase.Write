@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
+using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
@@ -14,6 +15,21 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
     public override string DisplayName => "创作Agent";
 
     public string CreationDomain => "角色设计与创意生成";
+
+    public override AgentMetadata Metadata => new()
+    {
+        RouteKeywords = new List<RouteKeyword>
+        {
+            new("角色", "character"), new("人物", "character"), new("创建", "character"),
+            new("新增", "character"), new("创意", "plain"), new("点子", "plain"),
+            new("脑洞", "plain"), new("灵感", "plain"), new("生成", "plain"),
+            new("设计", "character"),
+        },
+        ContentType = "character",
+        DefaultParameters = new(0.7, MaxTokens: 4096)
+    };
+
+    public override string RouteDescription => "创建角色/人物设计/创意灵感";
 
     public override string BuildPrompt()
     {

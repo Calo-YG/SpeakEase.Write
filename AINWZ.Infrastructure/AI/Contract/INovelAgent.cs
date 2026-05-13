@@ -20,4 +20,8 @@ public interface INovelAgent
     IAsyncEnumerable<AgentStreamChunk> ExecuteStreamAsync(
         AgentRequest request,
         CancellationToken cancellationToken);
+
+    AgentMetadata Metadata { get; }
+
+    string RouteDescription { get; }
 }

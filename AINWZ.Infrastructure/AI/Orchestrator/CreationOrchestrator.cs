@@ -27,7 +27,7 @@ public sealed class CreationOrchestrator(
     {
         var pipelineStopwatch = Stopwatch.StartNew();
 
-        var route = await router.DecideWithLLMAsync(userMessage, cancellationToken);
+        var route = await router.DecideWithLLMAsync(userMessage, agents, cancellationToken);
 
         logger.LogInformation("路由决策: agent={Agent}, contentType={ContentType}, pipeline={Pipeline}",
             route.AgentName, route.ContentType, string.Join("→", route.Pipeline.Count > 0 ? route.Pipeline : new List<string> { route.AgentName }));
@@ -52,7 +52,8 @@ public sealed class CreationOrchestrator(
         };
 
         var enrichedMessage = userMessage;
-        if (!string.IsNullOrEmpty(workId))
+        var firstAgent = agents.FirstOrDefault(a => a.Name == route.AgentName);
+        if (!string.IsNullOrEmpty(workId) && (firstAgent?.Metadata.NeedsProjectMemory ?? true))
         {
             string contextError = null;
             try
@@ -144,21 +145,25 @@ public sealed class CreationOrchestrator(
                 ? $"{enrichedMessage}\n\n[前一步Agent结果]\n{previousResult}"
                 : enrichedMessage;
 
-            var agentHistory = agentName == "write"
+            var agentHistory = agent.Metadata.ShouldFilterHistory
                 ? FilterConversationHistory(conversationHistory)
                 : (conversationHistory ?? new List<ChatMessage>());
 
+            var meta = agent.Metadata;
             var request = new AgentRequest
             {
                 UserMessage = chainMessage,
                 SystemPrompt = agent.BuildPrompt(),
                 Model = llmContext.Model,
                 MaxIterations = 10,
+                Temperature = meta.DefaultParameters.Temperature,
+                TopP = meta.DefaultParameters.TopP,
+                FrequencyPenalty = meta.DefaultParameters.FrequencyPenalty,
+                PresencePenalty = meta.DefaultParameters.PresencePenalty,
+                MaxTokens = meta.DefaultParameters.MaxTokens,
                 ConversationHistory = agentHistory,
                 WorkId = workId,
             };
-
-            SetAgentParameters(request, agentName);
 
             var stepStopwatch = Stopwatch.StartNew();
             previousResult = "";
@@ -239,47 +244,6 @@ public sealed class CreationOrchestrator(
         try { await agentTask; }
         catch (OperationCanceledException) { }
         catch (Exception ex) { logger.LogError(ex, "Agent task faulted"); }
-    }
-
-    private static void SetAgentParameters(AgentRequest request, string agentName)
-    {
-        switch (agentName)
-        {
-            case "write":
-                request.Temperature = 0.9;
-                request.TopP = 0.92;
-                request.FrequencyPenalty = 0.45;
-                request.PresencePenalty = 0.35;
-                request.MaxTokens = 4096;
-                break;
-            case "critique":
-                request.Temperature = 0.3;
-                request.TopP = 0.85;
-                request.FrequencyPenalty = 0.0;
-                request.PresencePenalty = 0.0;
-                request.MaxTokens = 2048;
-                break;
-            case "audit":
-                request.Temperature = 0.2;
-                request.MaxTokens = 4096;
-                break;
-            case "outline":
-                request.Temperature = 0.7;
-                request.MaxTokens = 4096;
-                break;
-            case "general":
-                request.Temperature = 0.7;
-                request.MaxTokens = 2048;
-                break;
-            case "world":
-                request.Temperature = 0.7;
-                request.MaxTokens = 4096;
-                break;
-            default:
-                request.Temperature = 0.7;
-                request.MaxTokens = 2048;
-                break;
-        }
     }
 
     private static List<ChatMessage> FilterConversationHistory(List<ChatMessage> history)

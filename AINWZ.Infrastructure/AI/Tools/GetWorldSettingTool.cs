@@ -57,7 +57,7 @@ public sealed class GetWorldSettingTool(IServiceScopeFactory scopeFactory) : ITo
         if (!string.IsNullOrEmpty(ws.JsonContent))
         {
             try { parsed = JsonSerializer.Deserialize<WorldRules>(ws.JsonContent); }
-            catch { }
+            catch (JsonException) { }
         }
 
         var worldRules = parsed?.WorldRulesText ?? ws.Summary ?? string.Empty;

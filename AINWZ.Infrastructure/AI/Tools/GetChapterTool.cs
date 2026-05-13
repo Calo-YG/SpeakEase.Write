@@ -23,7 +23,8 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" },
-                    ["chapter_id"] = new() { Type = "string", Description = "章节ID（必填）" }
+                    ["chapter_id"] = new() { Type = "string", Description = "章节ID（必填）" },
+                    ["max_content_chars"] = new() { Type = "integer", Description = "正文最大返回字符数（默认4000，超长截断标注）" }
                 },
                 Required = ["work_id", "chapter_id"]
             }
@@ -35,6 +36,7 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
         var chapterId = args.GetString("chapter_id", required: true);
+        var maxContentChars = args.GetInt32("max_content_chars", defaultValue: 4000, min: 500, max: 20000);
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
@@ -60,6 +62,10 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
         if (chapter == null)
             return ToolResult.Fail($"未找到章节 {chapterId}", "not_found");
 
+        var content = chapter.Content;
+        if (content.Length > maxContentChars)
+            content = content[..maxContentChars] + $"\n\n…（内容已截断，共 {chapter.WordCount} 字，截取前 {maxContentChars} 字符）";
+
         var result = $"## 第{chapter.Sequence}章：{chapter.Title ?? "未命名"}\n" +
             $"状态：{chapter.Status ?? "draft"} | 字数：{chapter.WordCount}\n" +
             $"卷ID：{chapter.VolumeId}\n" +
@@ -67,7 +73,7 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
             (chapter.OutlineNodeIds is { Count: > 0 }
                 ? $"关联大纲节点：{string.Join(", ", chapter.OutlineNodeIds)}\n" : "") +
             (!string.IsNullOrEmpty(chapter.AuthorNotes) ? $"作者备注：{chapter.AuthorNotes}\n" : "") +
-            chapter.Content;
+            content;
 
         return ToolResult.Ok(result);
     }

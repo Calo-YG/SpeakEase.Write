@@ -44,7 +44,7 @@ public sealed class SearchCharactersTool(IServiceScopeFactory scopeFactory, IOpt
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        var matched = await db.Characters
+        var matched = await db.Characters.AsNoTracking()
             .Where(c => c.WorkId == workId &&
                 ((c.Name != null && c.Name.Contains(query)) ||
                  (c.Identity != null && c.Identity.Contains(query)) ||

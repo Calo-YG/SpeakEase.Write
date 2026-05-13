@@ -53,7 +53,7 @@ public sealed class GetHistoricalEventsTool(IServiceScopeFactory scopeFactory) :
                 (e.Title != null && e.Title.Contains(keyword)) ||
                 (e.Description != null && e.Description.Contains(keyword)));
 
-        var events = await query.ToListAsync(ct);
+        var events = await query.OrderBy(e => e.EraLabel).ThenBy(e => e.EventTime).Take(100).ToListAsync(ct);
 
         if (events.Count == 0)
             return ToolResult.Fail("当前作品暂无历史事件", "not_found");

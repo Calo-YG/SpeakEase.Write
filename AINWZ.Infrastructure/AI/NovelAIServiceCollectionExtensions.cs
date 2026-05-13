@@ -27,6 +27,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<INovelAgent, CreationAgent>();
         services.AddScoped<INovelAgent, AuditAgent>();
         services.AddScoped<INovelAgent, CritiqueAgent>();
+        services.AddScoped<INovelAgent, GeneralAgent>();
 
         services.AddKeyedTransient<IToolExecutor, GetCharacterTool>(GetCharacterTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetWorldSettingTool>(GetWorldSettingTool.ToolDefinition.Function.Name);
@@ -54,6 +55,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddKeyedTransient<IToolExecutor, GetCharacterListTool>(GetCharacterListTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetWorkInfoTool>(GetWorkInfoTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, UpdateChapterSummaryTool>(UpdateChapterSummaryTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, SaveChapterContentTool>(SaveChapterContentTool.ToolDefinition.Function.Name);
 
         services.AddKeyedTransient<IToolExecutor, CreateRelationshipTool>(CreateRelationshipTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetCharacterGraphTool>(GetCharacterGraphTool.ToolDefinition.Function.Name);

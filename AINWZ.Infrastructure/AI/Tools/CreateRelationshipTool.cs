@@ -76,9 +76,11 @@ public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : 
         if (existing != null)
         {
             existing.RelationshipType = relType;
-            existing.Intensity = intensity;
+            if (args.Has("intensity"))
+                existing.Intensity = intensity;
             if (!string.IsNullOrEmpty(description))
                 existing.Description = description;
+            existing.UpdateAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"关系已更新: {source.Name} →[{relType}]→ {target.Name}，强度: {intensity}");
         }

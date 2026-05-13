@@ -69,7 +69,7 @@ public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) :
             WorkId = workId,
             Title = title,
             Description = description,
-            EventTime = DateTime.TryParse(eventTime, out var dt) ? dt : DateTime.UtcNow,
+            EventTime = DateTime.TryParse(eventTime, out var dt) ? dt : DateTime.MinValue,
             EventType = eventType,
             ChapterId = chapterId,
             RelatedCharacterIds = relatedCharacterIds

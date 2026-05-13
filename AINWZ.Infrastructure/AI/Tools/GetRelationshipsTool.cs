@@ -42,14 +42,14 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory, IOpt
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        var character = await db.Characters
+        var character = await db.Characters.AsNoTracking()
             .FirstOrDefaultAsync(c => c.WorkId == workId && c.Name == name, ct)
-            ?? await db.Characters.FirstOrDefaultAsync(c => c.WorkId == workId && c.Name != null && c.Name.Contains(name), ct);
+            ?? await db.Characters.AsNoTracking().FirstOrDefaultAsync(c => c.WorkId == workId && c.Name != null && c.Name.Contains(name), ct);
 
         if (character == null)
             return ToolResult.Fail($"未找到角色「{name}」", "character_not_found");
 
-        var relationships = await db.CharacterRelationships
+        var relationships = await db.CharacterRelationships.AsNoTracking()
             .Where(r => r.WorkId == workId && (r.SourceCharacterId == character.Id || r.TargetCharacterId == character.Id))
             .ToListAsync(ct);
 

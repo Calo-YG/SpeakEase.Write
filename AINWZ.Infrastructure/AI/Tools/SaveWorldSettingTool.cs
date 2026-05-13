@@ -85,7 +85,10 @@ public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IT
                 if (existing != null)
                     foreach (var kv in existing) jsonObj[kv.Key] = kv.Value;
             }
-            catch { }
+            catch (JsonException)
+            {
+                return ToolResult.Fail("已有世界设定 JSON 格式损坏，请先手动修复后再保存", "json_parse_error");
+            }
         }
 
         if (!string.IsNullOrEmpty(worldRules)) jsonObj["worldRules"] = worldRules;
@@ -100,7 +103,10 @@ public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IT
         if (!string.IsNullOrEmpty(worldName)) savedParts.Add("worldName");
         if (!string.IsNullOrEmpty(eraBackground)) savedParts.Add("eraBackground");
         if (!string.IsNullOrEmpty(overallStyle)) savedParts.Add("overallStyle");
-        savedParts.AddRange(jsonObj.Keys);
+        if (!string.IsNullOrEmpty(worldRules)) savedParts.Add("worldRules");
+        if (!string.IsNullOrEmpty(geography)) savedParts.Add("geography");
+        if (!string.IsNullOrEmpty(factions)) savedParts.Add("factions");
+        if (!string.IsNullOrEmpty(history)) savedParts.Add("history");
 
         return ToolResult.Ok(string.Format("世界观设定已保存，更新字段: {0}", string.Join(", ", savedParts)));
     }

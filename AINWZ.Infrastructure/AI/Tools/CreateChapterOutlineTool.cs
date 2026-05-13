@@ -63,29 +63,39 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
                 Summary = string.Empty
             };
             await db.Volumes.AddAsync(volume, ct);
-            await db.SaveChangesAsync(ct);
         }
 
-        var maxChapterSeq = await db.Chapters.AsNoTracking()
-            .Where(x => x.WorkId == workId)
-            .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
-
-        var chapter = new ChapterEntity
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        try
         {
-            Id = idGen.NextIdString(),
-            WorkId = workId,
-            VolumeId = volume.Id,
-            Sequence = maxChapterSeq + 1,
-            Title = chapterTitle,
-            Summary = summary,
-            WordCount = 0,
-            Status = "outline"
-        };
+            var maxChapterSeq = await db.Chapters.AsNoTracking()
+                .Where(x => x.WorkId == workId)
+                .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
 
-        await db.Chapters.AddAsync(chapter, ct);
-        await db.SaveChangesAsync(ct);
+            var chapter = new ChapterEntity
+            {
+                Id = idGen.NextIdString(),
+                WorkId = workId,
+                VolumeId = volume.Id,
+                Sequence = maxChapterSeq + 1,
+                Title = chapterTitle,
+                Summary = summary,
+                WordCount = 0,
+                Status = "outline"
+            };
 
-        return ToolResult.Ok(
-            $"章节大纲已创建，卷: 第{volumeSeq}卷「{volume.Title}」，章节: 第{chapter.Sequence}章「{chapterTitle}」，章节ID: {chapter.Id}");
+            await db.Chapters.AddAsync(chapter, ct);
+            await db.SaveChangesAsync(ct);
+
+            await tx.CommitAsync(ct);
+
+            return ToolResult.Ok(
+                $"章节大纲已创建，卷: 第{volumeSeq}卷「{volume.Title}」，章节: 第{chapter.Sequence}章「{chapterTitle}」，章节ID: {chapter.Id}");
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
     }
 }

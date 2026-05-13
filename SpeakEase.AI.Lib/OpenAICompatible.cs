@@ -54,20 +54,21 @@ namespace SpeakEase.AI.Lib
             using var response = await GetClient().SendAsync(
                 httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError(
-                    "ChatAsync LLM 返回 HTTP 错误: {StatusCode} {ReasonPhrase}\n{Body}",
-                    (int)response.StatusCode, response.ReasonPhrase, errorBody);
-                throw new InvalidOperationException(
-                    $"LLM 调用失败: {(int)response.StatusCode} {response.ReasonPhrase}\n{errorBody}");
-            }
-
             await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var result = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
                 responseStream, JsonOptions, cancellationToken)
                 ?? throw new InvalidOperationException("LLM 响应反序列化失败。");
+
+            if (result.Error != null)
+            {
+                var errorMsg = FormatError(result.Error);
+                _logger.LogWarning("ChatAsync LLM 返回协议错误: {Error}", errorMsg);
+                return new LLMTurnResult
+                {
+                    Content = errorMsg,
+                    Model = result.Model ?? request.Model
+                };
+            }
 
             var firstChoice = result.Choices?.FirstOrDefault();
             var hasToolCalls = firstChoice?.Message?.ToolCalls?.Any() ?? false;
@@ -113,17 +114,8 @@ namespace SpeakEase.AI.Lib
             using var response = await GetClient().SendAsync(
                 httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var error = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogError(
-                    "StreamAsync LLM 返回 HTTP 错误: {StatusCode} {ReasonPhrase}\n{Body}",
-                    (int)response.StatusCode, response.ReasonPhrase, error);
-                throw new InvalidOperationException(
-                    $"LLM 流式调用失败: {(int)response.StatusCode} {response.ReasonPhrase}\n{error}");
-            }
-
-            _logger.LogInformation("StreamAsync 流式连接已建立: Model={Model}", request.Model);
+            _logger.LogInformation("StreamAsync 流式连接已建立: Model={Model}, StatusCode={StatusCode}",
+                request.Model, (int)response.StatusCode);
 
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream, Encoding.UTF8);
@@ -134,6 +126,7 @@ namespace SpeakEase.AI.Lib
             string finishReason = null;
             string responseModel = context.Model;
             UsageInfo usage = null;
+            bool anySseData = false;
 
             while (true)
             {
@@ -151,6 +144,18 @@ namespace SpeakEase.AI.Lib
                 var chunk = JsonSerializer.Deserialize<ChatCompletionStreamChunk>(data, JsonOptions);
                 if (chunk is null)
                     continue;
+
+                if (chunk.Error != null)
+                {
+                    var errorMsg = FormatError(chunk.Error);
+                    _logger.LogWarning("StreamAsync LLM 返回协议错误: {Error}", errorMsg);
+                    contentBuilder.Append(errorMsg);
+                    yield return new LLMTurnChunk { Type = "content", Content = errorMsg };
+                    anySseData = true;
+                    continue;
+                }
+
+                anySseData = true;
 
                 if (!string.IsNullOrEmpty(chunk.Model))
                     responseModel = chunk.Model;
@@ -222,6 +227,17 @@ namespace SpeakEase.AI.Lib
             var hasToolCalls = toolCallAccumulators.Count > 0 &&
                 (finishReason == "tool_calls" || finishReason == null && toolCallAccumulators.Count > 0);
 
+            if (!anySseData)
+            {
+                _logger.LogWarning("StreamAsync 未收到有效的 SSE 数据, StatusCode={StatusCode}", (int)response.StatusCode);
+                var fallback = (int)response.StatusCode >= 400
+                    ? $"AI 服务返回错误，状态码 {(int)response.StatusCode} {response.ReasonPhrase}"
+                    : "AI 服务未返回有效内容，请稍后重试。";
+                yield return new LLMTurnChunk { Type = "content", Content = fallback };
+                yield return new LLMTurnChunk { Type = "done", TurnResult = new LLMTurnResult { Content = fallback, Model = responseModel } };
+                yield break;
+            }
+
             _logger.LogInformation("StreamAsync 流式结束: Model={Model}, HasToolCalls={HasToolCalls}, AccumulatedTools={AccumulatedTools}",
                 responseModel, hasToolCalls, toolCallAccumulators.Count);
 
@@ -237,6 +253,16 @@ namespace SpeakEase.AI.Lib
                     Usage = usage
                 }
             };
+        }
+
+        private static string FormatError(ErrorInfo error)
+        {
+            if (error == null) return string.Empty;
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(error.Code)) parts.Add($"[{error.Code}]");
+            if (!string.IsNullOrEmpty(error.Type)) parts.Add($"({error.Type})");
+            if (!string.IsNullOrEmpty(error.Message)) parts.Add(error.Message);
+            return string.Join(" ", parts);
         }
 
         private HttpClient GetClient()

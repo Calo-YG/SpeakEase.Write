@@ -48,6 +48,7 @@ public sealed class GetFactionsTool(IServiceScopeFactory scopeFactory) : IToolEx
 
         var factions = await query
             .OrderBy(f => f.Name)
+            .Take(100)
             .ToListAsync(ct);
 
         if (factions.Count == 0)

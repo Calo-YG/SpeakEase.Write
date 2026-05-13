@@ -66,6 +66,7 @@ public sealed class GetCharacterTool(IServiceScopeFactory scopeFactory) : IToolE
 
         var relationships = await db.CharacterRelationships.AsNoTracking()
             .Where(r => r.WorkId == workId && (r.SourceCharacterId == character.Id || r.TargetCharacterId == character.Id))
+            .Take(100)
             .ToListAsync(ct);
 
         var characterIds = relationships

@@ -46,7 +46,7 @@ public sealed class GetWorldRulesTool(IServiceScopeFactory scopeFactory) : ITool
         if (!string.IsNullOrEmpty(ruleType))
             query = query.Where(r => r.RuleType == ruleType);
 
-        var rules = await query.ToListAsync(ct);
+        var rules = await query.OrderBy(r => r.RuleName).Take(100).ToListAsync(ct);
 
         if (rules.Count == 0)
             return ToolResult.Fail(string.IsNullOrEmpty(ruleType)

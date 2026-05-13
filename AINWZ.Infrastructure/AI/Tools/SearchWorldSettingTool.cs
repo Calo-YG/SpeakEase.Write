@@ -71,7 +71,7 @@ public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : 
                     }
                 }
             }
-            catch { }
+            catch (JsonException) { }
         }
 
         if (parts.Count == 0)

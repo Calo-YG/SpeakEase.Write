@@ -52,7 +52,7 @@ public sealed class GetGeographyTool(IServiceScopeFactory scopeFactory) : IToolE
         if (!string.IsNullOrEmpty(geoType))
             query = query.Where(g => g.GeographyType == geoType);
 
-        var geos = await query.OrderBy(g => g.Name).ToListAsync(ct);
+        var geos = await query.OrderBy(g => g.Name).Take(200).ToListAsync(ct);
 
         if (geos.Count == 0)
             return ToolResult.Ok("暂无地理设定");

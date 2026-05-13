@@ -84,6 +84,7 @@ public sealed class UpdateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
         if (!string.IsNullOrEmpty(abilityDescription)) character.AbilityDescription = abilityDescription;
         if (tags.Count > 0) character.Tags = tags;
 
+        character.UpdateAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return ToolResult.Ok($"角色「{name}」已更新");
     }

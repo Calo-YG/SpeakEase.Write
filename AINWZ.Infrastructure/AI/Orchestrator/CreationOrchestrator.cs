@@ -267,6 +267,10 @@ public sealed class CreationOrchestrator(
                 request.Temperature = 0.7;
                 request.MaxTokens = 4096;
                 break;
+            case "general":
+                request.Temperature = 0.7;
+                request.MaxTokens = 2048;
+                break;
             case "world":
                 request.Temperature = 0.7;
                 request.MaxTokens = 4096;

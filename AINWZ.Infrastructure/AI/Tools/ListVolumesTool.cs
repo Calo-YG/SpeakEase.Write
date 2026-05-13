@@ -43,11 +43,13 @@ public sealed class ListVolumesTool(IServiceScopeFactory scopeFactory, IOptionsS
         var volumes = await db.Volumes.AsNoTracking()
             .Where(x => x.WorkId == workId)
             .OrderBy(x => x.Sequence)
+            .Take(20)
             .ToListAsync(ct);
 
         var chapters = await db.Chapters.AsNoTracking()
             .Where(x => x.WorkId == workId)
             .OrderBy(x => x.Sequence)
+            .Take(500)
             .ToListAsync(ct);
 
         var result = volumes.Select(v => new

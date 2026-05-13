@@ -60,7 +60,7 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
 | 步骤 | 工具 | 时机 | 目的 |
 |------|------|------|------|
-| 6 | `get_recent_chapters` (work_id, count=3) | 续写前，**必须** | 模仿已有章节的句式、节奏、用词习惯、叙述节奏、人物语气 |
+| 6 | `get_recent_chapters` (work_id, [count=3], [chapter_sequence]) | 续写前，**必须**。续写第N章时传 chapter_sequence=N 获取前后均衡窗口；续写新章时不传、取尾部最近章节 | 模仿已有章节的句式、节奏、用词习惯、叙述节奏、人物语气。同时获取章节 ID 供后续 save_chapter_content 使用 |
 | 7 | `get_chapter` (work_id, chapter_id) | 需要详细查看某一章时 | 回顾特定章节，重点观察文风特征 |
 | 8 | `get_chapter_by_sequence` (work_id, volume_seq, chapter_seq) | 按卷/章序号定位时 | 精确找到目标章节 |
 | 9 | `get_foreshadowing` (work_id, status=pending) | 写作前 | 安排伏笔回收或暗示 |
@@ -84,10 +84,11 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
 | 步骤 | 工具 | 时机 | 目的 |
 |------|------|------|------|
-| 20 | `update_chapter_summary` (work_id, chapter_id, summary) | 章节正文完成后 | 为后续章节提供参考 |
-| 21 | `create_relationship` (work_id, source_name, target_name, relationship_type, description) | 描写角色互动后，关系发生变化 | 维护关系网络 |
-| 22 | `update_character` (work_id, name, personality/appearance/motivation/background_story/coreSeed) | 角色在本章有显著变化时 | 保持角色发展连贯 |
-| 23 | `get_character_arc` (work_id, character_name) | 需要了解角色成长历程时 | 确保成长线连贯 |
+| 20 | `save_chapter_content` (work_id, content, [chapter_id], [chapter_sequence], [chapter_title]) | **章节正文输出完毕后，最后一步** | **必须**调用持久化正文。chapter_id 优先（从 get_recent_chapters/ get_chapter/ create_chapter_outline 结果中获取）；若无 ID 则传 chapter_sequence |
+| 21 | `update_chapter_summary` (work_id, chapter_id, summary) | 章节正文保存后 | 为后续章节提供参考 |
+| 22 | `create_relationship` (work_id, source_name, target_name, relationship_type, description) | 描写角色互动后，关系发生变化 | 维护关系网络 |
+| 23 | `update_character` (work_id, name, personality/appearance/motivation/background_story/coreSeed) | 角色在本章有显著变化时 | 保持角色发展连贯 |
+| 24 | `get_character_arc` (work_id, character_name) | 需要了解角色成长历程时 | 确保成长线连贯 |
 
 # 写作原则
 1. **先查后写** — 涉及具体设定、角色时，先调用工具确认再动笔，绝不凭空臆造
@@ -284,6 +285,7 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
 ## 输出要求
 - 直接输出完整的章节正文，不要输出大纲、摘要、元描述、作者注释
+- 正文输出完毕后，**必须立即调用 `save_chapter_content`** 持久化正文，再依次调用 `update_chapter_summary` 等收尾工具
 - 章节开头承接上一章结尾，结尾留有悬念或自然过渡
 - 段落长度混合分布：长段（150-400字）占全文40%-50%为主体，中段（50-150字）占25%-35%为常规叙事，极短段（≤25字）占10%-20%仅在重击时刻使用。一章大约5000字，按此比例大约8-12个长段、10-15个中段、5-8个极短段。写作完成后在心里粗略检查是否单一段长比例超过60%
 - 字数要求：严格对标大纲中的【目标字数】，正文字数控制在目标的 ±15%。若无标注则默认 5000 字
@@ -321,5 +323,6 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
         yield return GetPowerSystemTool.ToolDefinition;
         yield return GetWorldRulesTool.ToolDefinition;
         yield return GetHistoricalEventsTool.ToolDefinition;
+        yield return SaveChapterContentTool.ToolDefinition;
     }
 }

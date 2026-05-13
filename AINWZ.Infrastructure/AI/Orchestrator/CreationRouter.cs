@@ -75,18 +75,19 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         ["world"] = "world",
         ["creation"] = "creation",
         ["audit"] = "audit",
-        ["critique"] = "critique"
+        ["critique"] = "critique",
+        ["general"] = "general"
     };
 
     public static RouteResult Decide(string userMessage)
     {
         if (string.IsNullOrWhiteSpace(userMessage))
             return new RouteResult
-            {
-                AgentName = "write",
-                ContentType = "plain",
-                Reason = "空输入，默认路由到写作Agent"
-            };
+        {
+            AgentName = "general",
+            ContentType = "plain",
+            Reason = "空输入，默认路由到通用助手"
+        };
 
         var bestMatch = default((string Keyword, string Agent, string ContentType)?);
         foreach (var (keyword, agent, contentType) in KeywordRules)
@@ -111,9 +112,9 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
 
         return new RouteResult
         {
-            AgentName = "write",
+            AgentName = "general",
             ContentType = "plain",
-            Reason = "未匹配到关键词，默认路由到写作Agent"
+            Reason = "未匹配到关键词，默认路由到通用助手"
         };
     }
 
@@ -121,7 +122,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
     {
         var keywordResult = Decide(userMessage);
 
-        if (keywordResult.AgentName != "write" || userMessage.Length <= 15)
+        if (keywordResult.AgentName != "general" || userMessage.Length <= 15)
             return keywordResult;
 
         try
@@ -147,6 +148,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
 - creation: 创建角色/人物设计/创意灵感
 - audit: 检查一致性/审查漏洞/发现矛盾
 - critique: 检查文风AI味/让文字更自然更像人写
+- general: 通用问答/闲聊/非写作类问题
 
 用户可能包含多个意图（如"帮我写完这章然后检查一致性"），请识别并返回 pipeline。
 
@@ -188,7 +190,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
 
             if (root.TryGetProperty("agent", out var a))
             {
-                var agentRaw = a.GetString() ?? "write";
+                var agentRaw = a.GetString() ?? "general";
                 var reason = root.TryGetProperty("reason", out var r) ? r.GetString() ?? "" : "";
 
                 if (AgentNameMap.TryGetValue(agentRaw.ToLower(), out var mapped))
@@ -219,6 +221,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         "creation" => "character",
         "audit" => "audit_report",
         "critique" => "critique",
+        "general" => "plain",
         _ => "plain"
     };
 }

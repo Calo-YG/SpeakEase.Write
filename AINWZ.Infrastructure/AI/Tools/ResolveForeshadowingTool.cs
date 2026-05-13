@@ -22,11 +22,12 @@ public sealed class ResolveForeshadowingTool(IServiceScopeFactory scopeFactory) 
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
+                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
                     ["foreshadowing_id"] = new() { Type = "string", Description = "伏笔标识（必填）" },
                     ["payoff_chapter_id"] = new() { Type = "string", Description = "实际回收章节标识（必填）" },
                     ["resolution"] = new() { Type = "string", Description = "回收方式说明（必填），描述伏笔如何被揭示" }
                 },
-                Required = ["foreshadowing_id", "payoff_chapter_id", "resolution"]
+                Required = ["work_id", "foreshadowing_id", "payoff_chapter_id", "resolution"]
             }
         }
     };
@@ -34,6 +35,7 @@ public sealed class ResolveForeshadowingTool(IServiceScopeFactory scopeFactory) 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
         var args = ToolArgumentParser.Parse(arguments);
+        var workId = args.GetString("work_id", required: true);
         var foreshadowingId = args.GetString("foreshadowing_id", required: true);
         var payoffChapterId = args.GetString("payoff_chapter_id", required: true);
         var resolution = args.GetString("resolution", required: true);
@@ -42,7 +44,8 @@ public sealed class ResolveForeshadowingTool(IServiceScopeFactory scopeFactory) 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        var entity = await db.Foreshadowings.FirstOrDefaultAsync(x => x.Id == foreshadowingId, ct);
+        var entity = await db.Foreshadowings.FirstOrDefaultAsync(
+            x => x.Id == foreshadowingId && x.WorkId == workId, ct);
         if (entity == null)
             return ToolResult.Fail($"伏笔 {foreshadowingId} 不存在，无法回扣", "not_found");
 

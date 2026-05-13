@@ -65,7 +65,7 @@ public sealed class GetCharacterGraphTool(IServiceScopeFactory scopeFactory) : I
                 r.SourceCharacterId == focusChar.Id || r.TargetCharacterId == focusChar.Id);
         }
 
-        var relationships = await relationshipsQuery.ToListAsync(ct);
+        var relationships = await relationshipsQuery.OrderBy(r => r.RelationshipType).Take(200).ToListAsync(ct);
 
         var sb = new StringBuilder();
         sb.AppendLine($"## 人物关系图谱（{characters.Count}个角色，{relationships.Count}条关系）");

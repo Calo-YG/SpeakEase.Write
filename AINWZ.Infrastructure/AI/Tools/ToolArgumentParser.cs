@@ -83,7 +83,9 @@ public sealed class ToolArgumentParser
             return defaultValue;
         }
 
-        var value = prop.GetInt32();
+        int value;
+        try { value = prop.GetInt32(); }
+        catch { _errors.Add($"参数 '{name}' 数值格式无效"); return defaultValue; }
 
         if (value < min || value > max)
         {
@@ -92,6 +94,11 @@ public sealed class ToolArgumentParser
         }
 
         return value;
+    }
+
+    public bool Has(string name)
+    {
+        return _root.ValueKind != JsonValueKind.Undefined && _root.TryGetProperty(name, out _);
     }
 
     public List<string> GetStringArray(string name, bool required = false)

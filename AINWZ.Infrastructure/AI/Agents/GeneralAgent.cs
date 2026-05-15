@@ -41,6 +41,7 @@ public sealed class GeneralAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
 **行动（Action）**：根据推理结论采取行动：
 - 如果问题涉及实时信息、最新新闻、事实核查或超出你知识范围的内容 → 调用 `web_search` 获取最新资料
+- 如果用户提出写作规则、约束要求、写作规范（如"每章字数不超过3000""不要写血腥场面""主角不能谈恋爱"等） → 调用 `save_writing_rules` 保存规则
 - 如果是闲聊或你已知的知识 → 直接回答，不调用工具
 - 如果用户问题明显属于写作范畴（续写章节、创建角色、管理大纲等） → 简短提醒用户通过相应功能入口操作
 
@@ -62,5 +63,6 @@ public sealed class GeneralAgent(IChatCompatible llm, IToolCapable tools, ILogge
     protected override IEnumerable<ToolDefinition> GetToolDefinitions()
     {
         yield return WebSearchTool.ToolDefinition;
+        yield return SaveWritingRulesTool.ToolDefinition;
     }
 }

@@ -1,7 +1,5 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
@@ -9,7 +7,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class SaveWritingRulesTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -17,16 +15,17 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
         Type = "function",
         Function = new FunctionDefinition
         {
-            Name = "get_work_info",
-            Description = "获取作品的完整基本信息（简介、题材、风格、视角、字数等）",
+            Name = "save_writing_rules",
+            Description = "保存或更新作品的写作规则与约束要求。传入完整的写作规则文本，将覆盖已有规则",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" }
+                    ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" },
+                    ["rules"] = new() { Type = "string", Description = "写作规则与约束要求文本（必填）。包含所有用户提出的写作规范、约束条件、特殊要求等" }
                 },
-                Required = ["work_id"]
+                Required = ["work_id", "rules"]
             }
         }
     };
@@ -35,40 +34,21 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
     {
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
+        var rules = args.GetString("rules", required: true);
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        var work = await db.Works.AsNoTracking()
+        var work = await db.Works
             .FirstOrDefaultAsync(x => x.Id == workId, ct);
 
         if (work == null)
             return ToolResult.Fail($"未找到作品 {workId}", "not_found");
 
-        var chapterCount = await db.Chapters.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
+        work.WritingRules = rules;
+        await db.SaveChangesAsync(ct);
 
-        var volumeCount = await db.Volumes.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
-
-        var characterCount = await db.Characters.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
-
-        return ToolResult.Ok(JsonSerializer.Serialize(new
-        {
-            work.Title,
-            work.Summary,
-            work.Genre,
-            work.Perspective,
-            work.StyleTags,
-            work.CreationMode,
-            work.Status,
-            work.TotalWordCount,
-            work.WritingRules,
-            chapterCount,
-            volumeCount,
-            characterCount
-        }, snapshot.Value));
+        return ToolResult.Ok("写作规则与约束要求已保存。");
     }
 }

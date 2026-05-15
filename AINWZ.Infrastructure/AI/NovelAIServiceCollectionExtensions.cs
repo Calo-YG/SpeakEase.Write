@@ -74,6 +74,8 @@ public static class NovelAIServiceCollectionExtensions
         services.AddKeyedTransient<IToolExecutor, CreateHistoricalEventTool>(CreateHistoricalEventTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetHistoricalEventsTool>(GetHistoricalEventsTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, WebSearchTool>(WebSearchTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, SaveWritingRulesTool>(SaveWritingRulesTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, GetWritingRulesTool>(GetWritingRulesTool.ToolDefinition.Function.Name);
 
         services.AddHttpClient("DuckDuckGo", client =>
         {

@@ -1,7 +1,5 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
@@ -9,7 +7,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
-public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
+public sealed class GetWritingRulesTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     public static readonly ToolDefinition ToolDefinition = new()
@@ -17,14 +15,14 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
         Type = "function",
         Function = new FunctionDefinition
         {
-            Name = "get_work_info",
-            Description = "获取作品的完整基本信息（简介、题材、风格、视角、字数等）",
+            Name = "get_writing_rules",
+            Description = "获取作品的写作规则与约束要求。返回用户设定的全部写作规范、约束条件和特殊要求",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
-                    ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" }
+                    ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" }
                 },
                 Required = ["work_id"]
             }
@@ -46,29 +44,9 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
         if (work == null)
             return ToolResult.Fail($"未找到作品 {workId}", "not_found");
 
-        var chapterCount = await db.Chapters.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
+        if (string.IsNullOrWhiteSpace(work.WritingRules))
+            return ToolResult.Ok("当前作品暂无写作规则与约束要求。");
 
-        var volumeCount = await db.Volumes.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
-
-        var characterCount = await db.Characters.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
-
-        return ToolResult.Ok(JsonSerializer.Serialize(new
-        {
-            work.Title,
-            work.Summary,
-            work.Genre,
-            work.Perspective,
-            work.StyleTags,
-            work.CreationMode,
-            work.Status,
-            work.TotalWordCount,
-            work.WritingRules,
-            chapterCount,
-            volumeCount,
-            characterCount
-        }, snapshot.Value));
+        return ToolResult.Ok(work.WritingRules);
     }
 }

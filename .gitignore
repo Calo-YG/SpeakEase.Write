@@ -388,3 +388,6 @@ FodyWeavers.xsd
 /AINWZ.Infrastructure/AI/Agents/BLACKBOARD_HOLDER.md
 /AINWZ.Infrastructure/AI/Agents/PROJECT_AUDIT.md
 /AINWZ.Infrastructure/AI/Agents/ROADMAP.md
+/AINWZ.Infrastructure/Migrations/20260502120256_AddAICreationMessagesTable.cs
+/AINWZ.Infrastructure/Migrations/20260515124458_AddWritingRules.cs
+/AINWZ.Infrastructure/Migrations/20260430145519_InitialCreate.cs

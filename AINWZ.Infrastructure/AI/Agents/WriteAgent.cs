@@ -52,6 +52,7 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 **第一阶段 — 写作前准备（先查后写，绝不凭空臆造）**
 - 查作品信息（get_work_info）、查世界观（get_world_setting）
 - 查大纲（get_outline）、查角色详情（get_character / search_characters）
+- **必查写作规则（get_writing_rules）—— 用户可能设定了字数上限、禁用词、风格偏好、敏感内容限制等约束，必须严格遵守**
 
 **第二阶段 — 上下文回顾（学习已有文风，找准语感）**
 - 必查最近章节（get_recent_chapters）—— 模仿句式、节奏、叙述语气
@@ -380,5 +381,6 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
         yield return GetWorldRulesTool.ToolDefinition;
         yield return GetHistoricalEventsTool.ToolDefinition;
         yield return SaveChapterContentTool.ToolDefinition;
+        yield return GetWritingRulesTool.ToolDefinition;
     }
 }

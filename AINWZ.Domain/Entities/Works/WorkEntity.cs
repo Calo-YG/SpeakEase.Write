@@ -61,5 +61,10 @@ namespace SpeakEase.Write.Domain.Entities.Works
         /// 作品总字数。
         /// </summary>
         public int TotalWordCount { get; set; }
+
+        /// <summary>
+        /// 写作规则与约束要求。记录用户提出的写作规范、约束条件和特殊要求。
+        /// </summary>
+        public string WritingRules { get; set; } = string.Empty;
     }
 }

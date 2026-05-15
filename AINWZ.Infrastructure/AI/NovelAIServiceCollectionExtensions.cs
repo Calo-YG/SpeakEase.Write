@@ -73,6 +73,17 @@ public static class NovelAIServiceCollectionExtensions
         services.AddKeyedTransient<IToolExecutor, GetWorldRulesTool>(GetWorldRulesTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, CreateHistoricalEventTool>(CreateHistoricalEventTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetHistoricalEventsTool>(GetHistoricalEventsTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, WebSearchTool>(WebSearchTool.ToolDefinition.Function.Name);
+
+        services.AddHttpClient("DuckDuckGo", client =>
+        {
+            client.DefaultRequestHeaders.Add("User-Agent", "AINW-NovelCreator/1.0 (duckduckgo-search)");
+            client.DefaultRequestHeaders.Add("Accept", "text/html,application/xhtml+xml");
+            client.BaseAddress = new Uri("https://html.duckduckgo.com");
+        }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+        {
+            AutomaticDecompression = System.Net.DecompressionMethods.All
+        });
 
         return services;
     }

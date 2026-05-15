@@ -26,7 +26,7 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
             new("矛盾", "audit_report"),
         },
         ContentType = "audit_report",
-        DefaultParameters = new(0.2, MaxTokens: 4096)
+        DefaultParameters = new(0.2, MaxTokens: 16384)
     };
 
     public override string RouteDescription => "检查一致性/审查漏洞/发现矛盾";

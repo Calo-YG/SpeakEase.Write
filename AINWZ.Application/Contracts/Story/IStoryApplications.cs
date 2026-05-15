@@ -37,3 +37,27 @@ public interface IOutlineApplication
     Task<ApiResult<OutlineNodeItemResponse>> UpdateNodeAsync(string workId, string nodeId, SaveOutlineNodeRequest request, CancellationToken cancellationToken = default);
     Task<ApiResult> DeleteNodeAsync(string workId, string nodeId, CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// 角色关系图谱管理应用服务接口。
+/// </summary>
+public interface ICharacterGraphApplication
+{
+    Task<ApiResult<List<CharacterGraphResponse>>> ListGraphsAsync(string workId, CancellationToken cancellationToken = default);
+    Task<ApiResult<CharacterGraphResponse>> GetGraphDetailAsync(string workId, string graphId, CancellationToken cancellationToken = default);
+    Task<ApiResult<CharacterGraphResponse>> CreateGraphAsync(string workId, SaveCharacterGraphRequest request, CancellationToken cancellationToken = default);
+    Task<ApiResult> DeleteGraphAsync(string workId, string graphId, CancellationToken cancellationToken = default);
+    Task<ApiResult<CharacterGraphResponse>> UpdateLayoutAsync(string workId, string graphId, UpdateGraphLayoutRequest request, CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// 角色成长弧线管理应用服务接口。
+/// </summary>
+public interface ICharacterArcApplication
+{
+    Task<ApiResult<List<CharacterArcResponse>>> ListArcsByCharacterAsync(string workId, string characterId, CancellationToken cancellationToken = default);
+    Task<ApiResult<List<CharacterArcResponse>>> ListAllArcsAsync(string workId, CancellationToken cancellationToken = default);
+    Task<ApiResult<CharacterArcResponse>> CreateArcAsync(string workId, string characterId, SaveCharacterArcRequest request, CancellationToken cancellationToken = default);
+    Task<ApiResult<CharacterArcResponse>> UpdateArcAsync(string workId, string characterId, string arcId, SaveCharacterArcRequest request, CancellationToken cancellationToken = default);
+    Task<ApiResult> DeleteArcAsync(string workId, string characterId, string arcId, CancellationToken cancellationToken = default);
+}

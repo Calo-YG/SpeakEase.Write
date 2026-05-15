@@ -76,6 +76,9 @@ public static class NovelAIServiceCollectionExtensions
         services.AddKeyedTransient<IToolExecutor, WebSearchTool>(WebSearchTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, SaveWritingRulesTool>(SaveWritingRulesTool.ToolDefinition.Function.Name);
         services.AddKeyedTransient<IToolExecutor, GetWritingRulesTool>(GetWritingRulesTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, CreateCharacterGraphTool>(CreateCharacterGraphTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, CreateCharacterGraphNodeTool>(CreateCharacterGraphNodeTool.ToolDefinition.Function.Name);
+        services.AddKeyedTransient<IToolExecutor, CreateCharacterGraphEdgeTool>(CreateCharacterGraphEdgeTool.ToolDefinition.Function.Name);
 
         services.AddHttpClient("DuckDuckGo", client =>
         {

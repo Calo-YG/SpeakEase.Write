@@ -146,6 +146,8 @@ try
     builder.Services.AddScoped<ITimelineApplication, TimelineApplication>();
     builder.Services.AddScoped<IWorldApplication, WorldApplication>();
     builder.Services.AddScoped<ICharacterRelationshipApplication, CharacterRelationshipApplication>();
+    builder.Services.AddScoped<ICharacterGraphApplication, CharacterGraphApplication>();
+    builder.Services.AddScoped<ICharacterArcApplication, CharacterArcApplication>();
     builder.Services.AddScoped<IInspirationApplication, InspirationApplication>();
     builder.Services.AddScoped<IReferenceApplication, ReferenceApplication>();
     builder.Services.AddScoped<ITagApplication, TagApplication>();
@@ -221,6 +223,9 @@ try
     app.MapTimelineEndPoint();
     app.MapWorldEndPoint();
     app.MapRelationshipEndPoint();
+    app.MapCharacterGraphEndPoint();
+    app.MapCharacterArcEndPoint();
+    app.MapAllCharacterArcsEndPoint();
     app.MapInspirationEndPoint();
     app.MapReferenceEndPoint();
     app.MapTagEndPoint();

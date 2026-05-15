@@ -27,7 +27,7 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
         },
         ContentType = "chapter",
         ShouldFilterHistory = true,
-        DefaultParameters = new(0.9, 0.92, 0.45, 0.35, 131072)
+        DefaultParameters = new(0.9, 0.92, 0.45, 0.35, 731072)
     };
 
     public override string RouteDescription => "写作/续写/润色/扩写章节正文";

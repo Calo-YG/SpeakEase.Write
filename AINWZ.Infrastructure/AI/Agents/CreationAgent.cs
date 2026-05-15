@@ -86,6 +86,9 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
 | 6 | `create_relationship` (work_id, source_name, target_name, relationship_type, description) | 角色创建后，与其他角色建立联系 | 关系类型：父子/师徒/夫妻/宿敌/挚友/上下级/同门/恋人/仇人 |
 | 7 | `get_character_graph` (work_id, [character_name]) | 需要检查角色关系是否合理 | 确认新角色在关系网中的位置和张力 |
 | 8 | `get_relationships` (work_id, character_name) | 需要查看特定角色的关系详情 | 了解关系的描述和状态 |
+| 9 | `create_character_graph` (work_id, name, [description]) | 需要创建关系图谱快照时 | 为作品建立可视化关系图谱的存储容器 |
+| 10 | `create_character_graph_node` (work_id, graph_id, character_name, [node_type], [importance]) | 向图谱添加角色节点 | 将角色加入图谱中，可指定重要度和类型 |
+| 11 | `create_character_graph_edge` (work_id, graph_id, source_character_name, target_character_name, relation_type, [weight]) | 在图谱中创建角色间的连线 | 为图谱中的角色建立可视化关系连线 |
 
 ### 阶段4：规划角色成长
 
@@ -143,6 +146,9 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
         yield return GetCharacterListTool.ToolDefinition;
         yield return CreateRelationshipTool.ToolDefinition;
         yield return GetCharacterGraphTool.ToolDefinition;
+        yield return CreateCharacterGraphTool.ToolDefinition;
+        yield return CreateCharacterGraphNodeTool.ToolDefinition;
+        yield return CreateCharacterGraphEdgeTool.ToolDefinition;
         yield return CreateCharacterArcTool.ToolDefinition;
         yield return GetCharacterArcTool.ToolDefinition;
         yield return GetPowerSystemTool.ToolDefinition;

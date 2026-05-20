@@ -78,8 +78,17 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
 
         await RecalcTotalWords(db, chapter.WorkId, ct);
 
-        return ToolResult.Ok(
+        var result = ToolResult.Ok(
             $"第{chapter.Sequence}章「{chapter.Title}」正文已更新，共 {chapter.WordCount} 字。");
+        result.ContentType = "chapter";
+        result.ExtraData = new Dictionary<string, string>
+        {
+            ["chapterId"] = chapter.Id,
+            ["sequence"] = chapter.Sequence.ToString(),
+            ["title"] = chapter.Title,
+            ["content"] = content
+        };
+        return result;
     }
 
     private static async Task<ToolResult> CreateNew(
@@ -141,8 +150,17 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
 
             await RecalcTotalWords(db, workId, ct);
 
-            return ToolResult.Ok(
+            var result = ToolResult.Ok(
                 $"新章节已创建并保存：第{seq}章「{title}」，共 {chapter.WordCount} 字。章节ID: {chapter.Id}");
+            result.ContentType = "chapter";
+            result.ExtraData = new Dictionary<string, string>
+            {
+                ["chapterId"] = chapter.Id,
+                ["sequence"] = seq.ToString(),
+                ["title"] = title,
+                ["content"] = content
+            };
+            return result;
         }
         catch
         {

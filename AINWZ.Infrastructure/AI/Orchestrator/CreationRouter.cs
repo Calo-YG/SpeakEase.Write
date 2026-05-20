@@ -45,9 +45,6 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         var agentsList = agents.ToList();
         var keywordResult = Decide(userMessage, agentsList);
 
-        if (keywordResult.AgentName != "general" || userMessage.Length <= 15)
-            return keywordResult;
-
         try
         {
             using var scope = _scopeFactory.CreateScope();

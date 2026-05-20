@@ -46,6 +46,7 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
 **行动（Action）**：根据推理调用相应工具。逐级创建，严禁跳级：
 - 先查（get_work_info / get_world_setting / get_character_list 等了解上下文）
+- 再建根（create_outline 建立大纲根，确定结构模板）
 - 再规划（create_outline_node 建立总纲节点）
 - 再细化（create_chapter_outline 逐章建立骨架）
 - 后检查（get_outline 审视整体结构）
@@ -79,9 +80,10 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
 | 步骤 | 工具 | 时机 | 规则 |
 |------|------|------|------|
-| 6 | `create_outline_node` (work_id, title, [goal], [key_event], [stage_type], [sequence]) | 确定每个情节点后逐个创建 | stage_type: act/climax/resolution；逐个创建，不要一次批量 |
-| 7 | `create_chapter_outline` (work_id, volume_seq, chapter_title, summary, [volume_title]) | 确定章节分布后 | 为每章建立占位和摘要 |
-| 8 | `get_outline` (work_id) | 创建部分节点后 | 检查整体结构是否合理 |
+| 6 | `create_outline` (work_id, title, structure_template, [summary]) | 大纲根不存在时 | 确定叙事模板（三幕式/四幕式/英雄之旅/自由结构）和主线方向 |
+| 7 | `create_outline_node` (work_id, title, [goal], [key_event], stage_type, [sequence]) | 确定每个情节点后逐个创建 | stage_type: book/volume/act/climax/resolution；必须先 book → 再 volume → 最后章节级 |
+| 8 | `create_chapter_outline` (work_id, volume_seq, chapter_title, summary, [volume_title]) | 确定章节分布后 | 为每章建立占位和摘要 |
+| 9 | `get_outline` (work_id) | 创建部分节点后 | 检查整体结构是否合理 |
 
 ## 流程B：修改/扩展已有大纲
 
@@ -135,13 +137,16 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 ### 大纲生成顺序（严格遵循）
 
 ```
+第零步：创建大纲根
+  → 用 create_outline 建立主大纲，确定叙事模板和主线方向
+
 第一步：全书总纲
-  → 用 create_outline_node 建立全书级别的大情节节点
+  → 用 create_outline_node（stage_type=book）建立全书级别的大情节节点
   → 包含：开篇、主要冲突引入、第一幕高潮、中段转折、第二幕高潮、最终高潮、结局
   → 标注每卷的大致范围和核心矛盾
 
 第二步：卷大纲（逐卷生成）
-  → 为当前卷创建卷级别的大纲节点
+  → 为当前卷创建卷级别的大纲节点（stage_type=volume）
   → 标注卷内：开篇承接、卷内冲突、卷高潮、卷结尾/过渡
   → 在 create_chapter_outline 的 summary 中写明该卷的整体规划参数
 
@@ -181,7 +186,8 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
 # 输出要求
 - 首轮必须先询问用户的规划参数，不得跳过
-- 全书总纲：用 create_outline_node 建立 5-8 个全书级大节点
+- 确认参数后，先调用 create_outline 创建大纲根（如已存在则更新结构模板）
+- 全书总纲：用 create_outline_node（stage_type=book）建立 5-8 个全书级大节点
 - 卷大纲：为每卷创建 3-5 个卷级大纲节点，标注卷的主题和目标字数
 - 章节大纲：逐章调用 create_chapter_outline，每章 summary 不低于 50 字
 - 高潮/转折章节的 summary 需 100 字以上，标注关键转折和情绪节奏
@@ -199,6 +205,7 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
         yield return SearchCharactersTool.ToolDefinition;
         yield return SearchOutlineTool.ToolDefinition;
         yield return ListVolumesTool.ToolDefinition;
+        yield return CreateOutlineTool.ToolDefinition;
         yield return CreateOutlineNodeTool.ToolDefinition;
         yield return CreateChapterOutlineTool.ToolDefinition;
         yield return GetCharacterListTool.ToolDefinition;

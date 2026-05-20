@@ -17,7 +17,7 @@ public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExe
         Function = new FunctionDefinition
         {
             Name = "get_outline",
-            Description = "查询大纲结构（总体走向、分卷安排、关键情节节点）。可通过 volume_seq 按卷查询，或用 keyword 按关键词搜索大纲节点。",
+            Description = "查询大纲结构和节点。返回大纲基本信息（标题、结构模板、摘要）和节点列表。可通过 volume_seq 按卷查询章节分布，或用 keyword 搜索大纲节点。",
             Parameters = new FunctionParameters
             {
                 Type = "object",

@@ -18,21 +18,22 @@ public sealed class CreateCharacterArcTool(IServiceScopeFactory scopeFactory) : 
         Function = new FunctionDefinition
         {
             Name = "create_character_arc",
-            Description = "为角色创建一个成长弧线阶段。记录角色在故事中的阶段性变化：初始状态 → 触发事件 → 变化后的状态。每次重大性格转变或成长都应记录，用于确保角色发展连贯。",
+            Description = "为角色创建或更新成长弧线阶段。记录角色在故事中的阶段性变化：初始状态 → 触发事件 → 变化后的状态。每次重大性格转变或成长都应记录，用于确保角色发展连贯。通过 id 或 stage_title+character_name 查找已有阶段，存在则更新提供的字段，不存在则创建。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["id"] = new() { Type = "string", Description = "阶段ID（可选），用于更新已有阶段" },
                     ["character_name"] = new() { Type = "string", Description = "角色名称（必填），需与已有角色匹配" },
-                    ["stage_title"] = new() { Type = "string", Description = "阶段标题（必填），如: 初出茅庐/遭遇背叛/顿悟成长" },
-                    ["initial_state"] = new() { Type = "string", Description = "初始状态（必填），角色在该阶段开始时的性格/能力/处境" },
-                    ["trigger_event"] = new() { Type = "string", Description = "触发变化的事件（必填）" },
-                    ["changed_state"] = new() { Type = "string", Description = "变化后的状态（必填），角色经历事件后的改变" },
+                    ["stage_title"] = new() { Type = "string", Description = "阶段标题（新建必填，更新可选），如: 初出茅庐/遭遇背叛/顿悟成长" },
+                    ["initial_state"] = new() { Type = "string", Description = "初始状态（新建必填，更新可选），角色在该阶段开始时的性格/能力/处境" },
+                    ["trigger_event"] = new() { Type = "string", Description = "触发变化的事件（新建必填，更新可选）" },
+                    ["changed_state"] = new() { Type = "string", Description = "变化后的状态（新建必填，更新可选），角色经历事件后的改变" },
                     ["stage_order"] = new() { Type = "integer", Description = "阶段顺序号（可选），默认追加到末尾" }
                 },
-                Required = ["work_id", "character_name", "stage_title", "initial_state", "trigger_event", "changed_state"]
+                Required = ["work_id", "character_name"]
             }
         }
     };
@@ -41,11 +42,12 @@ public sealed class CreateCharacterArcTool(IServiceScopeFactory scopeFactory) : 
     {
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
+        var id = args.GetString("id");
         var characterName = args.GetString("character_name", required: true);
-        var stageTitle = args.GetString("stage_title", required: true);
-        var initialState = args.GetString("initial_state", required: true);
-        var triggerEvent = args.GetString("trigger_event", required: true);
-        var changedState = args.GetString("changed_state", required: true);
+        var stageTitle = args.GetString("stage_title");
+        var initialState = args.GetString("initial_state");
+        var triggerEvent = args.GetString("trigger_event");
+        var changedState = args.GetString("changed_state");
         var stageOrder = args.GetInt32("stage_order", min: 0);
         if (args.HasErrors) return args.ToErrorResult();
 
@@ -53,13 +55,46 @@ public sealed class CreateCharacterArcTool(IServiceScopeFactory scopeFactory) : 
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
-        var character = await db.Characters.FirstOrDefaultAsync(
-            c => c.WorkId == workId && c.Name == characterName, ct)
-            ?? await db.Characters.FirstOrDefaultAsync(
-                c => c.WorkId == workId && c.Name != null && c.Name.Contains(characterName), ct);
+        CharacterArcEntity arc = null;
+        if (!string.IsNullOrEmpty(id))
+            arc = await db.CharacterArcs.FirstOrDefaultAsync(a => a.Id == id && a.WorkId == workId, ct);
+
+        CharacterEntity character = null;
+        if (arc == null)
+        {
+            character = await db.Characters.FirstOrDefaultAsync(
+                c => c.WorkId == workId && c.Name == characterName, ct)
+                ?? await db.Characters.FirstOrDefaultAsync(
+                    c => c.WorkId == workId && c.Name != null && c.Name.Contains(characterName), ct);
+
+            if (character != null && !string.IsNullOrEmpty(stageTitle))
+                arc = await db.CharacterArcs.FirstOrDefaultAsync(
+                    a => a.WorkId == workId && a.CharacterId == character.Id && a.StageTitle == stageTitle, ct);
+        }
+
+        if (arc != null)
+        {
+            if (!string.IsNullOrEmpty(stageTitle)) arc.StageTitle = stageTitle;
+            if (initialState != null) arc.InitialState = initialState;
+            if (triggerEvent != null) arc.TriggerEvent = triggerEvent;
+            if (changedState != null) arc.ChangedState = changedState;
+            if (stageOrder > 0) arc.StageOrder = stageOrder;
+            arc.UpdateAt = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return ToolResult.Ok($"角色「{characterName}」成长弧线阶段「{arc.StageTitle}」已更新，序号: {arc.StageOrder}");
+        }
 
         if (character == null)
             return ToolResult.Fail($"未找到角色「{characterName}」", "not_found");
+
+        if (string.IsNullOrEmpty(stageTitle))
+            return ToolResult.Fail("创建阶段必须提供 stage_title");
+        if (string.IsNullOrEmpty(initialState))
+            return ToolResult.Fail("创建阶段必须提供 initial_state");
+        if (string.IsNullOrEmpty(triggerEvent))
+            return ToolResult.Fail("创建阶段必须提供 trigger_event");
+        if (string.IsNullOrEmpty(changedState))
+            return ToolResult.Fail("创建阶段必须提供 changed_state");
 
         var maxOrder = await db.CharacterArcs.AsNoTracking()
             .Where(a => a.WorkId == workId && a.CharacterId == character.Id)

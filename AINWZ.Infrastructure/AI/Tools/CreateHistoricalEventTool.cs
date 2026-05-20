@@ -18,20 +18,21 @@ public sealed class CreateHistoricalEventTool(IServiceScopeFactory scopeFactory)
         Function = new FunctionDefinition
         {
             Name = "create_historical_event",
-            Description = "创建世界历史事件（背景历史，非故事剧情时间线）。用于构建世界观的历史底蕴，如上古大战、王朝更替、灵气复苏等。",
+            Description = "创建或更新世界历史事件（背景历史，非故事剧情时间线）。通过 id 或 title 查找已有事件，存在则更新，不存在则创建。用于构建世界观的历史底蕴，如上古大战、王朝更替、灵气复苏等。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
+                    ["id"] = new() { Type = "string", Description = "事件ID（可选），用于更新已有事件" },
                     ["title"] = new() { Type = "string", Description = "事件标题（必填），如: 神魔大战、灵气复苏" },
-                    ["description"] = new() { Type = "string", Description = "事件描述（必填），详细说明事件经过" },
+                    ["description"] = new() { Type = "string", Description = "事件描述（新建必填，更新可选），详细说明事件经过" },
                     ["era_label"] = new() { Type = "string", Description = "时代标签（可选），如: 上古、中古、近世" },
                     ["event_time"] = new() { Type = "string", Description = "事件时间（可选），如: 万年前、三千年前" },
                     ["impact_summary"] = new() { Type = "string", Description = "影响概述（可选），该事件对世界格局的影响" }
                 },
-                Required = ["work_id", "title", "description"]
+                Required = ["work_id", "title"]
             }
         }
     };
@@ -40,8 +41,9 @@ public sealed class CreateHistoricalEventTool(IServiceScopeFactory scopeFactory)
     {
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
+        var id = args.GetString("id");
         var title = args.GetString("title", required: true);
-        var description = args.GetString("description", required: true);
+        var description = args.GetString("description");
         var eraLabel = args.GetString("era_label");
         var eventTime = args.GetString("event_time");
         var impactSummary = args.GetString("impact_summary");
@@ -53,21 +55,37 @@ public sealed class CreateHistoricalEventTool(IServiceScopeFactory scopeFactory)
 
         var worldSetting = await db.WorldSettings.FirstOrDefaultAsync(w => w.WorkId == workId, ct);
 
-        var entity = new HistoricalEventEntity
+        HistoricalEventEntity entity = null;
+        if (!string.IsNullOrEmpty(id))
+            entity = await db.HistoricalEvents.FirstOrDefaultAsync(e => e.Id == id && e.WorkId == workId, ct);
+        if (entity == null)
+            entity = await db.HistoricalEvents.FirstOrDefaultAsync(e => e.WorkId == workId && e.Title == title, ct);
+
+        if (entity != null)
+        {
+            if (!string.IsNullOrEmpty(description)) entity.Description = description;
+            if (args.Has("era_label")) entity.EraLabel = eraLabel ?? string.Empty;
+            if (args.Has("event_time")) entity.EventTime = eventTime ?? string.Empty;
+            if (args.Has("impact_summary")) entity.ImpactSummary = impactSummary ?? string.Empty;
+            await db.SaveChangesAsync(ct);
+            return ToolResult.Ok($"历史事件「{title}」已更新，ID: {entity.Id}");
+        }
+
+        var newEntity = new HistoricalEventEntity
         {
             Id = idGen.NextIdString(),
             WorkId = workId,
             WorldSettingId = worldSetting?.Id ?? string.Empty,
             Title = title,
-            Description = description,
+            Description = description ?? string.Empty,
             EraLabel = eraLabel ?? string.Empty,
             EventTime = eventTime ?? string.Empty,
             ImpactSummary = impactSummary ?? string.Empty
         };
 
-        await db.HistoricalEvents.AddAsync(entity, ct);
+        await db.HistoricalEvents.AddAsync(newEntity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"历史事件「{title}」已创建，ID: {entity.Id}");
+        return ToolResult.Ok($"历史事件「{title}」已创建，ID: {newEntity.Id}");
     }
 }

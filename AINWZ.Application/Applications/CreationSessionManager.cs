@@ -17,6 +17,7 @@ public class CreationSessionManager(
     ISnowflakeIdGenerator snowflakeIdGenerator) : ICreationSessionManager
 {
     private const int MaxTurnsBeforeArchive = 10;
+
     private static readonly TimeSpan SessionExpiration = TimeSpan.FromHours(24);
 
     public async Task<ApiResult<CreationSessionDto>> StartSessionAsync(string workId)

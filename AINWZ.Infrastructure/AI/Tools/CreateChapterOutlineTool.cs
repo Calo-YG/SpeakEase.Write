@@ -18,19 +18,20 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
         Function = new FunctionDefinition
         {
             Name = "create_chapter_outline",
-            Description = "创建章节大纲。将自动计算章节序号，并在新卷时自动创建卷。",
+            Description = "创建或更新章节大纲。通过 id 或 volume_seq+chapter_title 查找已有章节，存在则更新标题和摘要，不存在则自动计算章节序号并创建，新卷时自动创建卷。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品标识（必填）" },
-                    ["volume_seq"] = new() { Type = "integer", Description = "卷序号（必填，大于0）" },
-                    ["volume_title"] = new() { Type = "string", Description = "卷标题（新卷时必填）" },
+                    ["id"] = new() { Type = "string", Description = "章节ID（可选），用于更新已有章节" },
+                    ["volume_seq"] = new() { Type = "integer", Description = "卷序号（新建必填，大于0）" },
+                    ["volume_title"] = new() { Type = "string", Description = "卷标题（新卷时可用）" },
                     ["chapter_title"] = new() { Type = "string", Description = "章节标题（必填）" },
-                    ["summary"] = new() { Type = "string", Description = "章节摘要/大纲内容（必填）" }
+                    ["summary"] = new() { Type = "string", Description = "章节摘要/大纲内容（新建必填，更新可选）" }
                 },
-                Required = ["work_id", "volume_seq", "chapter_title", "summary"]
+                Required = ["work_id", "chapter_title"]
             }
         }
     };
@@ -39,30 +40,49 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
     {
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
-        var volumeSeq = args.GetInt32("volume_seq", required: true, min: 1);
+        var id = args.GetString("id");
+        var volumeSeq = args.GetInt32("volume_seq", defaultValue: 0, min: 1);
         var volumeTitle = args.GetString("volume_title");
         var chapterTitle = args.GetString("chapter_title", required: true);
-        var summary = args.GetString("summary", required: true);
+        var summary = args.GetString("summary");
         if (args.HasErrors) return args.ToErrorResult();
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
-        var volume = await db.Volumes.FirstOrDefaultAsync(
-            x => x.WorkId == workId && x.Sequence == volumeSeq, ct);
-
-        if (volume == null)
+        ChapterEntity chapter = null;
+        if (!string.IsNullOrEmpty(id))
+            chapter = await db.Chapters.FirstOrDefaultAsync(c => c.Id == id && c.WorkId == workId, ct);
+        if (chapter == null && volumeSeq > 0)
         {
-            volume = new VolumeEntity
+            var volume = await db.Volumes.FirstOrDefaultAsync(v => v.WorkId == workId && v.Sequence == volumeSeq, ct);
+            if (volume != null)
+                chapter = await db.Chapters.FirstOrDefaultAsync(c => c.WorkId == workId && c.VolumeId == volume.Id && c.Title == chapterTitle, ct);
+        }
+        if (chapter == null)
+            chapter = await db.Chapters.FirstOrDefaultAsync(c => c.WorkId == workId && c.Title == chapterTitle, ct);
+
+        if (chapter != null)
+        {
+            chapter.Title = chapterTitle;
+            if (!string.IsNullOrEmpty(summary)) chapter.Summary = summary;
+            await db.SaveChangesAsync(ct);
+            return ToolResult.Ok($"章节大纲已更新：第{chapter.Sequence}章「{chapterTitle}」，章节ID: {chapter.Id}");
+        }
+
+        var vol = await db.Volumes.FirstOrDefaultAsync(x => x.WorkId == workId && x.Sequence == volumeSeq, ct);
+        if (vol == null)
+        {
+            vol = new VolumeEntity
             {
                 Id = idGen.NextIdString(),
                 WorkId = workId,
-                Sequence = volumeSeq,
+                Sequence = volumeSeq > 0 ? volumeSeq : 1,
                 Title = volumeTitle ?? $"第{volumeSeq}卷",
                 Summary = string.Empty
             };
-            await db.Volumes.AddAsync(volume, ct);
+            await db.Volumes.AddAsync(vol, ct);
         }
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -72,25 +92,23 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
                 .Where(x => x.WorkId == workId)
                 .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
 
-            var chapter = new ChapterEntity
+            var newChapter = new ChapterEntity
             {
                 Id = idGen.NextIdString(),
                 WorkId = workId,
-                VolumeId = volume.Id,
+                VolumeId = vol.Id,
                 Sequence = maxChapterSeq + 1,
                 Title = chapterTitle,
-                Summary = summary,
+                Summary = summary ?? string.Empty,
                 WordCount = 0,
                 Status = "outline"
             };
 
-            await db.Chapters.AddAsync(chapter, ct);
+            await db.Chapters.AddAsync(newChapter, ct);
             await db.SaveChangesAsync(ct);
-
             await tx.CommitAsync(ct);
 
-            return ToolResult.Ok(
-                $"章节大纲已创建，卷: 第{volumeSeq}卷「{volume.Title}」，章节: 第{chapter.Sequence}章「{chapterTitle}」，章节ID: {chapter.Id}");
+            return ToolResult.Ok($"章节大纲已创建，卷: 第{vol.Sequence}卷「{vol.Title}」，章节: 第{newChapter.Sequence}章「{chapterTitle}」，章节ID: {newChapter.Id}");
         }
         catch
         {

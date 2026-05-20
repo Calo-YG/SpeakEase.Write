@@ -52,7 +52,9 @@ public sealed class CreationOrchestrator(
         };
 
         var enrichedMessage = userMessage;
+
         var firstAgent = agents.FirstOrDefault(a => a.Name == route.AgentName);
+
         if (!string.IsNullOrEmpty(workId) && (firstAgent?.Metadata.NeedsProjectMemory ?? true))
         {
             string contextError = null;
@@ -120,15 +122,19 @@ public sealed class CreationOrchestrator(
                 break;
 
             var agentName = pipeline[i];
+
             var agent = agents.FirstOrDefault(a => a.Name == agentName);
+
             if (agent == null)
             {
                 logger.LogWarning("Pipeline 步骤 {Step}/{Total}: 未找到 Agent [{Agent}]", i + 1, pipeline.Count, agentName);
+
                 yield return new AgentStreamChunk
                 {
                     Type = "meta",
                     Content = JsonHelper.Serialize(new { stage = "pipeline_skip", agent = agentName, error = "未找到该Agent" })
                 };
+
                 continue;
             }
 

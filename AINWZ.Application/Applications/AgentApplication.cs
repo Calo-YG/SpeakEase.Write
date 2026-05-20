@@ -1,26 +1,30 @@
 using System.Runtime.CompilerServices;
+using Microsoft.EntityFrameworkCore;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
+using SpeakEase.Write.Domain.Entities.AI;
+using SpeakEase.Write.Infrastructure.AI.Memory;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 using SpeakEase.Write.Infrastructure.Exceptions;
+using SpeakEase.Write.Infrastructure.Ids;
+using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Application.Applications;
 
-public sealed class AgentApplication : IAgentApplication
+public sealed class AgentApplication(
+    CreationOrchestrator orchestrator,
+    ICreationSessionManager sessionManager,
+    SpeakEaseDbContext dbContext,
+    IUserContext userContext,
+    ISnowflakeIdGenerator snowflakeIdGenerator,
+    IMemoryProvider  memoryProvider) : IAgentApplication
 {
-    private readonly CreationOrchestrator _orchestrator;
-    private readonly ICreationSessionManager _sessionManager;
-
-    public AgentApplication(
-        CreationOrchestrator orchestrator,
-        ICreationSessionManager sessionManager)
-    {
-        _orchestrator = orchestrator;
-        _sessionManager = sessionManager;
-    }
+    private readonly CreationOrchestrator _orchestrator = orchestrator;
+    private readonly ICreationSessionManager _sessionManager = sessionManager;
 
     public async Task<AgentResponse> ChatAsync(AgentChatRequestDto request, CancellationToken cancellationToken = default)
     {
@@ -60,14 +64,18 @@ public sealed class AgentApplication : IAgentApplication
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ValidateRequest(request);
+
         var workId = request.WorkId ?? string.Empty;
+
         var (userMessage, history) = ExtractMessages(request.Messages);
 
         var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
+
         string sessionId = sessionResult.Data?.SessionId
                            ?? (await _sessionManager.StartSessionAsync(workId)).Data?.SessionId;
 
         var accumulatedContent = new System.Text.StringBuilder();
+
         var toolResults = new List<(string ToolName, bool Success, string Content)>();
 
         await foreach (var chunk in _orchestrator.ExecuteAsync(
@@ -90,8 +98,11 @@ public sealed class AgentApplication : IAgentApplication
         if (sessionId != null)
         {
             var aiContent = accumulatedContent.ToString();
+
             var recordResult = await _sessionManager.RecordTurnAsync(sessionId);
+
             var turnNumber = recordResult.Data?.TurnCount ?? 0;
+
             await _sessionManager.SaveMessagesAsync(
                 sessionId, turnNumber, userMessage, aiContent,
                 toolResults.Count > 0 ? toolResults : null);
@@ -126,5 +137,72 @@ public sealed class AgentApplication : IAgentApplication
             lastUserMsg = messages[lastUserIndex].Content;
 
         return (lastUserMsg, history);
+    }
+
+    /// <summary>
+    /// V2 版本 AI写的有的垃圾
+    /// </summary>
+    /// <param name="req"></param>
+    /// <param name="cancellationToken"></param>
+    /// <returns></returns>
+    public async IAsyncEnumerable<AgentStreamChunk> StreamChateV2Async(ReqAgentChat req, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(req.Message))
+        {
+             BusinessThrow.ThrowException("请输入对话消息");
+        }
+
+        if (string.IsNullOrEmpty(req.WorkId))
+        {
+            BusinessThrow.ThrowException("请携带WorkId");
+        }
+
+        var user = userContext;
+
+        var session = dbContext.AICreationSessions.AsNoTracking().FirstOrDefault(p=>p.WorkId == req.WorkId && p.Status == "active");
+
+        session ??= new AICreationSessionEntity
+        {
+            Id = snowflakeIdGenerator.NextIdString(),
+            WorkId = req.WorkId,
+            UserId = userContext.UserId,
+            CreateBy = userContext.UserId,
+            CreateAt = DateTime.Now,
+        };
+
+        var sessionId = session.Id;
+
+        var toolResults = new List<(string ToolName, bool Success, string Content)>();
+
+        var accumulatedContent = new System.Text.StringBuilder();
+
+        List<ChatMessage> history = [];
+        //从memroyProvider 中获取历史消息
+
+        await foreach (var chunk in _orchestrator.ExecuteAsync(req.WorkId, req.Message, history, cancellationToken))
+        {
+            if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
+                accumulatedContent.Append(chunk.Content);
+
+            if (chunk.Type == "tool_result" && chunk.ToolResult is { } tr)
+            {
+                var truncated = tr.Content?.Length > 500
+                    ? tr.Content[..500]
+                    : tr.Content ?? string.Empty;
+                toolResults.Add((tr.ToolName ?? "tool", tr.Success, truncated));
+            }
+
+            yield return chunk;
+        }
+
+        var aiContent = accumulatedContent.ToString();
+
+        var recordResult = await _sessionManager.RecordTurnAsync(session.Id);
+
+        var turnNumber = recordResult.Data?.TurnCount ?? 0;
+
+        await _sessionManager.SaveMessagesAsync(
+            sessionId, turnNumber, req.Message, aiContent,
+            toolResults.Count > 0 ? toolResults : null);
     }
 }

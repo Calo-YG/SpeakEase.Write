@@ -18,25 +18,26 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         Function = new FunctionDefinition
         {
             Name = "create_character_graph_edge",
-            Description = "在角色关系图谱中创建两个节点之间的连线（关系边）。可通过节点ID或角色名称指定两端，支持关联已有的角色关系记录",
+            Description = "在角色关系图谱中创建或更新两个节点之间的连线（关系边）。通过 id 查找已有边，存在则更新label/weight/direction，不存在则创建。支持两种节点指定策略：节点ID直接指定 / 角色名称自动查找。",
             Parameters = new FunctionParameters
             {
                 Type = "object",
                 Properties = new Dictionary<string, ParameterSchema>
                 {
                     ["work_id"] = new() { Type = "string", Description = "作品ID（必填）" },
-                    ["graph_id"] = new() { Type = "string", Description = "图谱ID（必填），从 create_character_graph 获取" },
-                    ["source_node_id"] = new() { Type = "string", Description = "源节点ID（二选一策略A：与 target_node_id 一起使用）" },
-                    ["target_node_id"] = new() { Type = "string", Description = "目标节点ID（二选一策略A：与 source_node_id 一起使用）" },
-                    ["source_character_name"] = new() { Type = "string", Description = "源角色名称（二选一策略B：与 target_character_name 一起使用，自动查找节点）" },
-                    ["target_character_name"] = new() { Type = "string", Description = "目标角色名称（二选一策略B：与 source_character_name 一起使用）" },
-                    ["relation_type"] = new() { Type = "string", Description = "关系类型（必填），如: 父子/师徒/夫妻/宿敌/挚友/上下级/同门/恋人/仇人" },
+                    ["graph_id"] = new() { Type = "string", Description = "图谱ID（必填）" },
+                    ["id"] = new() { Type = "string", Description = "边ID（可选），用于更新已有边" },
+                    ["source_node_id"] = new() { Type = "string", Description = "源节点ID（新建时策略A，与 target_node_id 一起使用）" },
+                    ["target_node_id"] = new() { Type = "string", Description = "目标节点ID（新建时策略A，与 source_node_id 一起使用）" },
+                    ["source_character_name"] = new() { Type = "string", Description = "源角色名称（新建时策略B，与 target_character_name 一起使用）" },
+                    ["target_character_name"] = new() { Type = "string", Description = "目标角色名称（新建时策略B，与 source_character_name 一起使用）" },
+                    ["relation_type"] = new() { Type = "string", Description = "关系类型（新建必填），如: 父子/师徒/夫妻/宿敌/挚友/上下级/同门/恋人/仇人" },
                     ["label"] = new() { Type = "string", Description = "边展示标签（可选），默认为关系类型" },
-                    ["weight"] = new() { Type = "integer", Description = "关系权重（可选，1-10，默认5）" },
-                    ["direction"] = new() { Type = "string", Description = "方向类型（可选），directed=单向，undirected=双向，默认 directed" },
-                    ["relationship_id"] = new() { Type = "string", Description = "关联角色关系记录ID（可选），关联已有的 CharacterRelationship 记录" }
+                    ["weight"] = new() { Type = "integer", Description = "关系权重（可选，1-10）" },
+                    ["direction"] = new() { Type = "string", Description = "方向类型（可选），directed=单向，undirected=双向" },
+                    ["relationship_id"] = new() { Type = "string", Description = "关联角色关系记录ID（可选）" }
                 },
-                Required = ["work_id", "graph_id", "relation_type"]
+                Required = ["work_id", "graph_id"]
             }
         }
     };
@@ -46,14 +47,15 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         var args = ToolArgumentParser.Parse(arguments);
         var workId = args.GetString("work_id", required: true);
         var graphId = args.GetString("graph_id", required: true);
+        var edgeId = args.GetString("id");
         var sourceNodeId = args.GetString("source_node_id");
         var targetNodeId = args.GetString("target_node_id");
         var sourceCharName = args.GetString("source_character_name");
         var targetCharName = args.GetString("target_character_name");
-        var relationType = args.GetString("relation_type", required: true);
+        var relationType = args.GetString("relation_type");
         var label = args.GetString("label");
-        var weight = args.GetInt32("weight", defaultValue: 5, min: 1, max: 10);
-        var direction = args.GetString("direction") ?? "directed";
+        var weight = args.GetInt32("weight", defaultValue: 0, min: 1, max: 10);
+        var direction = args.GetString("direction");
         var relationshipId = args.GetString("relationship_id");
         if (args.HasErrors) return args.ToErrorResult();
 
@@ -63,9 +65,23 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
 
         var graph = await db.CharacterGraphs.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == graphId && x.WorkId == workId, ct);
-
         if (graph == null)
             return ToolResult.Fail($"未找到图谱 {graphId}", "graph_not_found");
+
+        if (!string.IsNullOrEmpty(edgeId))
+        {
+            var existing = await db.CharacterGraphEdges.FindAsync(edgeId, ct);
+            if (existing == null)
+                return ToolResult.Fail($"未找到边 {edgeId}", "edge_not_found");
+
+            if (!string.IsNullOrEmpty(relationType)) existing.RelationType = relationType;
+            if (args.Has("label")) existing.Label = label ?? string.Empty;
+            if (weight > 0) existing.Weight = weight;
+            if (args.Has("direction")) existing.Direction = direction ?? "directed";
+            if (args.Has("relationship_id")) existing.RelationshipId = relationshipId ?? string.Empty;
+            await db.SaveChangesAsync(ct);
+            return ToolResult.Ok($"边已更新，ID: {existing.Id}");
+        }
 
         if (!string.IsNullOrEmpty(sourceNodeId) && !string.IsNullOrEmpty(targetNodeId))
         {
@@ -73,11 +89,9 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
                 .FirstOrDefaultAsync(n => n.Id == sourceNodeId && n.GraphId == graphId, ct);
             var tgtNode = await db.CharacterGraphNodes.AsNoTracking()
                 .FirstOrDefaultAsync(n => n.Id == targetNodeId && n.GraphId == graphId, ct);
-
             if (srcNode == null) return ToolResult.Fail($"未找到源节点 {sourceNodeId}", "source_node_not_found");
             if (tgtNode == null) return ToolResult.Fail($"未找到目标节点 {targetNodeId}", "target_node_not_found");
-
-            return await CreateEdge(db, idGen, graphId, workId, srcNode.Id, tgtNode.Id, relationType, label ?? relationType, weight, direction, relationshipId, srcNode.DisplayName, tgtNode.DisplayName, ct);
+            return await CreateOrUpdateEdge(db, idGen, graphId, workId, srcNode.Id, tgtNode.Id, relationType ?? "unknown", label ?? relationType ?? "unknown", weight > 0 ? weight : 5, direction ?? "directed", relationshipId, srcNode.DisplayName, tgtNode.DisplayName, ct);
         }
 
         if (!string.IsNullOrEmpty(sourceCharName) && !string.IsNullOrEmpty(targetCharName))
@@ -86,17 +100,15 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
                 .FirstOrDefaultAsync(n => n.GraphId == graphId && n.DisplayName == sourceCharName, ct);
             var tgtNode = await db.CharacterGraphNodes.AsNoTracking()
                 .FirstOrDefaultAsync(n => n.GraphId == graphId && n.DisplayName == targetCharName, ct);
-
-            if (srcNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{sourceCharName}」，请先用 create_character_graph_node 添加", "source_not_in_graph");
-            if (tgtNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{targetCharName}」，请先用 create_character_graph_node 添加", "target_not_in_graph");
-
-            return await CreateEdge(db, idGen, graphId, workId, srcNode.Id, tgtNode.Id, relationType, label ?? relationType, weight, direction, relationshipId, sourceCharName, targetCharName, ct);
+            if (srcNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{sourceCharName}」", "source_not_in_graph");
+            if (tgtNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{targetCharName}」", "target_not_in_graph");
+            return await CreateOrUpdateEdge(db, idGen, graphId, workId, srcNode.Id, tgtNode.Id, relationType ?? "unknown", label ?? relationType ?? "unknown", weight > 0 ? weight : 5, direction ?? "directed", relationshipId, sourceCharName, targetCharName, ct);
         }
 
-        return ToolResult.Fail("请使用策略A（source_node_id + target_node_id）或策略B（source_character_name + target_character_name）", "missing_node_ref");
+        return ToolResult.Fail("新建边时请提供策略A（source_node_id+target_node_id）或策略B（source_character_name+target_character_name），更新时请提供 id", "missing_node_ref");
     }
 
-    private static async Task<ToolResult> CreateEdge(
+    private static async Task<ToolResult> CreateOrUpdateEdge(
         SpeakEaseDbContext db, ISnowflakeIdGenerator idGen,
         string graphId, string workId,
         string sourceNodeId, string targetNodeId,
@@ -105,14 +117,21 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         string sourceName, string targetName,
         CancellationToken ct)
     {
-        var existing = await db.CharacterGraphEdges.AsNoTracking()
+        var existing = await db.CharacterGraphEdges
             .FirstOrDefaultAsync(e => e.GraphId == graphId &&
                                       e.SourceNodeId == sourceNodeId &&
-                                      e.TargetNodeId == targetNodeId &&
-                                      e.RelationType == relationType, ct);
+                                      e.TargetNodeId == targetNodeId, ct);
 
         if (existing != null)
-            return ToolResult.Fail($"图谱中已存在相同关系边「{sourceName} →[{relationType}]→ {targetName}」，边ID: {existing.Id}", "edge_exists");
+        {
+            existing.RelationType = relationType;
+            existing.Label = label;
+            existing.Weight = weight;
+            if (!string.IsNullOrEmpty(direction)) existing.Direction = direction;
+            if (!string.IsNullOrEmpty(relationshipId)) existing.RelationshipId = relationshipId;
+            await db.SaveChangesAsync(ct);
+            return ToolResult.Ok($"边已更新: {sourceName} →[{relationType}]→ {targetName}，权重: {weight}");
+        }
 
         var edge = new CharacterGraphEdgeEntity
         {

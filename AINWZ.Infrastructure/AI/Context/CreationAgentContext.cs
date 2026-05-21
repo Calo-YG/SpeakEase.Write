@@ -1,20 +1,18 @@
+using Microsoft.EntityFrameworkCore;
+using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Infrastructure.AI.Memory;
+using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Context;
 
-public sealed class CreationAgentContext : ICreationAgentContext
+public sealed class CreationAgentContext(
+    IMemoryProvider memory,
+    IUserContext user,
+    SpeakEaseDbContext dbContext) : ICreationAgentContext
 {
-    private readonly IMemoryProvider _memory;
-    private readonly IUserContext _user;
-
-    public CreationAgentContext(
-        IMemoryProvider memory,
-        IUserContext user)
-    {
-        _memory = memory;
-        _user = user;
-    }
+    private readonly IMemoryProvider _memory = memory;
+    private readonly IUserContext _user = user;
 
     public async Task<AgentContext> BuildContext(string workId, CancellationToken cancellationToken = default)
     {
@@ -43,8 +41,28 @@ public sealed class CreationAgentContext : ICreationAgentContext
     /// <param name="sessionId"></param>
     /// <param name="cancellationToken"></param>
     /// <returns></returns>
-    //public async Task<ChatMessage> HistoryMessaes(string sessionId, CancellationToken cancellationToken = default)
-    //{
+    public async Task<List<ChatMessage>> HistoryMessaes(string sessionId, CancellationToken cancellationToken = default)
+    {
+        var messages = await dbContext.AICreationMessages.Where(m => m.SessionId == sessionId && m.Role != "tool")
+            .OrderBy(m => m.CreatedAt)
+            .Take(20)
+            .ToListAsync();
 
-    //}
+        List<ChatMessage> chatMessage = [];
+
+        foreach (var message in messages.OrderBy(m => m.CreatedAt))
+        {
+            var role = message.Role == "user" ? "user" : "assistant";
+
+            if (role == "user")
+            {
+                chatMessage.Add(ChatMessage.User(message.Content));
+            } else if (role == "assistant")
+            {
+                chatMessage.Add(ChatMessage.Assistant(message.Content));
+            }
+        }
+
+        return chatMessage;
+    }
 }

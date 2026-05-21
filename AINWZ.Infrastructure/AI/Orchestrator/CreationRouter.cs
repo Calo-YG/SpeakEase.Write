@@ -13,37 +13,9 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     private readonly ILogger<CreationRouter> _logger = logger;
 
-    public RouteResult Decide(string userMessage, IEnumerable<INovelAgent> agents)
-    {
-        if (string.IsNullOrWhiteSpace(userMessage))
-            return new RouteResult { AgentName = "general", ContentType = "plain", Reason = "空输入" };
-
-        var agentsList = agents.ToList();
-        var bestMatch = default((string Agent, string ContentType, int KeywordLen)?);
-
-        foreach (var agent in agentsList)
-        {
-            foreach (var kw in agent.Metadata.RouteKeywords)
-            {
-                if (!userMessage.Contains(kw.Keyword)) continue;
-                if (!bestMatch.HasValue || kw.Keyword.Length > bestMatch.Value.KeywordLen)
-                    bestMatch = (agent.Name, kw.ContentType, kw.Keyword.Length);
-            }
-        }
-
-        if (bestMatch.HasValue)
-        {
-            var (agent, ct, _) = bestMatch.Value;
-            return new RouteResult { AgentName = agent, ContentType = ct, Reason = $"关键词匹配 → {agent}" };
-        }
-
-        return new RouteResult { AgentName = "general", ContentType = "plain", Reason = "未匹配，默认通用助手" };
-    }
-
     public async Task<RouteResult> DecideWithLLMAsync(string userMessage, IEnumerable<INovelAgent> agents, CancellationToken ct = default)
     {
         var agentsList = agents.ToList();
-        var keywordResult = Decide(userMessage, agentsList);
 
         try
         {
@@ -148,12 +120,23 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
                 }
             }
 
-            return keywordResult;
+            return new RouteResult
+            {
+                AgentName = "general",
+                ContentType = agentsList.FirstOrDefault(x => x.Name == "general")?.Metadata.ContentType ?? "plain",
+                Reason = "LLM分类未命中，默认general"
+            };
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "LLM意图分类失败，回退到关键词路由");
-            return keywordResult;
+
+            return new RouteResult
+            {
+                AgentName = "general",
+                ContentType = agentsList.FirstOrDefault(x => x.Name == "general")?.Metadata.ContentType ?? "plain",
+                Reason = "LLM分类未命中，默认general"
+            };
         }
     }
 }

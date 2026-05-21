@@ -19,12 +19,6 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override AgentMetadata Metadata => new()
     {
-        RouteKeywords = new List<RouteKeyword>
-        {
-            new("检查", "audit_report"), new("审阅", "audit_report"), new("审核", "audit_report"),
-            new("审查", "audit_report"), new("一致", "audit_report"), new("漏洞", "audit_report"),
-            new("矛盾", "audit_report"),
-        },
         ContentType = "audit_report",
         DefaultParameters = new(0.2, MaxTokens: 16384)
     };

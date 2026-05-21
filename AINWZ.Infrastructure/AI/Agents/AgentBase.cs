@@ -25,7 +25,6 @@ public abstract class AgentBase(
 
     public virtual AgentMetadata Metadata => new()
     {
-        RouteKeywords = [],
         ContentType = "plain",
         NeedsProjectMemory = true,
         ShouldFilterHistory = false,
@@ -67,6 +66,7 @@ public abstract class AgentBase(
         RegisterTools(Tools);
 
         var messages = BuildMessages(request);
+
         var ctx = new LLMTurnContext
         {
             Model = request.Model,
@@ -165,15 +165,15 @@ public abstract class AgentBase(
                         ReasoningContent = turnResult.ReasoningContent,
                         Model = turnResult.Model,
                         Iterations = i + 1,
-                        StopReason = "completed"
+                        StopReason = "completed",
+                        TotalUsage = turnResult.Usage
                     }
                 };
                 yield break;
             }
         }
 
-        Logger.LogWarning("[{Agent}] 达到最大迭代次数 {MaxIter}, elapsed={Elapsed}ms",
-            Name, request.MaxIterations, agentStopwatch.ElapsedMilliseconds);
+        Logger.LogWarning("[{Agent}] 达到最大迭代次数 {MaxIter}, elapsed={Elapsed}ms", Name, request.MaxIterations, agentStopwatch.ElapsedMilliseconds);
 
         yield return new AgentStreamChunk
         {

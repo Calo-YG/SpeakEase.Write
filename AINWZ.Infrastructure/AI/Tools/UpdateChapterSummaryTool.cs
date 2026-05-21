@@ -49,7 +49,7 @@ public sealed class UpdateChapterSummaryTool(IServiceScopeFactory scopeFactory) 
             return ToolResult.Fail($"未找到章节 {chapterId}", "not_found");
 
         chapter.Summary = summary;
-        chapter.UpdateAt = DateTime.UtcNow;
+        chapter.UpdateAt = DateTime.Now;
         await db.SaveChangesAsync(ct);
 
         return ToolResult.Ok($"章节「{chapter.Title}」摘要已更新");

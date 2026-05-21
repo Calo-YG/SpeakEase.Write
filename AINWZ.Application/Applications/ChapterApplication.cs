@@ -125,11 +125,11 @@ public class ChapterApplication(
         {
             entity.Content = request.Content;
             entity.WordCount = CountWords(request.Content);
-            entity.LastContentSavedAt = DateTime.UtcNow;
+            entity.LastContentSavedAt = DateTime.Now;
         }
 
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         // 开启事务：章节保存 + 作品总字数更新必须原子完成
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
@@ -145,7 +145,7 @@ public class ChapterApplication(
             await dbContext.Works
                 .Where(x => x.Id == workId)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.TotalWordCount, totalWords)
-                                          .SetProperty(x => x.UpdateAt, DateTime.UtcNow), cancellationToken);
+                                          .SetProperty(x => x.UpdateAt, DateTime.Now), cancellationToken);
 
             await transaction.CommitAsync(cancellationToken);
         }
@@ -194,7 +194,7 @@ public class ChapterApplication(
             await dbContext.Works
                 .Where(x => x.Id == workId)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.TotalWordCount, newTotalWords)
-                                          .SetProperty(x => x.UpdateAt, DateTime.UtcNow), cancellationToken);
+                                          .SetProperty(x => x.UpdateAt, DateTime.Now), cancellationToken);
 
             await delTransaction.CommitAsync(cancellationToken);
         }

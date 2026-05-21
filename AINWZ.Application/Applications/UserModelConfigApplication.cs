@@ -231,7 +231,7 @@ namespace SpeakEase.Write.Application.Applications
                     SupportsStreaming = request.SupportsStreaming,
                     SupportsToolCall = true, // 已通过验证
                     CapabilityTags = request.CapabilityTags,
-                    LastSyncedAt = DateTime.UtcNow
+                    LastSyncedAt = DateTime.Now
                 };
 
                 dbContext.UserAiModelConfigs.Add(entity);
@@ -277,8 +277,8 @@ namespace SpeakEase.Write.Application.Applications
                 entity.SupportsStreaming = request.SupportsStreaming;
                 entity.SupportsToolCall = true; // 已通过验证
                 entity.CapabilityTags = request.CapabilityTags;
-                entity.LastSyncedAt = DateTime.UtcNow;
-                entity.UpdateAt = DateTime.UtcNow;
+                entity.LastSyncedAt = DateTime.Now;
+                entity.UpdateAt = DateTime.Now;
 
                 await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -323,11 +323,11 @@ namespace SpeakEase.Write.Application.Applications
             foreach (var c in otherConfigs)
             {
                 c.IsActive = false;
-                c.UpdateAt = DateTime.UtcNow;
+                c.UpdateAt = DateTime.Now;
             }
 
             entity.IsActive = true;
-            entity.UpdateAt = DateTime.UtcNow;
+            entity.UpdateAt = DateTime.Now;
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -379,7 +379,7 @@ namespace SpeakEase.Write.Application.Applications
                 if (latestConfig is not null)
                 {
                     latestConfig.IsActive = true;
-                    latestConfig.UpdateAt = DateTime.UtcNow;
+                    latestConfig.UpdateAt = DateTime.Now;
                     await dbContext.SaveChangesAsync(cancellationToken);
 
                     logger.LogInformation("用户 {UserId} 自动激活配置：{ConfigName}，Id={Id}", userId, latestConfig.ConfigName, latestConfig.Id);

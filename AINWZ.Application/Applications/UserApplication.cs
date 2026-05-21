@@ -70,7 +70,7 @@ namespace SpeakEase.Write.Application.Applications
             user.Email = request.Email;
             user.Avatar = request.Avatar ?? user.Avatar;
             user.UpdateBy = userContext.UserId;
-            user.UpdateAt = DateTime.UtcNow;
+            user.UpdateAt = DateTime.Now;
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -128,7 +128,7 @@ namespace SpeakEase.Write.Application.Applications
             entity.Salt = newSalt;
             entity.Password = newHashed;
             entity.UpdateBy = userContext.UserId;
-            entity.UpdateAt = DateTime.UtcNow;
+            entity.UpdateAt = DateTime.Now;
 
             await dbContext.SaveChangesAsync(cancellationToken);
 

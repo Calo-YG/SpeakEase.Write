@@ -168,7 +168,7 @@ public class ForeshadowingApplication(
         if (request.PayoffChapterId is not null) entity.PayoffChapterId = request.PayoffChapterId;
         if (request.Importance.HasValue) entity.Importance = request.Importance.Value;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

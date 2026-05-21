@@ -16,7 +16,6 @@ public sealed class GeneralAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
     public override AgentMetadata Metadata => new()
     {
-        RouteKeywords = [],
         ContentType = "plain",
         NeedsProjectMemory = false,
         ShouldFilterHistory = false,

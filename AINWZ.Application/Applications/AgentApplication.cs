@@ -1,5 +1,5 @@
-using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Authorization.Authorization;
@@ -7,11 +7,14 @@ using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Domain.Entities.AI;
+using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Memory;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 using SpeakEase.Write.Infrastructure.Exceptions;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Infrastructure.Shared;
+using System.Runtime.CompilerServices;
 
 namespace SpeakEase.Write.Application.Applications;
 
@@ -21,7 +24,9 @@ public sealed class AgentApplication(
     SpeakEaseDbContext dbContext,
     IUserContext userContext,
     ISnowflakeIdGenerator snowflakeIdGenerator,
-    IMemoryProvider  memoryProvider) : IAgentApplication
+    IMemoryProvider  memoryProvider,
+    ILogger<AgentApplication> logger,
+    IContextCompressor compressor) : IAgentApplication
 {
     private readonly CreationOrchestrator _orchestrator = orchestrator;
     private readonly ICreationSessionManager _sessionManager = sessionManager;
@@ -176,8 +181,42 @@ public sealed class AgentApplication(
 
         var accumulatedContent = new System.Text.StringBuilder();
 
-        List<ChatMessage> history = [];
+        var lastMessages = await dbContext.AICreationMessages
+            .Where(p => p.SessionId == sessionId && p.Role != "tool")
+            .OrderByDescending(p => p.CreateAt)
+            .Take(20)
+            .ToListAsync(cancellationToken);
+
         //从memroyProvider 中获取历史消息
+        List<ChatMessage> history = [];
+
+        if (history is { Count: > 1000 })
+        {
+            var originalCount = history.Count;
+            //try
+            //{
+            //    history = await compressor.CompressAsync(
+            //        history, llmContext.Model, cancellationToken);
+            //}
+            //catch (Exception ex)
+            //{
+            //    logger.LogError(ex, "会话压缩失败，使用原始历史");
+            //}
+
+            //if (conversationHistory.Count < originalCount)
+            //{
+            //    yield return new AgentStreamChunk
+            //    {
+            //        Type = "meta",
+            //        Content = JsonHelper.Serialize(new
+            //        {
+            //            stage = "context_compressed",
+            //            originalCount,
+            //            compressedCount = conversationHistory.Count
+            //        })
+            //    };
+            //}
+        }
 
         await foreach (var chunk in _orchestrator.ExecuteAsync(req.WorkId, req.Message, history, cancellationToken))
         {
@@ -197,12 +236,12 @@ public sealed class AgentApplication(
 
         var aiContent = accumulatedContent.ToString();
 
-        var recordResult = await _sessionManager.RecordTurnAsync(session.Id);
+        session.TurnCount++;
 
-        var turnNumber = recordResult.Data?.TurnCount ?? 0;
+        await dbContext.AICreationSessions.ExecuteUpdateAsync(p=>p.SetProperty(s => s.TurnCount, session.TurnCount));
 
         await _sessionManager.SaveMessagesAsync(
-            sessionId, turnNumber, req.Message, aiContent,
+            sessionId, session.TurnCount, req.Message, aiContent,
             toolResults.Count > 0 ? toolResults : null);
     }
 }

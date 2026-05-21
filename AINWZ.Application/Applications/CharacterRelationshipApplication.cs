@@ -129,7 +129,7 @@ public class CharacterRelationshipApplication(
         if (request.Description is not null) entity.Description = request.Description;
         if (request.Intensity.HasValue) entity.Intensity = request.Intensity.Value;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

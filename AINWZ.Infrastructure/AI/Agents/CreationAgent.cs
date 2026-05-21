@@ -18,13 +18,6 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
 
     public override AgentMetadata Metadata => new()
     {
-        RouteKeywords = new List<RouteKeyword>
-        {
-            new("角色", "character"), new("人物", "character"), new("创建", "character"),
-            new("新增", "character"), new("创意", "plain"), new("点子", "plain"),
-            new("脑洞", "plain"), new("灵感", "plain"), new("生成", "plain"),
-            new("设计", "character"),
-        },
         ContentType = "character",
         DefaultParameters = new(0.7, MaxTokens: 16384)
     };

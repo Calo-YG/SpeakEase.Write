@@ -79,7 +79,7 @@ public class WorldApplication(
         if (request.Summary is not null) entity.Summary = request.Summary;
         if (request.JsonContent is not null) entity.JsonContent = request.JsonContent;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -167,7 +167,7 @@ public class WorldApplication(
         if (request.Description is not null) entity.Description = request.Description;
         if (request.ParentGeographyId is not null) entity.ParentGeographyId = request.ParentGeographyId;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return new ApiResult<GeographyResponse>(new GeographyResponse
@@ -269,7 +269,7 @@ public class WorldApplication(
         if (request.Description is not null) entity.Description = request.Description;
         if (request.RelationshipJson is not null) entity.RelationshipJson = request.RelationshipJson;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return new ApiResult<FactionResponse>(new FactionResponse
@@ -371,7 +371,7 @@ public class WorldApplication(
         if (request.AbilityRule is not null) entity.AbilityRule = request.AbilityRule;
         if (request.ResourceSystem is not null) entity.ResourceSystem = request.ResourceSystem;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return new ApiResult<PowerSystemResponse>(new PowerSystemResponse
@@ -473,7 +473,7 @@ public class WorldApplication(
         if (request.Description is not null) entity.Description = request.Description;
         if (request.ConstraintJson is not null) entity.ConstraintJson = request.ConstraintJson;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return new ApiResult<WorldRuleResponse>(new WorldRuleResponse
@@ -579,7 +579,7 @@ public class WorldApplication(
         if (request.EventTime is not null) entity.EventTime = request.EventTime;
         if (request.ImpactSummary is not null) entity.ImpactSummary = request.ImpactSummary;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return new ApiResult<HistoricalEventResponse>(new HistoricalEventResponse

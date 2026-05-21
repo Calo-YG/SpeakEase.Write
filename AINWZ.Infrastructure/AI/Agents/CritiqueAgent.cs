@@ -15,10 +15,6 @@ public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogg
 
     public override AgentMetadata Metadata => new()
     {
-        RouteKeywords = new List<RouteKeyword>
-        {
-            new("去AI味", "critique"), new("文风", "critique"), new("自然", "critique"),
-        },
         ContentType = "critique",
         DefaultParameters = new(0.3, 0.85, 0.0, 0.0, 8192)
     };

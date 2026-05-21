@@ -18,11 +18,6 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
     public override AgentMetadata Metadata => new()
     {
-        RouteKeywords = new List<RouteKeyword>
-        {
-            new("大纲", "outline"), new("情节", "outline"), new("规划", "outline"),
-            new("结构", "outline"), new("高潮", "outline"), new("转折", "outline"),
-        },
         ContentType = "outline",
         DefaultParameters = new(0.7, MaxTokens: 4096)
     };

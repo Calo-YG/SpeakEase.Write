@@ -91,16 +91,27 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
 
         OutlineNodeEntity entity = null;
         if (!string.IsNullOrEmpty(id))
+        {
             entity = await db.OutlineNodes.FirstOrDefaultAsync(x => x.Id == id && x.WorkId == workId, ct);
+        }
+
         if (entity == null)
+        {
             entity = await db.OutlineNodes.FirstOrDefaultAsync(x => x.WorkId == workId && x.Title == title, ct);
+        }
 
         if (entity != null)
         {
-            if (!string.IsNullOrEmpty(stageType) && IsValidStageType(stageType))
-                entity.StageType = stageType;
-            else if (!string.IsNullOrEmpty(stageType) && !IsValidStageType(stageType))
+            if (!string.IsNullOrEmpty(stageType) && !IsValidStageType(stageType))
+            {
                 return ToolResult.Fail($"无效的 stage_type: {stageType}，有效值: book/volume/act/climax/resolution");
+            }
+
+            if (!string.IsNullOrEmpty(stageType) && IsValidStageType(stageType))
+            {
+                entity.StageType = stageType;
+            }
+
             if (goal != null) entity.Goal = goal;
             if (keyEvent != null) entity.KeyEvent = keyEvent;
             if (sequence > 0) entity.Sequence = sequence;
@@ -111,12 +122,14 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
                     var parent = await db.OutlineNodes.AsNoTracking()
                         .FirstOrDefaultAsync(x => x.Id == parentNodeId && x.WorkId == workId, ct);
                     if (parent == null)
-                        return ToolResult.Fail($"父节点 {parentNodeId} 不存在");
+                    {
+                        return ToolResult.Fail($"parent_node_id {parentNodeId} 不存在");
+                    }
                 }
                 entity.ParentNodeId = parentNodeId;
             }
             if (characterIds.Count > 0) entity.CharacterIds = characterIds;
-            entity.UpdateAt = DateTime.UtcNow;
+            entity.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"大纲节点「{entity.Title}」已更新，层级: {entity.StageType}，ID: {entity.Id}");
         }

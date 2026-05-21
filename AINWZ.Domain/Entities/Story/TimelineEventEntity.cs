@@ -35,7 +35,7 @@ namespace SpeakEase.Write.Domain.Entities.Story
         /// <summary>
         /// 事件发生时间。
         /// </summary>
-        public DateTime EventTime { get; set; } = DateTime.UtcNow;
+        public DateTime EventTime { get; set; } = DateTime.Now;
 
         /// <summary>
         /// 事件类型。

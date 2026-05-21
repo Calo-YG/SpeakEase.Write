@@ -25,6 +25,8 @@ public sealed class OpenAIContext(
     public string Url { get; private set; } = string.Empty;
     public string Model { get; private set; } = string.Empty;
 
+    public int MaxTokens { get; private set; }  
+
     /// <inheritdoc />
     public async Task ResolveAsync(CancellationToken ct = default)
     {
@@ -40,6 +42,7 @@ public sealed class OpenAIContext(
         Url = c.Url;
         ApiKey = c.ApiKey;
         Model = c.Model;
+        MaxTokens = c.MaxTokens;
         _resolved = true;
 
         log.LogDebug("OpenAIContext resolved: User={UserId}, Model={Model}", userId, Model);
@@ -55,18 +58,19 @@ public sealed class OpenAIContext(
             .AsNoTracking()
             .Where(x => x.UserId == userId && x.IsActive)
             .Join(db.AIModelDefinitions, c => c.ProviderId, p => p.Id,
-                (c, p) => new { c.ModelName, p.ApiBaseUrl, p.ApiKey })
+                (c, p) => new { c.ModelName, p.ApiBaseUrl, p.ApiKey, c.MaxOutputTokens })
             .FirstOrDefaultAsync(ct);
 
         if (row is not null)
-            return new LLMConfig(row.ApiBaseUrl, row.ApiKey, row.ModelName);
+            return new LLMConfig(row.ApiBaseUrl, row.ApiKey, row.ModelName,row.MaxOutputTokens);
 
         var s = cfg.GetSection("LLM");
         return new LLMConfig(
             s["BaseUrl"] ?? "https://api.openai.com/v1/",
             s["ApiKey"] ?? string.Empty,
-            s["DefaultModel"] ?? "gpt-4o-mini");
+            s["DefaultModel"] ?? "gpt-4o-mini",
+            int.Parse(s["DefaultMaxTokens"] ?? "1024"));
     }
 
-    private sealed record LLMConfig(string Url, string ApiKey, string Model);
+    private sealed record LLMConfig(string Url, string ApiKey, string Model, int MaxTokens);
 }

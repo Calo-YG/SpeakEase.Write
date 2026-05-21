@@ -131,7 +131,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
 
         chapter.Content = target.Content;
         chapter.Summary = target.Summary;
-        chapter.UpdateAt = DateTime.UtcNow;
+        chapter.UpdateAt = DateTime.Now;
         chapter.UpdateBy = _user.UserId;
 
         var maxVersion = await _db.ChapterVersions
@@ -202,7 +202,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
 
         chapter.Content = mergedContent;
         chapter.Summary = mergedSummary;
-        chapter.UpdateAt = DateTime.UtcNow;
+        chapter.UpdateAt = DateTime.Now;
         chapter.UpdateBy = _user.UserId;
 
         _db.ChapterVersions.Add(mergeEntity);

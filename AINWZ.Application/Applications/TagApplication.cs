@@ -81,7 +81,7 @@ public class TagApplication(
         if (request.Name is not null) entity.Name = request.Name.Trim();
         if (request.Category is not null) entity.Category = request.Category;
         if (request.Color is not null) entity.Color = request.Color;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

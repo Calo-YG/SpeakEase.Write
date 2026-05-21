@@ -62,7 +62,7 @@ public sealed class CreatePowerSystemTool(IServiceScopeFactory scopeFactory) : I
             if (!string.IsNullOrEmpty(levelDefinition)) entity.LevelDefinitionJson = levelDefinition;
             if (abilityRule != null) entity.AbilityRule = abilityRule;
             if (resourceSystem != null) entity.ResourceSystem = resourceSystem;
-            entity.UpdateAt = DateTime.UtcNow;
+            entity.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"力量体系「{entity.Name}」已更新，ID: {entity.Id}");
         }

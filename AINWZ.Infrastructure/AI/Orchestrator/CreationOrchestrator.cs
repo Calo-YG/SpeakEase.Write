@@ -5,7 +5,6 @@ using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.Shared;
 
@@ -15,8 +14,6 @@ public sealed class CreationOrchestrator(
     CreationRouter router,
     IOpenAIContext llmContext,
     IEnumerable<INovelAgent> agents,
-    ICreationAgentContext agentContext,
-    IContextCompressor compressor,
     ILogger<CreationOrchestrator> logger)
 {
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
@@ -55,63 +52,7 @@ public sealed class CreationOrchestrator(
 
         var firstAgent = agents.FirstOrDefault(a => a.Name == route.AgentName);
 
-        if (!string.IsNullOrEmpty(workId) && (firstAgent?.Metadata.NeedsProjectMemory ?? true))
-        {
-            string contextError = null;
-            try
-            {
-                var ctx = await agentContext.BuildContext(workId, cancellationToken);
-                var contextParts = new List<string>();
-                contextParts.Add($"[系统] 当前作品标识 (work_id) = {workId}");
-                if (!string.IsNullOrEmpty(ctx.ProjectMemory))
-                    contextParts.Add(ctx.ProjectMemory);
-                enrichedMessage = $"{userMessage}\n\n{string.Join("\n\n", contextParts)}";
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "构建上下文失败, workId={WorkId}", workId);
-                contextError = ex.Message;
-            }
-
-            if (contextError != null)
-            {
-                yield return new AgentStreamChunk
-                {
-                    Type = "meta",
-                    Content = JsonHelper.Serialize(new { stage = "context_error", error = contextError })
-                };
-            }
-        }
-
         await llmContext.ResolveAsync(cancellationToken);
-
-        if (conversationHistory is { Count: > 0 })
-        {
-            var originalCount = conversationHistory.Count;
-            try
-            {
-                conversationHistory = await compressor.CompressAsync(
-                    conversationHistory, llmContext.Model, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "会话压缩失败，使用原始历史");
-            }
-
-            if (conversationHistory.Count < originalCount)
-            {
-                yield return new AgentStreamChunk
-                {
-                    Type = "meta",
-                    Content = JsonHelper.Serialize(new
-                    {
-                        stage = "context_compressed",
-                        originalCount,
-                        compressedCount = conversationHistory.Count
-                    })
-                };
-            }
-        }
 
         var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
 
@@ -151,9 +92,7 @@ public sealed class CreationOrchestrator(
                 ? $"{enrichedMessage}\n\n[前一步Agent结果]\n{previousResult}"
                 : enrichedMessage;
 
-            var agentHistory = agent.Metadata.ShouldFilterHistory
-                ? FilterConversationHistory(conversationHistory)
-                : (conversationHistory ?? new List<ChatMessage>());
+            var agentHistory = conversationHistory ?? new List<ChatMessage>();
 
             var meta = agent.Metadata;
             var request = new AgentRequest
@@ -250,35 +189,5 @@ public sealed class CreationOrchestrator(
         try { await agentTask; }
         catch (OperationCanceledException) { }
         catch (Exception ex) { logger.LogError(ex, "Agent task faulted"); }
-    }
-
-    private static List<ChatMessage> FilterConversationHistory(List<ChatMessage> history)
-    {
-        if (history == null || history.Count == 0)
-            return new List<ChatMessage>();
-
-        var filtered = new List<ChatMessage>();
-        foreach (var msg in history)
-        {
-            if (msg is not AssistantMessage assistant || string.IsNullOrEmpty(assistant.Content))
-            {
-                filtered.Add(msg);
-                continue;
-            }
-
-            var content = assistant.Content;
-            if (content.Length < 150 &&
-                (content.Contains("我来") || content.Contains("帮你") ||
-                 content.Contains("接下来") || content.Contains("好的") ||
-                 content.Contains("以下") || content.Contains("让我") ||
-                 content.Contains("首先") || content.Contains("这一章")))
-            {
-                continue;
-            }
-
-            filtered.Add(msg);
-        }
-
-        return filtered;
     }
 }

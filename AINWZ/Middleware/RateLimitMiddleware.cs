@@ -50,7 +50,7 @@ public sealed class RateLimitMiddleware
             _maxTokens = maxTokens;
             _refillInterval = refillInterval;
             _tokens = maxTokens;
-            _lastRefill = DateTime.UtcNow;
+            _lastRefill = DateTime.Now;
         }
 
         public bool TryConsume()
@@ -63,7 +63,7 @@ public sealed class RateLimitMiddleware
 
         private void Refill()
         {
-            var now = DateTime.UtcNow;
+            var now = DateTime.Now;
             var elapsed = now - _lastRefill;
             if (elapsed < _refillInterval) return;
 

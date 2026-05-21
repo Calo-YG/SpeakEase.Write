@@ -123,7 +123,7 @@ public class OutlineApplication(
         if (request.ParentId is not null) entity.ParentNodeId = request.ParentId;
         if (request.Sequence.HasValue) entity.Sequence = request.Sequence.Value;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

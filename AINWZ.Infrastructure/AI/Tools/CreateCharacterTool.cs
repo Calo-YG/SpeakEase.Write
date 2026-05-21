@@ -83,7 +83,7 @@ public sealed class CreateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
             if (personality != null) character.Personality = personality;
             if (!string.IsNullOrEmpty(abilityDescription)) character.AbilityDescription = abilityDescription;
             if (tags.Count > 0) character.Tags = tags;
-            character.UpdateAt = DateTime.UtcNow;
+            character.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"角色「{name}」已更新，ID: {character.Id}");
         }

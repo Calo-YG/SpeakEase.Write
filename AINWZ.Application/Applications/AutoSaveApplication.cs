@@ -30,7 +30,7 @@ public sealed class AutoSaveApplication(
             return new ApiResult($"不支持自动保存的实体类型: {request.EntityType}", 400);
 
         var userId = user.UserId;
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
 
         switch (request.EntityType.ToLowerInvariant())
         {

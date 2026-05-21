@@ -62,7 +62,7 @@ public sealed class CreateWorldRuleTool(IServiceScopeFactory scopeFactory) : ITo
             if (!string.IsNullOrEmpty(ruleType)) entity.RuleType = ruleType;
             if (description != null) entity.Description = description;
             if (constraintJson != null) entity.ConstraintJson = constraintJson;
-            entity.UpdateAt = DateTime.UtcNow;
+            entity.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"天道法则「{entity.RuleName}」（{entity.RuleType}）已更新，ID: {entity.Id}");
         }

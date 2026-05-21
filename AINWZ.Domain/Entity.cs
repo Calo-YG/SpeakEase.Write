@@ -18,7 +18,7 @@
         /// <summary>
         /// 创建时间（UTC）。
         /// </summary>
-        public DateTime CreateAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreateAt { get; set; } = DateTime.Now;
 
         /// <summary>
         /// 最后更新人标识。
@@ -28,6 +28,6 @@
         /// <summary>
         /// 最后更新时间（UTC）。
         /// </summary>
-        public DateTime UpdateAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdateAt { get; set; } = DateTime.Now;
     }
 }

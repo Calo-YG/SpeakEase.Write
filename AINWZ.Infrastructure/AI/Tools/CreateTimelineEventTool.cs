@@ -79,7 +79,7 @@ public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) :
             if (!string.IsNullOrEmpty(eventType)) entity.EventType = eventType;
             if (chapterId != null) entity.ChapterId = chapterId;
             if (relatedCharacterIds.Count > 0) entity.RelatedCharacterIds = relatedCharacterIds;
-            entity.UpdateAt = DateTime.UtcNow;
+            entity.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"时间线事件「{entity.Title}」已更新，ID: {entity.Id}");
         }

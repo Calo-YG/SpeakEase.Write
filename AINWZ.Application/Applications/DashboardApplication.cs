@@ -28,7 +28,7 @@ public class DashboardApplication(
 
         // 创作天数：从最早的作品创建日期到今天
         var creationDays = works.Count > 0
-            ? (int)(DateTime.UtcNow - works.Min(x => x.CreateAt)).TotalDays + 1
+            ? (int)(DateTime.Now - works.Min(x => x.CreateAt)).TotalDays + 1
             : 0;
 
         var aiCallCount = await dbContext.LlmCallLogs.AsNoTracking()

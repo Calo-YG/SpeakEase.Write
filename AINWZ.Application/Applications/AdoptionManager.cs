@@ -63,9 +63,9 @@ public sealed class AdoptionManager : IAdoptionManager
         chapter.Content = request.Content;
         chapter.Summary = request.Summary;
         chapter.WordCount = CountWords(request.Content);
-        chapter.LastContentSavedAt = DateTime.UtcNow;
+        chapter.LastContentSavedAt = DateTime.Now;
         chapter.UpdateBy = _user.UserId;
-        chapter.UpdateAt = DateTime.UtcNow;
+        chapter.UpdateAt = DateTime.Now;
 
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
@@ -80,7 +80,7 @@ public sealed class AdoptionManager : IAdoptionManager
                 .Where(w => w.Id == request.WorkId)
                 .ExecuteUpdateAsync(s => s
                     .SetProperty(x => x.TotalWordCount, totalWords)
-                    .SetProperty(x => x.UpdateAt, DateTime.UtcNow));
+                    .SetProperty(x => x.UpdateAt, DateTime.Now));
 
             await transaction.CommitAsync();
         }

@@ -1,5 +1,3 @@
-using SpeakEase.Write.Domain;
-
 namespace SpeakEase.Write.Domain.Entities.Memory
 {
     /// <summary>

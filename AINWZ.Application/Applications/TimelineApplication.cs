@@ -101,7 +101,7 @@ public class TimelineApplication(
             Title = request.Title.Trim(),
             Description = request.Description ?? string.Empty,
             ChapterId = request.ChapterId ?? string.Empty,
-            EventTime = request.EventTime ?? DateTime.UtcNow,
+            EventTime = request.EventTime ?? DateTime.Now,
             EventType = request.EventType ?? string.Empty,
             RelatedCharacterIds = request.RelatedCharacterIds ?? new List<string>(),
             CreateBy = userId,
@@ -149,7 +149,7 @@ public class TimelineApplication(
         if (request.EventType is not null) entity.EventType = request.EventType;
         if (request.RelatedCharacterIds is not null) entity.RelatedCharacterIds = request.RelatedCharacterIds;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

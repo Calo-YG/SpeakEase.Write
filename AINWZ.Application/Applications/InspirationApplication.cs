@@ -107,7 +107,7 @@ public class InspirationApplication(
         if (request.InspirationType is not null) entity.InspirationType = request.InspirationType;
         if (request.Source is not null) entity.Source = request.Source;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -154,7 +154,7 @@ public class InspirationApplication(
 
         entity.IsArchived = request.IsArchived;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("用户 {UserId} 将灵感 {Title} 归档状态设为 {IsArchived}", userId, entity.Title, entity.IsArchived);

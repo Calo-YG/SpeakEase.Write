@@ -71,7 +71,7 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
     {
         chapter.Content = content;
         chapter.WordCount = content.Count(c => !char.IsWhiteSpace(c));
-        chapter.LastContentSavedAt = DateTime.UtcNow;
+        chapter.LastContentSavedAt = DateTime.Now;
         if (chapter.Status == "outline")
             chapter.Status = "completed";
         await db.SaveChangesAsync(ct);
@@ -140,7 +140,7 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
                 Content = content,
                 WordCount = content.Count(c => !char.IsWhiteSpace(c)),
                 Summary = string.Empty,
-                LastContentSavedAt = DateTime.UtcNow,
+                LastContentSavedAt = DateTime.Now,
                 Status = "completed"
             };
             await db.Chapters.AddAsync(chapter, ct);
@@ -178,6 +178,6 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
         await db.Works
             .Where(w => w.Id == workId)
             .ExecuteUpdateAsync(s => s.SetProperty(w => w.TotalWordCount, totalWords)
-                                      .SetProperty(w => w.UpdateAt, DateTime.UtcNow), ct);
+                                      .SetProperty(w => w.UpdateAt, DateTime.Now), ct);
     }
 }

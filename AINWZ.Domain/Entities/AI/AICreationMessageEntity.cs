@@ -14,5 +14,5 @@ public class AICreationMessageEntity : Entity
 
     public bool? ToolSuccess { get; set; }
 
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = DateTime.Now;
 }

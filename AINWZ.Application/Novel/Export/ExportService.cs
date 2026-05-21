@@ -107,7 +107,7 @@ public class ExportService(SpeakEaseDbContext db)
     <dc:title>{EscapeXml(work.Title)}</dc:title>
     <dc:creator>佚名</dc:creator>
     <dc:language>zh-CN</dc:language>
-    <meta property="dcterms:modified">{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}</meta>
+    <meta property="dcterms:modified">{DateTime.Now:yyyy-MM-ddTHH:mm:ssZ}</meta>
   </metadata>
   <manifest>
     <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>

@@ -129,7 +129,7 @@ public class CharacterApplication(
         if (request.AbilityDescription is not null) entity.AbilityDescription = request.AbilityDescription;
         if (request.Tags is not null) entity.Tags = request.Tags;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

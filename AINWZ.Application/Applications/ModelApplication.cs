@@ -199,7 +199,8 @@ namespace SpeakEase.Write.Application.Applications
             entity.ApiBaseUrl = request.ApiBaseUrl;
             entity.ApiKey = request.ApiKey;
             entity.IsActive = request.IsActive;
-            entity.UpdateAt = DateTime.UtcNow;
+            entity.UpdateAt = 
+                ;
 
             await dbContext.SaveChangesAsync(cancellationToken);
 

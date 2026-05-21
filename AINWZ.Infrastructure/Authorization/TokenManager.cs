@@ -68,8 +68,8 @@ public sealed class TokenManager : ITokenManager
             issuer: _options.Issuer,
             audience: _options.Audience,
             claims: claims,
-            notBefore: DateTime.UtcNow,
-            expires: DateTime.UtcNow.AddMinutes(_options.ExpMinutes),
+            notBefore: DateTime.Now,
+            expires: DateTime.Now.AddMinutes(_options.ExpMinutes),
             signingCredentials: _signingCredentials
         );
 
@@ -176,7 +176,7 @@ public sealed class TokenManager : ITokenManager
         try
         {
             var jwt = ReadJwtToken(token);
-            return jwt.ValidTo - DateTime.UtcNow;
+            return jwt.ValidTo - DateTime.Now;
         }
         catch
         {

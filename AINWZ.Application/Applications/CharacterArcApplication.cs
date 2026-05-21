@@ -115,7 +115,7 @@ public class CharacterArcApplication(
         entity.ChangedState = request.ChangedState;
         entity.TriggerEvent = request.TriggerEvent;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

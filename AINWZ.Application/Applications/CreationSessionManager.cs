@@ -36,9 +36,9 @@ public class CreationSessionManager(
             Status = "active",
             TurnCount = 0,
             AdoptedContentJson = "[]",
-            StartedAt = DateTime.UtcNow,
-            LastActivityAt = DateTime.UtcNow,
-            ExpiresAt = DateTime.UtcNow.Add(SessionExpiration),
+            StartedAt = DateTime.Now,
+            LastActivityAt = DateTime.Now,
+            ExpiresAt = DateTime.Now.Add(SessionExpiration),
         };
 
         db.AICreationSessions.Add(entity);
@@ -57,8 +57,8 @@ public class CreationSessionManager(
             return new ApiResult<CreationSessionDto>("会话不存在。", 404);
 
         session.TurnCount++;
-        session.LastActivityAt = DateTime.UtcNow;
-        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
+        session.LastActivityAt = DateTime.Now;
+        session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
 
         await db.SaveChangesAsync();
 
@@ -88,9 +88,9 @@ public class CreationSessionManager(
                 Status = "active",
                 TurnCount = 0,
                 AdoptedContentJson = "[]",
-                StartedAt = DateTime.UtcNow,
-                LastActivityAt = DateTime.UtcNow,
-                ExpiresAt = DateTime.UtcNow.Add(SessionExpiration),
+                StartedAt = DateTime.Now,
+                LastActivityAt = DateTime.Now,
+                ExpiresAt = DateTime.Now.Add(SessionExpiration),
             };
             db.AICreationSessions.Add(entity);
             await db.SaveChangesAsync();
@@ -130,11 +130,11 @@ public class CreationSessionManager(
             TurnNumber = session.TurnCount,
             Content = request.Content,
             Summary = request.Summary,
-            AdoptedAt = DateTime.UtcNow,
+            AdoptedAt = DateTime.Now,
         });
 
         session.AdoptedContentJson = JsonHelper.Serialize(adopted);
-        session.LastActivityAt = DateTime.UtcNow;
+        session.LastActivityAt = DateTime.Now;
         await db.SaveChangesAsync();
         return new ApiResult(true);
     }
@@ -152,7 +152,7 @@ public class CreationSessionManager(
             return new ApiResult<CreationSessionDto>("会话不在活跃状态。", 400);
 
         session.Status = "paused";
-        session.LastActivityAt = DateTime.UtcNow;
+        session.LastActivityAt = DateTime.Now;
         await db.SaveChangesAsync();
         return MapToResult(session);
     }
@@ -169,7 +169,7 @@ public class CreationSessionManager(
 
         session.Status = "cancelled";
         session.CloseReason = "user_cancelled";
-        session.LastActivityAt = DateTime.UtcNow;
+        session.LastActivityAt = DateTime.Now;
         session.AdoptedContentJson = "[]";
 
         await db.SaveChangesAsync();
@@ -189,8 +189,8 @@ public class CreationSessionManager(
             return new ApiResult<CreationSessionDto>("会话未处于暂停状态。", 400);
 
         session.Status = "active";
-        session.LastActivityAt = DateTime.UtcNow;
-        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
+        session.LastActivityAt = DateTime.Now;
+        session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
         await db.SaveChangesAsync();
         return MapToResult(session);
     }
@@ -217,8 +217,8 @@ public class CreationSessionManager(
             .ExecuteDeleteAsync();
 
         session.TurnCount = targetTurn;
-        session.LastActivityAt = DateTime.UtcNow;
-        session.ExpiresAt = DateTime.UtcNow.Add(SessionExpiration);
+        session.LastActivityAt = DateTime.Now;
+        session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
         await db.SaveChangesAsync();
 
         return new ApiResult(true);
@@ -270,16 +270,16 @@ public class CreationSessionManager(
     public async Task<int> ExpireStaleSessionsAsync()
     {
         return await db.AICreationSessions
-            .Where(x => x.Status == "active" && x.ExpiresAt.HasValue && x.ExpiresAt < DateTime.UtcNow)
+            .Where(x => x.Status == "active" && x.ExpiresAt.HasValue && x.ExpiresAt < DateTime.Now)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Status, "expired")
                 .SetProperty(x => x.CloseReason, "expired_timeout")
-                .SetProperty(x => x.LastActivityAt, DateTime.UtcNow));
+                .SetProperty(x => x.LastActivityAt, DateTime.Now));
     }
 
     public async Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)> toolResults = null)
     {
-        var now = DateTime.UtcNow;
+        var now = DateTime.Now;
         var messages = new List<AICreationMessageEntity>
         {
             new()
@@ -365,7 +365,7 @@ public class CreationSessionManager(
             .ExecuteUpdateAsync(s => s
                 .SetProperty(x => x.Status, status)
                 .SetProperty(x => x.CloseReason, reason)
-                .SetProperty(x => x.LastActivityAt, DateTime.UtcNow));
+                .SetProperty(x => x.LastActivityAt, DateTime.Now));
     }
 
     private static List<AdoptedItem> DeserializeAdopted(string json)

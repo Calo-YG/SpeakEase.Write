@@ -18,11 +18,6 @@ public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override AgentMetadata Metadata => new()
     {
-        RouteKeywords = new List<RouteKeyword>
-        {
-            new("世界观", "setting"), new("设定", "setting"), new("势力", "setting"),
-            new("地理", "setting"), new("世界", "setting"),
-        },
         ContentType = "setting",
         DefaultParameters = new(0.7, MaxTokens: 16384)
     };

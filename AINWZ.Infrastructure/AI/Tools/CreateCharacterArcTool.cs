@@ -79,7 +79,7 @@ public sealed class CreateCharacterArcTool(IServiceScopeFactory scopeFactory) : 
             if (triggerEvent != null) arc.TriggerEvent = triggerEvent;
             if (changedState != null) arc.ChangedState = changedState;
             if (stageOrder > 0) arc.StageOrder = stageOrder;
-            arc.UpdateAt = DateTime.UtcNow;
+            arc.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"角色「{characterName}」成长弧线阶段「{arc.StageTitle}」已更新，序号: {arc.StageOrder}");
         }

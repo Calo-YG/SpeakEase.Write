@@ -18,13 +18,6 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override AgentMetadata Metadata => new()
     {
-        RouteKeywords = new List<RouteKeyword>
-        {
-            new("写", "chapter"), new("续写", "chapter"), new("润色", "chapter"),
-            new("改写", "chapter"), new("扩写", "chapter"), new("重写", "chapter"),
-            new("写一", "chapter"), new("章节", "chapter"), new("正文", "chapter"),
-            new("帮我写", "chapter"),
-        },
         ContentType = "chapter",
         ShouldFilterHistory = true,
         DefaultParameters = new(0.9, 0.92, 0.45, 0.35, 731072)

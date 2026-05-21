@@ -161,7 +161,7 @@ public class CharacterGraphApplication(
 
         entity.LayoutJson = request.LayoutJson;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return new ApiResult<CharacterGraphResponse>(new CharacterGraphResponse

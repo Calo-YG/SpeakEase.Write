@@ -96,6 +96,6 @@ namespace SpeakEase.Write.Domain.Entities.Users
         /// <summary>
         /// 最近同步时间。
         /// </summary>
-        public DateTime LastSyncedAt { get; set; } = DateTime.UtcNow;
+        public DateTime LastSyncedAt { get; set; } = DateTime.Now;
     }
 }

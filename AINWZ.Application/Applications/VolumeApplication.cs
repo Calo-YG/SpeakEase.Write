@@ -92,7 +92,7 @@ public class VolumeApplication(
         if (request.Summary is not null) entity.Summary = request.Summary;
         if (request.Sequence.HasValue) entity.Sequence = request.Sequence.Value;
         entity.UpdateBy = userId;
-        entity.UpdateAt = DateTime.UtcNow;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -193,7 +193,7 @@ public class VolumeApplication(
 
         chapter.VolumeId = targetVolumeId;
         chapter.UpdateBy = userId;
-        chapter.UpdateAt = DateTime.UtcNow;
+        chapter.UpdateAt = DateTime.Now;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("用户 {UserId} 将章节 {ChapterId} 移入卷 {VolumeId}",
@@ -218,7 +218,7 @@ public class VolumeApplication(
 
         chapter.VolumeId = string.Empty;
         chapter.UpdateBy = userId;
-        chapter.UpdateAt = DateTime.UtcNow;
+        chapter.UpdateAt = DateTime.Now;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("用户 {UserId} 将章节 {ChapterId} 移出卷", userId, chapterId);

@@ -2,14 +2,11 @@ namespace SpeakEase.Write.Infrastructure.AI.Contract;
 
 public sealed record AgentMetadata
 {
-    public List<RouteKeyword> RouteKeywords { get; init; } = [];
     public string ContentType { get; init; } = "plain";
     public bool NeedsProjectMemory { get; init; } = true;
     public bool ShouldFilterHistory { get; init; }
     public AgentParameters DefaultParameters { get; init; } = AgentParameters.Default;
 }
-
-public sealed record RouteKeyword(string Keyword, string ContentType);
 
 public sealed record AgentParameters(
     double Temperature,

@@ -4,6 +4,7 @@ using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Creation.Dto;
 using SpeakEase.Write.Domain.Entities.AI;
+using SpeakEase.Write.Infrastructure.AI.Memory;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.Infrastructure.Shared;
@@ -14,6 +15,7 @@ public class CreationSessionManager(
     SpeakEaseDbContext db,
     ILogger<CreationSessionManager> logger,
     IUserContext userContext,
+    IMemoryProvider memory,
     ISnowflakeIdGenerator snowflakeIdGenerator) : ICreationSessionManager
 {
     private const int MaxTurnsBeforeArchive = 10;
@@ -25,6 +27,12 @@ public class CreationSessionManager(
         var userId = userContext.UserId;
         if (string.IsNullOrWhiteSpace(userId))
             return new ApiResult<CreationSessionDto>("用户未登录。", 401);
+
+        if (string.IsNullOrWhiteSpace(workId))
+            return new ApiResult<CreationSessionDto>("作品标识不能为空。", 400);
+
+        if (!await OwnsWorkAsync(workId, userId))
+            return new ApiResult<CreationSessionDto>("作品不存在或无权访问。", 404);
 
         await CloseActiveSessionForWorkAsync(workId, userId, "cancelled", "new_session_started");
 
@@ -70,6 +78,56 @@ public class CreationSessionManager(
             {
                 return await GetActiveSessionAfterArchiveAsync(session.WorkId, userId);
             }
+        }
+
+        return MapToResult(session);
+    }
+
+    public async Task<ApiResult<CreationSessionDto>> AppendTurnAsync(
+        string sessionId,
+        string userMessage,
+        string aiMessage,
+        List<(string ToolName, bool Success, string Content)> toolResults = null,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<CreationSessionDto>("User is not signed in.", 401);
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return new ApiResult<CreationSessionDto>("Session id is required.", 400);
+
+        var session = await GetOwnedSessionAsync(sessionId, userId);
+        if (session is null)
+            return new ApiResult<CreationSessionDto>("Session does not exist.", 404);
+
+        if (session.Status != "active")
+            return new ApiResult<CreationSessionDto>("Session is not active.", 400);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+
+        session.TurnCount++;
+        session.LastActivityAt = DateTime.Now;
+        session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
+
+        db.AICreationMessages.AddRange(BuildTurnMessages(
+            sessionId,
+            session.TurnCount,
+            userMessage,
+            aiMessage,
+            toolResults));
+
+        await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, session.TurnCount, cancellationToken);
+
+        if (session.TurnCount % MaxTurnsBeforeArchive == 0)
+        {
+            logger.LogInformation("session {SessionId} reached {TurnCount} turns, performing archive check", sessionId, session.TurnCount);
+            var archived = await PerformArchiveAsync(session, userId);
+            if (archived)
+                return await GetActiveSessionAfterArchiveAsync(session.WorkId, userId);
         }
 
         return MapToResult(session);
@@ -173,6 +231,7 @@ public class CreationSessionManager(
         session.AdoptedContentJson = "[]";
 
         await db.SaveChangesAsync();
+        await memory.InvalidateSessionAsync(userId, session.WorkId, sessionId);
         return new ApiResult(true);
     }
 
@@ -220,6 +279,7 @@ public class CreationSessionManager(
         session.LastActivityAt = DateTime.Now;
         session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
         await db.SaveChangesAsync();
+        await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, targetTurn);
 
         return new ApiResult(true);
     }
@@ -229,6 +289,12 @@ public class CreationSessionManager(
         var userId = userContext.UserId;
         if (string.IsNullOrWhiteSpace(userId))
             return new ApiResult<CreationSessionDto>("用户未登录。", 401);
+
+        if (string.IsNullOrWhiteSpace(workId))
+            return new ApiResult<CreationSessionDto>("作品标识不能为空。", 400);
+
+        if (!await OwnsWorkAsync(workId, userId))
+            return new ApiResult<CreationSessionDto>("作品不存在或无权访问。", 404);
 
         var session = await db.AICreationSessions
             .AsNoTracking()
@@ -246,6 +312,12 @@ public class CreationSessionManager(
         var userId = userContext.UserId;
         if (string.IsNullOrWhiteSpace(userId))
             return new ApiResult<List<CreationSessionDto>>("用户未登录。", 401);
+
+        if (string.IsNullOrWhiteSpace(workId))
+            return new ApiResult<List<CreationSessionDto>>("作品标识不能为空。", 400);
+
+        if (!await OwnsWorkAsync(workId, userId))
+            return new ApiResult<List<CreationSessionDto>>("作品不存在或无权访问。", 404);
 
         var sessions = await db.AICreationSessions
             .AsNoTracking()
@@ -279,6 +351,17 @@ public class CreationSessionManager(
 
     public async Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)> toolResults = null)
     {
+        db.AICreationMessages.AddRange(BuildTurnMessages(sessionId, turnNumber, userMessage, aiMessage, toolResults));
+        await db.SaveChangesAsync();
+    }
+
+    private List<AICreationMessageEntity> BuildTurnMessages(
+        string sessionId,
+        int turnNumber,
+        string userMessage,
+        string aiMessage,
+        List<(string ToolName, bool Success, string Content)> toolResults)
+    {
         var now = DateTime.Now;
         var messages = new List<AICreationMessageEntity>
         {
@@ -287,7 +370,7 @@ public class CreationSessionManager(
                 Id = snowflakeIdGenerator.NextIdString(),
                 SessionId = sessionId,
                 Role = "user",
-                Content = userMessage,
+                Content = userMessage ?? string.Empty,
                 TurnNumber = turnNumber,
                 CreatedAt = now,
             }
@@ -302,9 +385,9 @@ public class CreationSessionManager(
                     Id = snowflakeIdGenerator.NextIdString(),
                     SessionId = sessionId,
                     Role = "tool",
-                    Content = content,
+                    Content = content ?? string.Empty,
                     TurnNumber = turnNumber,
-                    ToolName = toolName,
+                    ToolName = toolName ?? "tool",
                     ToolSuccess = success,
                     CreatedAt = now,
                 });
@@ -316,26 +399,40 @@ public class CreationSessionManager(
             Id = snowflakeIdGenerator.NextIdString(),
             SessionId = sessionId,
             Role = "assistant",
-            Content = aiMessage,
+            Content = aiMessage ?? string.Empty,
             TurnNumber = turnNumber,
             CreatedAt = now,
         });
 
-        db.AICreationMessages.AddRange(messages);
-        await db.SaveChangesAsync();
+        return messages;
     }
 
     public async Task<ApiResult<List<SessionMessageResponse>>> GetSessionMessagesAsync(string sessionId, int? limit = null)
     {
+        var userId = userContext.UserId;
+        if (string.IsNullOrWhiteSpace(userId))
+            return new ApiResult<List<SessionMessageResponse>>("用户未登录。", 401);
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return new ApiResult<List<SessionMessageResponse>>("会话标识不能为空。", 400);
+
+        var ownsSession = await db.AICreationSessions
+            .AsNoTracking()
+            .AnyAsync(s => s.Id == sessionId && s.UserId == userId);
+        if (!ownsSession)
+            return new ApiResult<List<SessionMessageResponse>>("会话不存在或无权访问。", 404);
+
+        var take = limit.HasValue
+            ? Math.Clamp(limit.Value, 1, 200)
+            : 200;
+
         var query = db.AICreationMessages
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId)
             .OrderBy(m => m.CreatedAt)
             .ThenBy(m => m.TurnNumber);
 
-        var messages = limit.HasValue
-            ? await query.Take(limit.Value).ToListAsync()
-            : await query.ToListAsync();
+        var messages = await query.Take(take).ToListAsync();
 
         var result = messages.Select(m => new SessionMessageResponse
         {
@@ -356,6 +453,13 @@ public class CreationSessionManager(
         var session = await db.AICreationSessions.FindAsync(sessionId);
         if (session is null || session.UserId != userId) return null;
         return session;
+    }
+
+    private async Task<bool> OwnsWorkAsync(string workId, string userId)
+    {
+        return await db.Works
+            .AsNoTracking()
+            .AnyAsync(x => x.Id == workId && x.UserId == userId);
     }
 
     private async Task CloseActiveSessionForWorkAsync(string workId, string userId, string status, string reason)

@@ -32,6 +32,14 @@ public sealed class LLMTurnResult
     /// </summary>
     public UsageInfo Usage { get; set; }
 
+    public bool Success { get; set; } = true;
+
+    public string ErrorMessage { get; set; }
+
+    public string FinishReason { get; set; }
+
+    public string RequestId { get; set; }
+
     /// <summary>
     /// 本轮是否包含工具调用
     /// </summary>

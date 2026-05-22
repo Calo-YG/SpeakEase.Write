@@ -1,4 +1,6 @@
+using SpeakEase.AI.Lib;
 using SpeakEase.AI.Lib.Contract;
+using SpeakEase.Write.Infrastructure.AI;
 using SpeakEase.Write.Infrastructure.AI.Agents;
 using SpeakEase.Write.Infrastructure.AI.Analysis;
 using SpeakEase.Write.Infrastructure.AI.Context;
@@ -14,7 +16,8 @@ public static class NovelAIServiceCollectionExtensions
     public static IServiceCollection AddNovelAI(this IServiceCollection services)
     {
         services.AddSingleton<CreationRouter>();
-        services.AddSingleton<IMemoryProvider, HybridMemoryProvider>();
+        services.AddScoped<IMemoryProvider, HybridMemoryProvider>();
+        services.AddScoped<IChatCompatible, LoggingChatCompatible>();
 
         services.AddScoped<CreationOrchestrator>();
         services.AddScoped<ICreationAgentContext, CreationAgentContext>();

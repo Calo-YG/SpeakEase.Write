@@ -32,17 +32,17 @@ namespace SpeakEase.Write.MapRoute.AI
             group.MapPost("providers", async (SaveProviderRequest request, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
                 return await modelApp.CreateProviderAsync(request, cancellationToken);
-            }).WithName("createprovider");
+            }).WithName("createprovider").RequireAuthorization("AdminOnly");
 
             group.MapPut("providers/{id}", async (string id, SaveProviderRequest request, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
                 return await modelApp.UpdateProviderAsync(id, request, cancellationToken);
-            }).WithName("updateprovider");
+            }).WithName("updateprovider").RequireAuthorization("AdminOnly");
 
             group.MapDelete("providers/{id}", async (string id, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {
                 return await modelApp.DeleteProviderAsync(id, cancellationToken);
-            }).WithName("deleteprovider");
+            }).WithName("deleteprovider").RequireAuthorization("AdminOnly");
 
             group.MapGet("providers/{id}/models", async (string id, IModelApplication modelApp, CancellationToken cancellationToken) =>
             {

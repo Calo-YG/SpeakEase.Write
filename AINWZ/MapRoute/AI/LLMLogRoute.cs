@@ -12,12 +12,12 @@ namespace SpeakEase.Write.MapRoute.AI
                .WithTags("llm")
                .RequireAuthorization();
 
-            app.MapPost("api/llmlog/query", async (LLMCallLogQueryRequest request, ILLMCallLogApplication logApp, CancellationToken cancellationToken) =>
+            group.MapPost("query", async (LLMCallLogQueryRequest request, ILLMCallLogApplication logApp, CancellationToken cancellationToken) =>
             {
                 return await logApp.GetPagedAsync(request, cancellationToken);
             }).WithName("query");
 
-            app.MapGet("api/llmlog/{id}", async (string id, ILLMCallLogApplication logApp, CancellationToken cancellationToken) =>
+            group.MapGet("{id}", async (string id, ILLMCallLogApplication logApp, CancellationToken cancellationToken) =>
             {
                 return await logApp.GetByIdAsync(id, cancellationToken);
             }).WithName("getbyid");

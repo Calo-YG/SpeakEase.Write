@@ -176,8 +176,7 @@ public class WorkApplication(
         if (request.CoverUrl is not null) entity.CoverUrl = request.CoverUrl;
         if (request.Status is not null) entity.Status = request.Status;
         entity.UpdateBy = userId;
-        entity.UpdateAt = 
-            ;
+        entity.UpdateAt = DateTime.Now;
 
         await dbContext.SaveChangesAsync(cancellationToken);
 

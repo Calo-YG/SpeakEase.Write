@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Application.Contracts.Story;
 using SpeakEase.Write.Application.Contracts.Story.Dto;
@@ -13,8 +12,7 @@ namespace SpeakEase.Write.Application.Applications;
 public class CharacterGraphApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
-    IUserContext userContext,
-    ILogger<CharacterGraphApplication> logger) : ICharacterGraphApplication
+    IUserContext userContext) : ICharacterGraphApplication
 {
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);

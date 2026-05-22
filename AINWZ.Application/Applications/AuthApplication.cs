@@ -1,5 +1,8 @@
 using System.Security.Claims;
-using System.Text;
+
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+
 using SpeakEase.Write.Application.Contracts.Auth;
 using SpeakEase.Write.Application.Contracts.Auth.Dto;
 using SpeakEase.Write.Application.Shared;
@@ -7,8 +10,6 @@ using SpeakEase.Write.Domain.Entities.Users;
 using SpeakEase.Write.Infrastructure.Authorization;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Infrastructure.MutilCache;
 using SpeakEase.Write.Infrastructure.Shared;
@@ -48,22 +49,25 @@ public class AuthApplication(
             return new ApiResult<TokenResponse>("邮箱格式不正确。", 400);
         }
 
+        var account = request.Account.Trim();
+        var email = request.Email.Trim();
+
         // 检查账户是否已存在
-        var exists = await dbContext.Users.AnyAsync(x => x.Account == request.Account, cancellationToken);
+        var exists = await dbContext.Users.AnyAsync(x => x.Account == account, cancellationToken);
         if (exists)
         {
             return new ApiResult<TokenResponse>("该账户已被注册。", 409);
         }
 
         // 生成盐值和加密密码
-        var salt = GenerateSalt();
-        var hashedPassword = HashPassword(request.Password, salt);
+        var salt = PasswordHasher.GenerateSalt();
+        var hashedPassword = PasswordHasher.HashPassword(request.Password, salt);
 
         var user = new UserEntity
         {
             Id = snowflakeIdGenerator.NextIdString(),
-            Account = request.Account,
-            Email = request.Email,
+            Account = account,
+            Email = email,
             NickName = request.NickName,
             Salt = salt,
             Password = hashedPassword,
@@ -72,7 +76,14 @@ public class AuthApplication(
         };
 
         dbContext.Users.Add(user);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            return new ApiResult<TokenResponse>("该账户或邮箱已被注册。", 409);
+        }
 
         // 注册成功后自动登录，生成 token
         var tokenResult = await GenerateTokenResponseAsync(user.Id, user.Account, user.NickName, user.Role);
@@ -92,8 +103,10 @@ public class AuthApplication(
             return new ApiResult<TokenResponse>("密码不能为空。", 400);
         }
 
+        var account = request.Account.Trim();
+
         var user = await dbContext.Users
-            .Where(x => x.Account == request.Account)
+            .Where(x => x.Account == account)
             .Select(x => new { x.Id, x.Account, x.NickName, x.Password, x.Salt, x.Role, x.IsActive })
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -107,10 +120,22 @@ public class AuthApplication(
             return new ApiResult<TokenResponse>("该账户已被禁用。", 403);
         }
 
-        var hashedPassword = HashPassword(request.Password, user.Salt);
-        if (hashedPassword != user.Password)
+        var verification = PasswordHasher.VerifyPassword(request.Password, user.Salt, user.Password);
+        if (!verification.IsValid)
         {
             return new ApiResult<TokenResponse>("账户或密码错误。", 401);
+        }
+
+        if (verification.NeedsRehash)
+        {
+            var newSalt = PasswordHasher.GenerateSalt();
+            var newHashedPassword = PasswordHasher.HashPassword(request.Password, newSalt);
+            await dbContext.Users
+                .Where(x => x.Id == user.Id)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(x => x.Salt, newSalt)
+                    .SetProperty(x => x.Password, newHashedPassword)
+                    .SetProperty(x => x.UpdateAt, DateTime.Now), cancellationToken);
         }
 
         var tokenResult = await GenerateTokenResponseAsync(user.Id, user.Account, user.NickName, user.Role);
@@ -180,32 +205,6 @@ public class AuthApplication(
             RefreshToken = refreshToken,
             ExpiresIn = jwtOptions.Value.ExpMinutes * 60
         };
-    }
-
-    /// <summary>
-    /// 生成随机盐值。
-    /// </summary>
-    private static string GenerateSalt()
-    {
-        var bytes = new byte[16];
-#if NET6_0_OR_GREATER
-        System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
-#else
-        using var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
-        rng.GetBytes(bytes);
-#endif
-        return Convert.ToBase64String(bytes);
-    }
-
-    /// <summary>
-    /// 使用 HMAC-SHA256 加盐哈希密码。
-    /// </summary>
-    private static string HashPassword(string password, string salt)
-    {
-        var saltBytes = Convert.FromBase64String(salt);
-        using var hmac = new System.Security.Cryptography.HMACSHA256(saltBytes);
-        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
-        return Convert.ToBase64String(hashBytes);
     }
 
     /// <summary>

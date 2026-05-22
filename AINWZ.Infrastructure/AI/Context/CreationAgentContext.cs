@@ -1,68 +1,230 @@
 using Microsoft.EntityFrameworkCore;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Domain.Entities.Memory;
 using SpeakEase.Write.Infrastructure.AI.Memory;
+using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Infrastructure.AI.Context;
 
 public sealed class CreationAgentContext(
     IMemoryProvider memory,
     IUserContext user,
-    SpeakEaseDbContext dbContext) : ICreationAgentContext
+    SpeakEaseDbContext dbContext,
+    ISnowflakeIdGenerator idGenerator) : ICreationAgentContext
 {
-    private readonly IMemoryProvider _memory = memory;
-    private readonly IUserContext _user = user;
+    private const int FilteredHistoryMessages = 8;
+    private const int FullHistoryMessages = 20;
+    private const int ReservedOutputTokens = 8_000;
+    private const int DefaultContextWindowTokens = 32_000;
 
-    public async Task<AgentContext> BuildContext(string workId, CancellationToken cancellationToken = default)
+    public async Task<AgentContext> BuildContextAsync(
+        string workId,
+        string sessionId,
+        string agentName,
+        string primaryModel,
+        bool includeMemory,
+        bool filterHistory,
+        int contextWindowTokens,
+        CancellationToken cancellationToken = default)
     {
         var ctx = new AgentContext
         {
-            HistoryMessage = new List<string>(),
+            UserId = user.UserId,
             RequestId = Guid.NewGuid().ToString()
         };
 
-        if (string.IsNullOrEmpty(workId))
-        {
-            ctx.ProjectMemory = string.Empty;
+        if (string.IsNullOrWhiteSpace(workId) || string.IsNullOrWhiteSpace(sessionId))
             return ctx;
+
+        var ownsSession = await dbContext.AICreationSessions
+            .AsNoTracking()
+            .AnyAsync(s => s.Id == sessionId &&
+                           s.WorkId == workId &&
+                           s.UserId == user.UserId,
+                cancellationToken);
+
+        if (!ownsSession)
+            return ctx;
+
+        var memorySnapshot = includeMemory
+            ? await memory.LoadSessionMemoryAsync(user.UserId, workId, sessionId, cancellationToken)
+            : SessionMemorySnapshot.Empty;
+
+        var recentMessages = await LoadRecentMessagesAsync(sessionId, filterHistory, cancellationToken);
+        var messages = new List<ChatMessage>();
+
+        if (includeMemory && !string.IsNullOrWhiteSpace(memorySnapshot.Summary))
+        {
+            ctx.ProjectMemory = memorySnapshot.Summary;
+            ctx.SnapshotId = memorySnapshot.SnapshotId;
+            messages.Add(ChatMessage.System($"[Session Memory]\n{memorySnapshot.Summary}"));
         }
 
-        // var mem = await _memory.LoadAsync(_user.UserId, workId, cancellationToken);
+        messages.AddRange(recentMessages);
 
-        //ctx.ProjectMemory = FormatProjectMemory(mem);
+        var memoryTokens = EstimateTokens(ctx.ProjectMemory);
+        var recentTokens = EstimateTokens(recentMessages);
+        var totalTokens = EstimateTokens(messages);
+        var budget = ResolveInputBudget(contextWindowTokens);
+        var wasTrimmed = false;
+
+        while (messages.Count > 1 && totalTokens > budget)
+        {
+            var removeIndex = messages[0] is SystemMessage ? 1 : 0;
+            messages.RemoveAt(removeIndex);
+            totalTokens = EstimateTokens(messages);
+            wasTrimmed = true;
+        }
+
+        ctx.ConversationHistory = messages;
+        ctx.HistoryMessage = recentMessages.Select(FormatMessage).Where(x => x.Length > 0).ToList();
+        ctx.MemoryTokenCount = memoryTokens;
+        ctx.RecentContextTokenCount = recentTokens;
+        ctx.InputTokenCount = totalTokens;
+        ctx.WasTrimmed = wasTrimmed;
+
+        await WriteAssemblyLogAsync(
+            workId,
+            sessionId,
+            agentName,
+            primaryModel,
+            ctx,
+            cancellationToken);
 
         return ctx;
     }
 
-    /// <summary>
-    /// 历史消息构建
-    /// </summary>
-    /// <param name="sessionId"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    public async Task<List<ChatMessage>> HistoryMessaes(string sessionId, CancellationToken cancellationToken = default)
+    private async Task<List<ChatMessage>> LoadRecentMessagesAsync(
+        string sessionId,
+        bool filterHistory,
+        CancellationToken cancellationToken)
     {
-        var messages = await dbContext.AICreationMessages.Where(m => m.SessionId == sessionId && m.Role != "tool")
-            .OrderBy(m => m.CreatedAt)
-            .Take(20)
-            .ToListAsync();
+        var take = filterHistory ? FilteredHistoryMessages : FullHistoryMessages;
 
-        List<ChatMessage> chatMessage = [];
+        var rows = await dbContext.AICreationMessages
+            .AsNoTracking()
+            .Where(m => m.SessionId == sessionId && m.Role != "tool")
+            .OrderByDescending(m => m.TurnNumber)
+            .ThenByDescending(m => m.CreatedAt)
+            .Take(take)
+            .ToListAsync(cancellationToken);
 
-        foreach (var message in messages.OrderBy(m => m.CreatedAt))
+        return rows
+            .OrderBy(m => m.TurnNumber)
+            .ThenBy(m => m.CreatedAt)
+            .Select(ToChatMessage)
+            .Where(m => m != null)
+            .ToList();
+    }
+
+    private async Task WriteAssemblyLogAsync(
+        string workId,
+        string sessionId,
+        string agentName,
+        string primaryModel,
+        AgentContext context,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.Now;
+        dbContext.ContextAssemblyLogs.Add(new ContextAssemblyLogEntity
         {
-            var role = message.Role == "user" ? "user" : "assistant";
+            Id = idGenerator.NextIdString(),
+            UserId = user.UserId,
+            WorkId = workId,
+            SessionId = sessionId,
+            ContextMode = agentName ?? string.Empty,
+            SnapshotId = context.SnapshotId,
+            PrimaryModelId = primaryModel ?? string.Empty,
+            InputTokenCount = context.InputTokenCount,
+            CoreSettingTokens = context.MemoryTokenCount,
+            RecentContextTokens = context.RecentContextTokenCount,
+            RetrievedContextTokens = 0,
+            SelectedChunkIdsJson = JsonHelper.Serialize(string.IsNullOrWhiteSpace(context.SnapshotId)
+                ? Array.Empty<string>()
+                : new[] { context.SnapshotId }),
+            AssemblySummary = $"messages={context.ConversationHistory.Count}; trimmed={context.WasTrimmed}",
+            UsedFallback = false,
+            CreateBy = user.UserId,
+            UpdateBy = user.UserId,
+            CreateAt = now,
+            UpdateAt = now
+        });
 
-            if (role == "user")
-            {
-                chatMessage.Add(ChatMessage.User(message.Content));
-            } else if (role == "assistant")
-            {
-                chatMessage.Add(ChatMessage.Assistant(message.Content));
-            }
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static ChatMessage ToChatMessage(Domain.Entities.AI.AICreationMessageEntity message)
+    {
+        if (message.Role == "user")
+            return ChatMessage.User(message.Content);
+
+        if (message.Role == "assistant")
+            return ChatMessage.Assistant(message.Content);
+
+        return null;
+    }
+
+    private static int ResolveInputBudget(int contextWindowTokens)
+    {
+        var window = contextWindowTokens > 0 ? contextWindowTokens : DefaultContextWindowTokens;
+        return Math.Max(4_000, window - ReservedOutputTokens);
+    }
+
+    private static int EstimateTokens(IEnumerable<ChatMessage> messages)
+    {
+        return messages.Sum(message => EstimateTokens(ExtractText(message)));
+    }
+
+    private static int EstimateTokens(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return 0;
+
+        var chineseCount = 0;
+        foreach (var c in text)
+        {
+            if (c >= 0x4E00 && c <= 0x9FFF)
+                chineseCount++;
         }
 
-        return chatMessage;
+        var otherCount = text.Length - chineseCount;
+        return (int)(chineseCount * 1.5) + (int)(otherCount * 0.25);
+    }
+
+    private static string FormatMessage(ChatMessage message)
+    {
+        return message switch
+        {
+            UserMessage userMessage => $"user: {ExtractUserText(userMessage)}",
+            AssistantMessage assistantMessage => $"assistant: {assistantMessage.Content}",
+            _ => string.Empty
+        };
+    }
+
+    private static string ExtractText(ChatMessage message)
+    {
+        return message switch
+        {
+            SystemMessage systemMessage => systemMessage.Content,
+            UserMessage userMessage => ExtractUserText(userMessage),
+            AssistantMessage assistantMessage => assistantMessage.Content ?? string.Empty,
+            ToolMessage toolMessage => toolMessage.Content ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static string ExtractUserText(UserMessage message)
+    {
+        return message.Content switch
+        {
+            string value => value,
+            List<ContentPart> parts => string.Join(" ",
+                parts.Where(p => p.Type == "text" && !string.IsNullOrEmpty(p.Text))
+                    .Select(p => p.Text)),
+            _ => message.Content?.ToString() ?? string.Empty
+        };
     }
 }

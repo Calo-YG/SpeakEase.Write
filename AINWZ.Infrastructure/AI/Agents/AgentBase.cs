@@ -117,6 +117,28 @@ public abstract class AgentBase(
                 continue;
             }
 
+            if (!turnResult.Success)
+            {
+                var errorMessage = string.IsNullOrWhiteSpace(turnResult.ErrorMessage)
+                    ? "LLM call failed."
+                    : turnResult.ErrorMessage;
+
+                Logger.LogWarning("[{Agent}] LLM call failed at iteration {Iter}: {Error}", Name, i + 1, errorMessage);
+                yield return new AgentStreamChunk { Type = "error", Content = errorMessage };
+                yield return new AgentStreamChunk
+                {
+                    Type = "done",
+                    FinalResponse = new AgentResponse
+                    {
+                        Content = string.Empty,
+                        Model = turnResult.Model ?? request.Model,
+                        Iterations = i + 1,
+                        StopReason = "llm_error"
+                    }
+                };
+                yield break;
+            }
+
             if (turnResult.HasToolCalls)
             {
                 Logger.LogDebug("[{Agent}] 迭代 {Iter} 调用 {ToolCount} 个工具, elapsed={Elapsed}ms",

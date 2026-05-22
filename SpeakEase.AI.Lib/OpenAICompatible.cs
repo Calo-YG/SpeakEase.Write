@@ -54,6 +54,20 @@ namespace SpeakEase.AI.Lib
             using var response = await GetClient().SendAsync(
                 httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                var errorMsg = FormatHttpError(response, errorBody);
+                _logger.LogWarning("ChatAsync LLM HTTP 错误: {Error}", errorMsg);
+                return new LLMTurnResult
+                {
+                    Content = errorMsg,
+                    Model = request.Model,
+                    Success = false,
+                    ErrorMessage = errorMsg
+                };
+            }
+
             await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var result = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
                 responseStream, JsonOptions, cancellationToken)
@@ -66,7 +80,10 @@ namespace SpeakEase.AI.Lib
                 return new LLMTurnResult
                 {
                     Content = errorMsg,
-                    Model = result.Model ?? request.Model
+                    Model = result.Model ?? request.Model,
+                    Success = false,
+                    ErrorMessage = errorMsg,
+                    RequestId = result.Id
                 };
             }
 
@@ -89,7 +106,10 @@ namespace SpeakEase.AI.Lib
                 ReasoningContent = firstChoice?.Message?.ReasoningContent,
                 ToolCalls = firstChoice?.Message?.ToolCalls,
                 Model = result.Model,
-                Usage = result.Usage
+                Usage = result.Usage,
+                Success = true,
+                FinishReason = firstChoice?.FinishReason,
+                RequestId = result.Id
             };
         }
 
@@ -114,6 +134,26 @@ namespace SpeakEase.AI.Lib
             using var response = await GetClient().SendAsync(
                 httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                var errorMsg = FormatHttpError(response, errorBody);
+                _logger.LogWarning("StreamAsync LLM HTTP 错误: {Error}", errorMsg);
+                yield return new LLMTurnChunk { Type = "content", Content = errorMsg };
+                yield return new LLMTurnChunk
+                {
+                    Type = "done",
+                    TurnResult = new LLMTurnResult
+                    {
+                        Content = errorMsg,
+                        Model = request.Model,
+                        Success = false,
+                        ErrorMessage = errorMsg
+                    }
+                };
+                yield break;
+            }
+
             _logger.LogInformation("StreamAsync 流式连接已建立: Model={Model}, StatusCode={StatusCode}",
                 request.Model, (int)response.StatusCode);
 
@@ -125,8 +165,11 @@ namespace SpeakEase.AI.Lib
             var toolCallAccumulators = new Dictionary<int, ToolCallAccumulator>();
             string finishReason = null;
             string responseModel = context.Model;
+            string requestId = null;
             UsageInfo usage = null;
             bool anySseData = false;
+            bool hasProtocolError = false;
+            string protocolError = null;
 
             while (true)
             {
@@ -150,12 +193,17 @@ namespace SpeakEase.AI.Lib
                     var errorMsg = FormatError(chunk.Error);
                     _logger.LogWarning("StreamAsync LLM 返回协议错误: {Error}", errorMsg);
                     contentBuilder.Append(errorMsg);
+                    hasProtocolError = true;
+                    protocolError = errorMsg;
                     yield return new LLMTurnChunk { Type = "content", Content = errorMsg };
                     anySseData = true;
                     continue;
                 }
 
                 anySseData = true;
+
+                if (!string.IsNullOrEmpty(chunk.Id))
+                    requestId = chunk.Id;
 
                 if (!string.IsNullOrEmpty(chunk.Model))
                     responseModel = chunk.Model;
@@ -234,7 +282,17 @@ namespace SpeakEase.AI.Lib
                     ? $"AI 服务返回错误，状态码 {(int)response.StatusCode} {response.ReasonPhrase}"
                     : "AI 服务未返回有效内容，请稍后重试。";
                 yield return new LLMTurnChunk { Type = "content", Content = fallback };
-                yield return new LLMTurnChunk { Type = "done", TurnResult = new LLMTurnResult { Content = fallback, Model = responseModel } };
+                yield return new LLMTurnChunk
+                {
+                    Type = "done",
+                    TurnResult = new LLMTurnResult
+                    {
+                        Content = fallback,
+                        Model = responseModel,
+                        Success = false,
+                        ErrorMessage = fallback
+                    }
+                };
                 yield break;
             }
 
@@ -250,7 +308,11 @@ namespace SpeakEase.AI.Lib
                     ReasoningContent = reasoningBuilder.Length > 0 ? reasoningBuilder.ToString() : null,
                     ToolCalls = hasToolCalls ? StreamToolCallHelper.ToToolCalls(toolCallAccumulators) : null,
                     Model = responseModel,
-                    Usage = usage
+                    Usage = usage,
+                    Success = !hasProtocolError,
+                    ErrorMessage = protocolError,
+                    FinishReason = finishReason,
+                    RequestId = requestId
                 }
             };
         }
@@ -263,6 +325,16 @@ namespace SpeakEase.AI.Lib
             if (!string.IsNullOrEmpty(error.Type)) parts.Add($"({error.Type})");
             if (!string.IsNullOrEmpty(error.Message)) parts.Add(error.Message);
             return string.Join(" ", parts);
+        }
+
+        private static string FormatHttpError(HttpResponseMessage response, string body)
+        {
+            var message = $"AI 服务返回错误，状态码 {(int)response.StatusCode} {response.ReasonPhrase}";
+            if (string.IsNullOrWhiteSpace(body))
+                return message;
+
+            var trimmed = body.Length > 1000 ? body[..1000] : body;
+            return $"{message}: {trimmed}";
         }
 
         private HttpClient GetClient()
@@ -295,11 +367,22 @@ namespace SpeakEase.AI.Lib
             Tools = tools?.Count > 0 ? new List<ToolDefinition>(tools) : null,
             ToolChoice = context.ToolChoice,
             Temperature = context.Temperature,
-            MaxTokens = context.MaxTokens,
+            MaxTokens = ResolveMaxTokens(context.MaxTokens),
             TopP = context.TopP,
             FrequencyPenalty = context.FrequencyPenalty,
             PresencePenalty = context.PresencePenalty,
             Stream = stream
         };
+
+        private int? ResolveMaxTokens(int? requestedMaxTokens)
+        {
+            if (_context.MaxOutputTokens <= 0)
+                return requestedMaxTokens;
+
+            if (requestedMaxTokens is > 0)
+                return Math.Min(requestedMaxTokens.Value, _context.MaxOutputTokens);
+
+            return _context.MaxOutputTokens;
+        }
     }
 }

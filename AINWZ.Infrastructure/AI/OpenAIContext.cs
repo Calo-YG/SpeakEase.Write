@@ -25,7 +25,9 @@ public sealed class OpenAIContext(
     public string Url { get; private set; } = string.Empty;
     public string Model { get; private set; } = string.Empty;
 
-    public int MaxTokens { get; private set; }  
+    public int MaxTokens { get; private set; }
+    public int MaxOutputTokens { get; private set; }
+    public int ContextWindow { get; private set; }
 
     /// <inheritdoc />
     public async Task ResolveAsync(CancellationToken ct = default)
@@ -43,6 +45,8 @@ public sealed class OpenAIContext(
         ApiKey = c.ApiKey;
         Model = c.Model;
         MaxTokens = c.MaxTokens;
+        MaxOutputTokens = c.MaxTokens;
+        ContextWindow = c.ContextWindow;
         _resolved = true;
 
         log.LogDebug("OpenAIContext resolved: User={UserId}, Model={Model}", userId, Model);
@@ -58,19 +62,30 @@ public sealed class OpenAIContext(
             .AsNoTracking()
             .Where(x => x.UserId == userId && x.IsActive)
             .Join(db.AIModelDefinitions, c => c.ProviderId, p => p.Id,
-                (c, p) => new { c.ModelName, p.ApiBaseUrl, p.ApiKey, c.MaxOutputTokens })
+                (c, p) => new { c.ModelName, p.ApiBaseUrl, p.ApiKey, c.MaxOutputTokens, c.ContextWindow })
             .FirstOrDefaultAsync(ct);
 
         if (row is not null)
-            return new LLMConfig(row.ApiBaseUrl, row.ApiKey, row.ModelName,row.MaxOutputTokens);
+            return new LLMConfig(
+                row.ApiBaseUrl,
+                row.ApiKey,
+                row.ModelName,
+                row.MaxOutputTokens > 0 ? row.MaxOutputTokens : 1024,
+                row.ContextWindow > 0 ? row.ContextWindow : 32_000);
 
         var s = cfg.GetSection("LLM");
         return new LLMConfig(
             s["BaseUrl"] ?? "https://api.openai.com/v1/",
             s["ApiKey"] ?? string.Empty,
             s["DefaultModel"] ?? "gpt-4o-mini",
-            int.Parse(s["DefaultMaxTokens"] ?? "1024"));
+            ParsePositive(s["DefaultMaxTokens"], 1024),
+            ParsePositive(s["DefaultContextWindow"], 32_000));
     }
 
-    private sealed record LLMConfig(string Url, string ApiKey, string Model, int MaxTokens);
+    private static int ParsePositive(string value, int fallback)
+    {
+        return int.TryParse(value, out var parsed) && parsed > 0 ? parsed : fallback;
+    }
+
+    private sealed record LLMConfig(string Url, string ApiKey, string Model, int MaxTokens, int ContextWindow);
 }

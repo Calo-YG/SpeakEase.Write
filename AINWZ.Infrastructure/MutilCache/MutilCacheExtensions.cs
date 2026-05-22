@@ -30,8 +30,6 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
                 services.AddDistributedMemoryCache();
             }
 
-            services.AddDistributedMemoryCache();
-
             return services;
         }
     }

@@ -1,10 +1,10 @@
-using System.Text;
+using Microsoft.EntityFrameworkCore;
+
 using SpeakEase.Write.Application.Contracts.Users;
 using SpeakEase.Write.Application.Contracts.Users.Dto;
 using SpeakEase.Write.Application.Shared;
 using SpeakEase.Write.Infrastructure.Authorization;
 using SpeakEase.Write.Infrastructure.Persistence;
-using Microsoft.EntityFrameworkCore;
 using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Infrastructure.Shared;
 
@@ -66,13 +66,20 @@ namespace SpeakEase.Write.Application.Applications
                 return new ApiResult<UserResponse>("用户不存在。", 404);
             }
 
-            user.NickName = request.NickName;
-            user.Email = request.Email;
+            user.NickName = request.NickName.Trim();
+            user.Email = request.Email.Trim();
             user.Avatar = request.Avatar ?? user.Avatar;
             user.UpdateBy = userContext.UserId;
             user.UpdateAt = DateTime.Now;
 
-            await dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                return new ApiResult<UserResponse>("邮箱已被其他账户使用。", 409);
+            }
 
             return new ApiResult<UserResponse>(new UserResponse
             {
@@ -110,14 +117,13 @@ namespace SpeakEase.Write.Application.Applications
                 return new ApiResult("用户不存在。", 404);
             }
 
-            var oldHashed = HashPassword(request.OldPassword, user.Salt);
-            if (oldHashed != user.Password)
+            if (!PasswordHasher.VerifyPassword(request.OldPassword, user.Salt, user.Password).IsValid)
             {
                 return new ApiResult("旧密码错误。", 400);
             }
 
-            var newSalt = GenerateSalt();
-            var newHashed = HashPassword(request.NewPassword, newSalt);
+            var newSalt = PasswordHasher.GenerateSalt();
+            var newHashed = PasswordHasher.HashPassword(request.NewPassword, newSalt);
 
             var entity = await dbContext.Users.FindAsync([user.Id], cancellationToken);
             if (entity is null)
@@ -133,27 +139,6 @@ namespace SpeakEase.Write.Application.Applications
             await dbContext.SaveChangesAsync(cancellationToken);
 
             return new ApiResult();
-        }
-
-        /// <summary>
-        /// 生成随机盐值。
-        /// </summary>
-        private static string GenerateSalt()
-        {
-            var bytes = new byte[16];
-            System.Security.Cryptography.RandomNumberGenerator.Fill(bytes);
-            return Convert.ToBase64String(bytes);
-        }
-
-        /// <summary>
-        /// 使用 HMAC-SHA256 加盐哈希密码。
-        /// </summary>
-        private static string HashPassword(string password, string salt)
-        {
-            var saltBytes = Convert.FromBase64String(salt);
-            using var hmac = new System.Security.Cryptography.HMACSHA256(saltBytes);
-            var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(hashBytes);
         }
 
         /// <summary>

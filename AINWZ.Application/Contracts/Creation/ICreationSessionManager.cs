@@ -7,6 +7,12 @@ public interface ICreationSessionManager
 {
     Task<ApiResult<CreationSessionDto>> StartSessionAsync(string workId);
     Task<ApiResult<CreationSessionDto>> RecordTurnAsync(string sessionId);
+    Task<ApiResult<CreationSessionDto>> AppendTurnAsync(
+        string sessionId,
+        string userMessage,
+        string aiMessage,
+        List<(string ToolName, bool Success, string Content)> toolResults = null,
+        CancellationToken cancellationToken = default);
     Task<ApiResult> AdoptContentAsync(string sessionId, AdoptContentRequest request);
     Task<ApiResult<CreationSessionDto>> PauseSessionAsync(string sessionId);
     Task<ApiResult> CancelSessionAsync(string sessionId);

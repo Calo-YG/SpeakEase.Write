@@ -1,10 +1,9 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.Shared;
 
@@ -13,21 +12,29 @@ namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 public sealed class CreationOrchestrator(
     CreationRouter router,
     IOpenAIContext llmContext,
+    ICreationAgentContext agentContextBuilder,
     IEnumerable<INovelAgent> agents,
     ILogger<CreationOrchestrator> logger)
 {
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
+        string sessionId,
         string userMessage,
-        List<ChatMessage> conversationHistory = null,
+        int maxIterations = 10,
+        int? requestedMaxTokens = null,
+        double? requestedTemperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         var pipelineStopwatch = Stopwatch.StartNew();
+        var agentList = agents.ToList();
+        var route = await router.DecideWithLLMAsync(userMessage, agentList, cancellationToken);
+        var pipeline = route.Pipeline.Count > 0 ? route.Pipeline : new List<string> { route.AgentName };
 
-        var route = await router.DecideWithLLMAsync(userMessage, agents, cancellationToken);
-
-        logger.LogInformation("路由决策: agent={Agent}, contentType={ContentType}, pipeline={Pipeline}",
-            route.AgentName, route.ContentType, string.Join("→", route.Pipeline.Count > 0 ? route.Pipeline : new List<string> { route.AgentName }));
+        logger.LogInformation(
+            "Route decision: agent={Agent}, contentType={ContentType}, pipeline={Pipeline}",
+            route.AgentName,
+            route.ContentType,
+            string.Join(" -> ", pipeline));
 
         yield return new AgentStreamChunk
         {
@@ -38,82 +45,90 @@ public sealed class CreationOrchestrator(
                 agent = route.AgentName,
                 contentType = route.ContentType,
                 reason = route.Reason,
-                pipeline = route.Pipeline.Count > 0 ? route.Pipeline : null
+                pipeline = pipeline.Count > 1 ? pipeline : null
             })
         };
 
-        yield return new AgentStreamChunk
-        {
-            Type = "meta",
-            Content = JsonHelper.Serialize(new { stage = "loading_context" })
-        };
-
-        var enrichedMessage = userMessage;
-
-        var firstAgent = agents.FirstOrDefault(a => a.Name == route.AgentName);
-
         await llmContext.ResolveAsync(cancellationToken);
 
-        var pipeline = route.Pipeline.Count > 1 ? route.Pipeline : new List<string> { route.AgentName };
-
-        var previousResult = "";
+        var previousResult = string.Empty;
         for (var i = 0; i < pipeline.Count; i++)
         {
-            if (cancellationToken.IsCancellationRequested)
-                break;
+            cancellationToken.ThrowIfCancellationRequested();
 
             var agentName = pipeline[i];
-
-            var agent = agents.FirstOrDefault(a => a.Name == agentName);
-
-            if (agent == null)
+            var agent = agentList.FirstOrDefault(a => a.Name == agentName);
+            if (agent is null)
             {
-                logger.LogWarning("Pipeline 步骤 {Step}/{Total}: 未找到 Agent [{Agent}]", i + 1, pipeline.Count, agentName);
-
+                logger.LogWarning("Pipeline step {Step}/{Total}: agent [{Agent}] not found", i + 1, pipeline.Count, agentName);
                 yield return new AgentStreamChunk
                 {
                     Type = "meta",
-                    Content = JsonHelper.Serialize(new { stage = "pipeline_skip", agent = agentName, error = "未找到该Agent" })
+                    Content = JsonHelper.Serialize(new { stage = "pipeline_skip", agent = agentName, error = "agent_not_found" })
                 };
-
                 continue;
             }
 
-            if (i > 0)
+            var meta = agent.Metadata;
+            yield return new AgentStreamChunk
             {
-                yield return new AgentStreamChunk
+                Type = "meta",
+                Content = JsonHelper.Serialize(new
                 {
-                    Type = "meta",
-                    Content = JsonHelper.Serialize(new { stage = "pipeline_next", agent = agentName, step = i + 1, total = pipeline.Count })
-                };
-            }
+                    stage = "loading_context",
+                    agent = agentName,
+                    step = i + 1,
+                    total = pipeline.Count
+                })
+            };
+
+            var sessionContext = await agentContextBuilder.BuildContextAsync(
+                workId,
+                sessionId,
+                agentName,
+                llmContext.Model,
+                meta.NeedsProjectMemory,
+                meta.ShouldFilterHistory,
+                llmContext.ContextWindow,
+                cancellationToken);
+
+            yield return new AgentStreamChunk
+            {
+                Type = "meta",
+                Content = JsonHelper.Serialize(new
+                {
+                    stage = "context_loaded",
+                    agent = agentName,
+                    snapshotId = string.IsNullOrWhiteSpace(sessionContext.SnapshotId) ? null : sessionContext.SnapshotId,
+                    inputTokens = sessionContext.InputTokenCount,
+                    trimmed = sessionContext.WasTrimmed
+                })
+            };
 
             var chainMessage = i > 0 && !string.IsNullOrEmpty(previousResult)
-                ? $"{enrichedMessage}\n\n[前一步Agent结果]\n{previousResult}"
-                : enrichedMessage;
+                ? $"{userMessage}\n\n[Previous agent result]\n{previousResult}"
+                : userMessage;
 
-            var agentHistory = conversationHistory ?? new List<ChatMessage>();
-
-            var meta = agent.Metadata;
             var request = new AgentRequest
             {
                 UserMessage = chainMessage,
                 SystemPrompt = agent.BuildPrompt(),
                 Model = llmContext.Model,
-                MaxIterations = 10,
-                Temperature = meta.DefaultParameters.Temperature,
+                MaxIterations = ResolveMaxIterations(maxIterations),
+                Temperature = requestedTemperature ?? meta.DefaultParameters.Temperature,
                 TopP = meta.DefaultParameters.TopP,
                 FrequencyPenalty = meta.DefaultParameters.FrequencyPenalty,
                 PresencePenalty = meta.DefaultParameters.PresencePenalty,
-                MaxTokens = meta.DefaultParameters.MaxTokens,
-                ConversationHistory = agentHistory,
+                MaxTokens = ResolveMaxTokens(meta.DefaultParameters.MaxTokens, requestedMaxTokens, llmContext.MaxOutputTokens),
+                ConversationHistory = sessionContext.ConversationHistory,
                 WorkId = workId,
+                UserId = sessionContext.UserId
             };
 
             var stepStopwatch = Stopwatch.StartNew();
-            previousResult = "";
-
+            previousResult = string.Empty;
             var hadError = false;
+
             await foreach (var chunk in StreamAgentChunks(agent, request, cancellationToken))
             {
                 if (chunk.Type == "content")
@@ -127,67 +142,96 @@ public sealed class CreationOrchestrator(
 
             if (hadError)
             {
-                logger.LogError("Pipeline 步骤 {Step}/{Total}: Agent [{Agent}] 执行异常, elapsed={Elapsed}ms",
-                    i + 1, pipeline.Count, agentName, stepStopwatch.ElapsedMilliseconds);
+                logger.LogError(
+                    "Pipeline step {Step}/{Total}: agent [{Agent}] failed, elapsed={Elapsed}ms",
+                    i + 1,
+                    pipeline.Count,
+                    agentName,
+                    stepStopwatch.ElapsedMilliseconds);
+                yield break;
             }
             else
             {
-                logger.LogInformation("Pipeline 步骤 {Step}/{Total}: Agent [{Agent}] 完成, elapsed={Elapsed}ms",
-                    i + 1, pipeline.Count, agentName, stepStopwatch.ElapsedMilliseconds);
+                logger.LogInformation(
+                    "Pipeline step {Step}/{Total}: agent [{Agent}] completed, elapsed={Elapsed}ms",
+                    i + 1,
+                    pipeline.Count,
+                    agentName,
+                    stepStopwatch.ElapsedMilliseconds);
             }
         }
 
-        logger.LogInformation("Pipeline 全部完成, totalElapsed={Elapsed}ms", pipelineStopwatch.ElapsedMilliseconds);
+        logger.LogInformation("Pipeline completed, totalElapsed={Elapsed}ms", pipelineStopwatch.ElapsedMilliseconds);
     }
 
     private async IAsyncEnumerable<AgentStreamChunk> StreamAgentChunks(
         INovelAgent agent,
         AgentRequest request,
-        [EnumeratorCancellation] CancellationToken ct)
+        [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var channel = Channel.CreateUnbounded<AgentStreamChunk>(new UnboundedChannelOptions
-        {
-            SingleWriter = true,
-            SingleReader = true
-        });
+        var enumerator = agent.ExecuteStreamAsync(request, cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
 
-        var agentTask = Task.Run(async () =>
+        try
         {
-            try
+            while (true)
             {
-                await foreach (var chunk in agent.ExecuteStreamAsync(request, ct))
-                {
-                    if (!channel.Writer.TryWrite(chunk))
-                        await channel.Writer.WriteAsync(chunk, ct);
-                }
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "[Orchestrator] Agent [{Agent}] 执行异常", agent.Name);
+                AgentStreamChunk chunk = null;
+                Exception moveNextException = null;
+                var hasNext = false;
+
                 try
                 {
-                    channel.Writer.TryWrite(new AgentStreamChunk
+                    hasNext = await enumerator.MoveNextAsync();
+                    if (hasNext)
+                        chunk = enumerator.Current;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    moveNextException = ex;
+                }
+
+                if (moveNextException is not null)
+                {
+                    logger.LogError(moveNextException, "Agent [{Agent}] stream failed.", agent.Name);
+                    yield return new AgentStreamChunk
                     {
                         Type = "error",
-                        Content = $"Agent 执行异常: {ex.Message}"
-                    });
+                        Content = moveNextException.Message
+                    };
+                    yield break;
                 }
-                catch { }
-            }
-            finally
-            {
-                channel.Writer.TryComplete();
-            }
-        });
 
-        await foreach (var chunk in channel.Reader.ReadAllAsync(ct))
-        {
-            yield return chunk;
+                if (!hasNext)
+                    break;
+
+                yield return chunk;
+            }
         }
+        finally
+        {
+            await enumerator.DisposeAsync();
+        }
+    }
 
-        try { await agentTask; }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { logger.LogError(ex, "Agent task faulted"); }
+    private static int ResolveMaxIterations(int requested)
+    {
+        return Math.Clamp(requested <= 0 ? 10 : requested, 1, 50);
+    }
+
+    private static int ResolveMaxTokens(int agentMaxTokens, int? requestedMaxTokens, int configuredMaxTokens)
+    {
+        var candidates = new List<int>();
+
+        if (agentMaxTokens > 0)
+            candidates.Add(agentMaxTokens);
+
+        if (requestedMaxTokens is > 0)
+            candidates.Add(requestedMaxTokens.Value);
+
+        if (configuredMaxTokens > 0)
+            candidates.Add(configuredMaxTokens);
+
+        return candidates.Count == 0 ? 2048 : candidates.Min();
     }
 }

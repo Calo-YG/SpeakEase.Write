@@ -1,22 +1,17 @@
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
+
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+
 using Scalar.AspNetCore;
+
 using Serilog;
 using Serilog.Events;
+
 using SpeakEase.AI.Lib;
 using SpeakEase.AI.Lib.Contract;
-using SpeakEase.Write.Application.Applications;
-using SpeakEase.Write.Application.Contracts.AI;
-using SpeakEase.Write.Application.Contracts.Auth;
-using SpeakEase.Write.Application.Contracts.Creation;
-using SpeakEase.Write.Application.Contracts.Dashboard;
-using SpeakEase.Write.Application.Contracts.References;
-using SpeakEase.Write.Application.Contracts.Story;
-using SpeakEase.Write.Application.Contracts.Tags;
-using SpeakEase.Write.Application.Contracts.Users;
-using SpeakEase.Write.Application.Contracts.Version;
-using SpeakEase.Write.Application.Contracts.Works;
-using SpeakEase.Write.Application.Novel.Export;
+using SpeakEase.Write.Application;
 using SpeakEase.Write.HealthChecks;
 using SpeakEase.Write.Infrastructure.AI;
 using SpeakEase.Write.Infrastructure.Authorization;
@@ -32,8 +27,6 @@ using SpeakEase.Write.MapRoute.Tags;
 using SpeakEase.Write.MapRoute.Users;
 using SpeakEase.Write.MapRoute.Works;
 using SpeakEase.Write.Middleware;
-using System.Text.Encodings.Web;
-using System.Text.Unicode;
 
 var logPath = Path.Combine(AppContext.BaseDirectory, "logs");
 
@@ -86,12 +79,20 @@ try
 
     var builder = WebApplication.CreateSlimBuilder();
 
+    if (!builder.Environment.IsDevelopment())
+    {
+        ValidateProductionConfiguration(builder.Configuration);
+    }
+
     builder.Host.UseSerilog();
 
     // ── 基础服务 ──
     builder.Services.AddHttpClient();
     builder.Services.AddHttpContextAccessor();
-    builder.Services.AddAuthorization();
+    builder.Services.AddAuthorization(options =>
+    {
+        options.AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
+    });
     builder.Services.AddOpenApi();
 
     // ── CORS ──
@@ -132,32 +133,7 @@ try
     builder.Services.AddJwt(builder.Configuration);
 
     // ── Application 层 ──
-    builder.Services.AddScoped<ILLMCallLogApplication, LLMCallLogApplication>();
-    builder.Services.AddScoped<IAuthApplication, AuthApplication>();
-    builder.Services.AddScoped<IUserApplication, UserApplication>();
-    builder.Services.AddScoped<IModelApplication, ModelApplication>();
-    builder.Services.AddScoped<IUserModelConfigApplication, UserModelConfigApplication>();
-    builder.Services.AddScoped<IWorkApplication, WorkApplication>();
-    builder.Services.AddScoped<IChapterApplication, ChapterApplication>();
-    builder.Services.AddScoped<ICharacterApplication, CharacterApplication>();
-    builder.Services.AddScoped<IOutlineApplication, OutlineApplication>();
-    builder.Services.AddScoped<IVolumeApplication, VolumeApplication>();
-    builder.Services.AddScoped<IForeshadowingApplication, ForeshadowingApplication>();
-    builder.Services.AddScoped<ITimelineApplication, TimelineApplication>();
-    builder.Services.AddScoped<IWorldApplication, WorldApplication>();
-    builder.Services.AddScoped<ICharacterRelationshipApplication, CharacterRelationshipApplication>();
-    builder.Services.AddScoped<ICharacterGraphApplication, CharacterGraphApplication>();
-    builder.Services.AddScoped<ICharacterArcApplication, CharacterArcApplication>();
-    builder.Services.AddScoped<IInspirationApplication, InspirationApplication>();
-    builder.Services.AddScoped<IReferenceApplication, ReferenceApplication>();
-    builder.Services.AddScoped<ITagApplication, TagApplication>();
-    builder.Services.AddScoped<IDashboardApplication, DashboardApplication>();
-    builder.Services.AddScoped<IAgentApplication, AgentApplication>();
-    builder.Services.AddScoped<ICreationSessionManager, CreationSessionManager>();
-    builder.Services.AddScoped<IChapterVersionManager, ChapterVersionManager>();
-    builder.Services.AddScoped<IAdoptionManager, AdoptionManager>();
-    builder.Services.AddScoped<IAutoSaveApplication, AutoSaveApplication>();
-    builder.Services.AddScoped<ExportService>();
+    builder.Services.AddApplicationServices();
 
     // ── AI Lib + Novel AI ──
     builder.Services.AddChatLLM();
@@ -248,4 +224,21 @@ catch (Exception ex)
 finally
 {
     Log.CloseAndFlush();
+}
+
+static void ValidateProductionConfiguration(IConfiguration configuration)
+{
+    var jwtSecret = configuration["JwtOptions:SecretKey"];
+    if (string.IsNullOrWhiteSpace(jwtSecret) ||
+        jwtSecret.Contains("SuperSecret", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Production JWT secret must be supplied from a secure secret store.");
+    }
+
+    var connectionString = configuration.GetConnectionString("SpeakEaseWrite");
+    if (string.IsNullOrWhiteSpace(connectionString) ||
+        connectionString.Contains("Password=blog123", StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("Production database connection string must be supplied from a secure secret store.");
+    }
 }

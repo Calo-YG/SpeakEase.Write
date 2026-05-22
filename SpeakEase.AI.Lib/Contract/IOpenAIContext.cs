@@ -20,6 +20,10 @@
         /// </summary>
         string Model { get; }
 
+        int MaxOutputTokens { get; }
+
+        int ContextWindow { get; }
+
         /// <summary>
         /// 动态解析当前用户的 LLM 配置并缓存。
         /// </summary>

@@ -12,17 +12,17 @@ namespace SpeakEase.Write.MapRoute.Users
                .WithTags("user")
                .RequireAuthorization();
 
-            app.MapGet("api/user/profile", async (IUserApplication userApp, CancellationToken cancellationToken) =>
+            group.MapGet("profile", async (IUserApplication userApp, CancellationToken cancellationToken) =>
             {
                 return await userApp.GetProfileAsync(cancellationToken);
             }).WithName("getprofile");
 
-            app.MapPut("api/user/profile", async (UpdateProfileRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
+            group.MapPut("profile", async (UpdateProfileRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
             {
                 return await userApp.UpdateProfileAsync(request, cancellationToken);
             }).WithName("updateprofile");
 
-            app.MapPut("api/user/password", async (ChangePasswordRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
+            group.MapPut("password", async (ChangePasswordRequest request, IUserApplication userApp, CancellationToken cancellationToken) =>
             {
                 return await userApp.ChangePasswordAsync(request, cancellationToken);
             }).WithName("changepassword");

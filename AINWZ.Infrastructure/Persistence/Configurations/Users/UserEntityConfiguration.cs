@@ -12,6 +12,8 @@ internal sealed class UserEntityConfiguration : IEntityTypeConfiguration<UserEnt
         builder.ConfigureBaseEntity();
         builder.Property(x => x.Account).HasMaxLength(100).IsRequired();
         builder.Property(x => x.Email).HasMaxLength(256).IsRequired();
+        builder.HasIndex(x => x.Account).IsUnique();
+        builder.HasIndex(x => x.Email).IsUnique();
         builder.Property(x => x.NickName).HasMaxLength(100).IsRequired();
         builder.Property(x => x.Salt).HasMaxLength(128).IsRequired();
         builder.Property(x => x.Password).HasMaxLength(256).IsRequired();

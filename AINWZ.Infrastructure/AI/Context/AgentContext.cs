@@ -1,23 +1,26 @@
-﻿namespace SpeakEase.Write.Infrastructure.AI.Context
+using SpeakEase.AI.Lib.OpenAIModel;
+
+namespace SpeakEase.Write.Infrastructure.AI.Context;
+
+public sealed class AgentContext
 {
-    /// <summary>
-    /// Agent 上下文
-    /// </summary>
-    public sealed class AgentContext
-    {
-        /// <summary>
-        /// 历史对话
-        /// </summary>
-        public List<string> HistoryMessage { get; set; }
+    public List<ChatMessage> ConversationHistory { get; set; } = new();
 
-        /// <summary>
-        /// 书籍本身
-        /// </summary>
-        public string ProjectMemory { get; set; }
+    public List<string> HistoryMessage { get; set; } = new();
 
-        /// <summary>
-        /// 单词对话请求Id
-        /// </summary>
-        public string RequestId { get; set; }
-    }
+    public string ProjectMemory { get; set; } = string.Empty;
+
+    public string RequestId { get; set; } = Guid.NewGuid().ToString();
+
+    public string SnapshotId { get; set; } = string.Empty;
+
+    public string UserId { get; set; } = string.Empty;
+
+    public int InputTokenCount { get; set; }
+
+    public int MemoryTokenCount { get; set; }
+
+    public int RecentContextTokenCount { get; set; }
+
+    public bool WasTrimmed { get; set; }
 }

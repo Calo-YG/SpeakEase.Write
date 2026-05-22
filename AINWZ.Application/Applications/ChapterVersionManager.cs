@@ -69,8 +69,8 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         };
 
         _db.ChapterVersions.Add(entity);
-        await EnforceRetentionPolicyAsync(request.ChapterId);
         await _db.SaveChangesAsync();
+        await EnforceRetentionPolicyAsync(request.ChapterId);
 
         _log.LogInformation("章节 {ChapterId} 创建版本 {Version}（来源：{Source}）",
             request.ChapterId, entity.VersionNumber, request.Source);
@@ -153,8 +153,8 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         };
 
         _db.ChapterVersions.Add(rollbackEntity);
-        await EnforceRetentionPolicyAsync(chapterId);
         await _db.SaveChangesAsync();
+        await EnforceRetentionPolicyAsync(chapterId);
 
         _log.LogInformation("章节 {ChapterId} 回滚至版本 {Version}", chapterId, target.VersionNumber);
 
@@ -206,8 +206,8 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         chapter.UpdateBy = _user.UserId;
 
         _db.ChapterVersions.Add(mergeEntity);
-        await EnforceRetentionPolicyAsync(chapterId);
         await _db.SaveChangesAsync();
+        await EnforceRetentionPolicyAsync(chapterId);
 
         _log.LogInformation("章节 {ChapterId} 合并版本 {Version}", chapterId, source.VersionNumber);
 

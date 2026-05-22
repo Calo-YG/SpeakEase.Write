@@ -22,6 +22,8 @@ namespace SpeakEase.Write.Domain.Entities.Memory
         /// </summary>
         public string WorkId { get; set; } = string.Empty;
 
+        public string SessionId { get; set; } = string.Empty;
+
         /// <summary>
         /// 所属章节标识。
         /// </summary>

@@ -1,29 +1,17 @@
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
+using System.Runtime.CompilerServices;
+using System.Text;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
-using SpeakEase.Write.Domain.Entities.AI;
-using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 using SpeakEase.Write.Infrastructure.Exceptions;
-using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
-using System.Runtime.CompilerServices;
 
 namespace SpeakEase.Write.Application.Applications;
 
 public sealed class AgentApplication(
     CreationOrchestrator orchestrator,
-    ICreationSessionManager sessionManager,
-    SpeakEaseDbContext dbContext,
-    IUserContext userContext,
-    ISnowflakeIdGenerator snowflakeIdGenerator,
-    IContextCompressor compressor,
-    ICreationAgentContext creationAgentContext) : IAgentApplication
+    ICreationSessionManager sessionManager) : IAgentApplication
 {
     private readonly CreationOrchestrator _orchestrator = orchestrator;
     private readonly ICreationSessionManager _sessionManager = sessionManager;
@@ -31,32 +19,45 @@ public sealed class AgentApplication(
     public async Task<AgentResponse> ChatAsync(AgentChatRequestDto request, CancellationToken cancellationToken = default)
     {
         ValidateRequest(request);
-        var workId = request.WorkId ?? string.Empty;
-        var (userMessage, history) = ExtractMessages(request.Messages);
 
-        var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
-        string sessionId = sessionResult.Data?.SessionId ?? (await _sessionManager.StartSessionAsync(workId)).Data?.SessionId;
-
+        var workId = request.WorkId.Trim();
+        var userMessage = ExtractLatestUserMessage(request.Messages);
+        var sessionId = await EnsureActiveSessionAsync(workId);
         var contentParts = new List<string>();
+        var errorMessage = string.Empty;
 
         await foreach (var chunk in _orchestrator.ExecuteAsync(
-            workId, userMessage, history, cancellationToken))
+            workId,
+            sessionId,
+            userMessage,
+            request.MaxIterations,
+            request.MaxTokens,
+            request.Temperature,
+            cancellationToken))
         {
             if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                 contentParts.Add(chunk.Content);
+
+            if (chunk.Type == "error" && !string.IsNullOrWhiteSpace(chunk.Content))
+                errorMessage = chunk.Content;
         }
 
-        if (sessionId != null)
-        {
-            var aiContent = string.Join(string.Empty, contentParts);
-            var recordResult = await _sessionManager.RecordTurnAsync(sessionId);
-            var turnNumber = recordResult.Data?.TurnCount ?? 0;
-            await _sessionManager.SaveMessagesAsync(sessionId, turnNumber, userMessage, aiContent);
-        }
+        if (!string.IsNullOrWhiteSpace(errorMessage))
+            BusinessThrow.ThrowException(errorMessage);
+
+        var aiContent = string.Join(string.Empty, contentParts);
+        var appendResult = await _sessionManager.AppendTurnAsync(
+            sessionId,
+            userMessage,
+            aiContent,
+            cancellationToken: cancellationToken);
+
+        if (!appendResult.Successed || appendResult.Data is null)
+            BusinessThrow.ThrowException(appendResult.Message ?? "Failed to record conversation turn.");
 
         return new AgentResponse
         {
-            Content = string.Join(string.Empty, contentParts),
+            Content = aiContent,
             StopReason = "completed"
         };
     }
@@ -67,151 +68,90 @@ public sealed class AgentApplication(
     {
         ValidateRequest(request);
 
-        var workId = request.WorkId ?? string.Empty;
-
-        var (userMessage, history) = ExtractMessages(request.Messages);
-
-        var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
-
-        string sessionId = sessionResult.Data?.SessionId
-                           ?? (await _sessionManager.StartSessionAsync(workId)).Data?.SessionId;
-
-        var accumulatedContent = new System.Text.StringBuilder();
-
+        var workId = request.WorkId.Trim();
+        var userMessage = ExtractLatestUserMessage(request.Messages);
+        var sessionId = await EnsureActiveSessionAsync(workId);
+        var accumulatedContent = new StringBuilder();
         var toolResults = new List<(string ToolName, bool Success, string Content)>();
+        var hadError = false;
 
         await foreach (var chunk in _orchestrator.ExecuteAsync(
-            workId, userMessage, history, cancellationToken))
+            workId,
+            sessionId,
+            userMessage,
+            request.MaxIterations,
+            request.MaxTokens,
+            request.Temperature,
+            cancellationToken))
         {
             if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                 accumulatedContent.Append(chunk.Content);
 
-            if (chunk.Type == "tool_result" && chunk.ToolResult is { } tr)
+            if (chunk.Type == "error")
+                hadError = true;
+
+            if (chunk.Type == "tool_result" && chunk.ToolResult is { } result)
             {
-                var truncated = tr.Content?.Length > 500
-                    ? tr.Content[..500]
-                    : tr.Content ?? string.Empty;
-                toolResults.Add((tr.ToolName ?? "tool", tr.Success, truncated));
+                var truncated = result.Content?.Length > 500
+                    ? result.Content[..500]
+                    : result.Content ?? string.Empty;
+
+                toolResults.Add((result.ToolName ?? "tool", result.Success, truncated));
             }
 
             yield return chunk;
         }
 
-        if (sessionId != null)
-        {
-            var aiContent = accumulatedContent.ToString();
+        if (hadError)
+            yield break;
 
-            var recordResult = await _sessionManager.RecordTurnAsync(sessionId);
+        var appendResult = await _sessionManager.AppendTurnAsync(
+            sessionId,
+            userMessage,
+            accumulatedContent.ToString(),
+            toolResults.Count > 0 ? toolResults : null,
+            cancellationToken);
 
-            var turnNumber = recordResult.Data?.TurnCount ?? 0;
+        if (!appendResult.Successed || appendResult.Data is null)
+            BusinessThrow.ThrowException(appendResult.Message ?? "Failed to record conversation turn.");
+    }
 
-            await _sessionManager.SaveMessagesAsync(
-                sessionId, turnNumber, userMessage, aiContent,
-                toolResults.Count > 0 ? toolResults : null);
-        }
+    private async Task<string> EnsureActiveSessionAsync(string workId)
+    {
+        var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
+        if (sessionResult.Successed && !string.IsNullOrWhiteSpace(sessionResult.Data?.SessionId))
+            return sessionResult.Data.SessionId;
+
+        var startResult = await _sessionManager.StartSessionAsync(workId);
+        if (!startResult.Successed || string.IsNullOrWhiteSpace(startResult.Data?.SessionId))
+            BusinessThrow.ThrowException(startResult.Message ?? "Unable to create an AI creation session.");
+
+        return startResult.Data.SessionId;
     }
 
     private static void ValidateRequest(AgentChatRequestDto request)
     {
+        if (request is null)
+            BusinessThrow.ThrowException("Request cannot be empty.");
+
+        if (string.IsNullOrWhiteSpace(request.WorkId))
+            BusinessThrow.ThrowException("WorkId cannot be empty.");
+
         if (request.Messages == null || request.Messages.Count == 0)
-            BusinessThrow.ThrowException("消息列表不能为空。");
+            BusinessThrow.ThrowException("Messages cannot be empty.");
+
+        if (!request.Messages.Any(m => m.Role == "user" && !string.IsNullOrWhiteSpace(m.Content)))
+            BusinessThrow.ThrowException("User message cannot be empty.");
     }
 
-    private static (string userMessage, List<ChatMessage> history) ExtractMessages(
-        List<AgentChatMessage> messages)
+    private static string ExtractLatestUserMessage(List<AgentChatMessage> messages)
     {
         if (messages == null || messages.Count == 0)
-            return (string.Empty, new List<ChatMessage>());
+            return string.Empty;
 
         var lastUserIndex = messages.FindLastIndex(m => m.Role == "user");
-        var history = new List<ChatMessage>();
-        for (int i = 0; i < lastUserIndex; i++)
-        {
-            var m = messages[i];
-            if (m.Role == "user")
-                history.Add(ChatMessage.User(m.Content));
-            else if (m.Role == "assistant")
-                history.Add(ChatMessage.Assistant(m.Content));
-        }
-
-        var lastUserMsg = string.Empty;
-        if (lastUserIndex >= 0)
-            lastUserMsg = messages[lastUserIndex].Content;
-
-        return (lastUserMsg, history);
-    }
-
-    /// <summary>
-    /// V2 版本 AI写的有的垃圾
-    /// </summary>
-    /// <param name="req"></param>
-    /// <param name="cancellationToken"></param>
-    /// <returns></returns>
-    public async IAsyncEnumerable<AgentStreamChunk> StreamChateV2Async(ReqAgentChat req, [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        if (string.IsNullOrEmpty(req.Message))
-        {
-             BusinessThrow.ThrowException("请输入对话消息");
-        }
-
-        if (string.IsNullOrEmpty(req.WorkId))
-        {
-            BusinessThrow.ThrowException("请携带WorkId");
-        }
-
-        var user = userContext;
-
-        var session = dbContext.AICreationSessions.AsNoTracking().FirstOrDefault(p=>p.WorkId == req.WorkId && p.Status == "active");
-
-        session ??= new AICreationSessionEntity
-        {
-            Id = snowflakeIdGenerator.NextIdString(),
-            WorkId = req.WorkId,
-            UserId = userContext.UserId,
-            CreateBy = userContext.UserId,
-            CreateAt = DateTime.Now,
-        };
-
-        var sessionId = session.Id;
-
-        var toolResults = new List<(string ToolName, bool Success, string Content)>();
-
-        var accumulatedContent = new System.Text.StringBuilder();
-
-        var lastMessages = await dbContext.AICreationMessages
-            .Where(p => p.SessionId == sessionId && p.Role != "tool")
-            .OrderByDescending(p => p.CreateAt)
-            .Take(20)
-            .ToListAsync(cancellationToken);
-
-        //从memroyProvider 中获取历史消息
-        List<ChatMessage> history = [];
-
-
-        await foreach (var chunk in _orchestrator.ExecuteAsync(req.WorkId, req.Message, history, cancellationToken))
-        {
-            if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
-                accumulatedContent.Append(chunk.Content);
-
-            if (chunk.Type == "tool_result" && chunk.ToolResult is { } tr)
-            {
-                var truncated = tr.Content?.Length > 500
-                    ? tr.Content[..500]
-                    : tr.Content ?? string.Empty;
-                toolResults.Add((tr.ToolName ?? "tool", tr.Success, truncated));
-            }
-
-            yield return chunk;
-        }
-
-        var aiContent = accumulatedContent.ToString();
-
-        session.TurnCount++;
-
-        await dbContext.AICreationSessions.ExecuteUpdateAsync(p=>p.SetProperty(s => s.TurnCount, session.TurnCount));
-
-        await _sessionManager.SaveMessagesAsync(
-            sessionId, session.TurnCount, req.Message, aiContent,
-            toolResults.Count > 0 ? toolResults : null);
+        return lastUserIndex >= 0
+            ? messages[lastUserIndex].Content
+            : string.Empty;
     }
 }

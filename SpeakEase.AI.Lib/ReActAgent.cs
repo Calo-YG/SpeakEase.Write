@@ -117,6 +117,18 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
             // 累加 usage
             AccumulateUsage(totalUsage, turnResult.Usage);
 
+            if (!turnResult.Success)
+            {
+                return new AgentResponse
+                {
+                    Content = string.Empty,
+                    Model = turnResult.Model ?? request.Model,
+                    Iterations = iteration + 1,
+                    StopReason = "llm_error",
+                    TotalUsage = totalUsage
+                };
+            }
+
             if (turnResult.HasToolCalls)
             {
                 // 追加 AssistantMessage（含 tool_calls）
@@ -224,6 +236,28 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
 
             if (turnResult is null)
                 continue;
+
+            if (!turnResult.Success)
+            {
+                var errorMessage = string.IsNullOrWhiteSpace(turnResult.ErrorMessage)
+                    ? "LLM call failed."
+                    : turnResult.ErrorMessage;
+
+                yield return new AgentStreamChunk { Type = "error", Content = errorMessage };
+                yield return new AgentStreamChunk
+                {
+                    Type = "done",
+                    FinalResponse = new AgentResponse
+                    {
+                        Content = string.Empty,
+                        Model = turnResult.Model ?? request.Model,
+                        Iterations = iteration + 1,
+                        StopReason = "llm_error",
+                        TotalUsage = totalUsage
+                    }
+                };
+                yield break;
+            }
 
             if (turnResult.HasToolCalls)
             {

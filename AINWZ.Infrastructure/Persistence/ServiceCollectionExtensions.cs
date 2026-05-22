@@ -19,8 +19,11 @@ public static class ServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddInfrastructurePersistence(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("SpeakEaseWrite")
-            ?? "Host=localhost;Port=7452;Database=ainwz;Username=blog;Password=blog123";
+        var connectionString = configuration.GetConnectionString("SpeakEaseWrite");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("Connection string 'SpeakEaseWrite' is required.");
+        }
 
         services.AddDbContext<SpeakEaseDbContext>(options => options.UseNpgsql(connectionString));
 

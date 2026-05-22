@@ -90,6 +90,6 @@ public static class SessionRoute
         {
             var count = await mgr.ExpireStaleSessionsAsync();
             return Results.Ok(new { expiredCount = count });
-        }).WithName("expire_stale_sessions");
+        }).WithName("expire_stale_sessions").RequireAuthorization("AdminOnly");
     }
 }

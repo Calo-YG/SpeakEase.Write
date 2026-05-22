@@ -391,3 +391,7 @@ FodyWeavers.xsd
 /AINWZ.Infrastructure/Migrations/20260502120256_AddAICreationMessagesTable.cs
 /AINWZ.Infrastructure/Migrations/20260515124458_AddWritingRules.cs
 /AINWZ.Infrastructure/Migrations/20260430145519_InitialCreate.cs
+!/AINWZ.Infrastructure/Migrations/20260502120256_AddAICreationMessagesTable.cs
+!/AINWZ.Infrastructure/Migrations/20260515124458_AddWritingRules.cs
+!/AINWZ.Infrastructure/Migrations/20260430145519_InitialCreate.cs
+/AINWZ/AI创作上下文工程与异步任务架构设计.md

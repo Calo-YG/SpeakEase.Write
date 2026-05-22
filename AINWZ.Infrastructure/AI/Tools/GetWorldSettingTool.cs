@@ -6,6 +6,7 @@ using SpeakEase.AI.Lib.Contract;
 using System.Text.Json.Serialization;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.AI.Lib.OpenAIModel;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 

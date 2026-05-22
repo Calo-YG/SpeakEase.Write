@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;

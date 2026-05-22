@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -12,6 +13,7 @@ namespace SpeakEase.Write.Infrastructure.AI.Tools;
 public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
+
     public static readonly ToolDefinition ToolDefinition = new()
     {
         Type = "function",

@@ -22,6 +22,7 @@ public class CharacterApplication(
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 实体 → 响应DTO映射
     private static CharacterItemResponse ToResponse(CharacterEntity x) => new()
     {
         Id = x.Id,
@@ -39,6 +40,7 @@ public class CharacterApplication(
         Tags = x.Tags
     };
 
+    // 列出作品下所有角色，按创建时间排序
     public async Task<ApiResult<List<CharacterItemResponse>>> ListCharactersAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -53,6 +55,7 @@ public class CharacterApplication(
         return new ApiResult<List<CharacterItemResponse>>(list.Select(ToResponse).ToList());
     }
 
+    // 按ID获取角色详情
     public async Task<ApiResult<CharacterItemResponse>> GetCharacterByIdAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -68,6 +71,7 @@ public class CharacterApplication(
         return new ApiResult<CharacterItemResponse>(ToResponse(entity));
     }
 
+    // 创建角色：填充所有可选字段的默认值（空字符串/空列表）
     public async Task<ApiResult<CharacterItemResponse>> CreateCharacterAsync(string workId, SaveCharacterRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -105,6 +109,7 @@ public class CharacterApplication(
         return new ApiResult<CharacterItemResponse>(ToResponse(entity));
     }
 
+    // 更新角色：部分字段更新，仅覆盖传入的非null字段
     public async Task<ApiResult<CharacterItemResponse>> UpdateCharacterAsync(string workId, string id, SaveCharacterRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -138,6 +143,7 @@ public class CharacterApplication(
         return new ApiResult<CharacterItemResponse>(ToResponse(entity));
     }
 
+    // 删除角色
     public async Task<ApiResult> DeleteCharacterAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

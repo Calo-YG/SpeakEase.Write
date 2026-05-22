@@ -19,9 +19,11 @@ public class ChapterApplication(
     IUserContext userContext,
     ILogger<ChapterApplication> logger) : IChapterApplication
 {
+    // 校验用户是否为作品的拥有者
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 列出作品下所有章节（不含正文内容），按序号排序
     public async Task<ApiResult<List<ChapterItemResponse>>> ListChaptersAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -42,6 +44,7 @@ public class ChapterApplication(
         return new ApiResult<List<ChapterItemResponse>>(list);
     }
 
+    // 获取章节详情，包含正文内容
     public async Task<ApiResult<ChapterDetailResponse>> GetChapterDetailAsync(string workId, string chapterId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -65,6 +68,7 @@ public class ChapterApplication(
         return new ApiResult<ChapterDetailResponse>(chapter);
     }
 
+    // 创建新章节：序号默认为当前最大序号+1，状态初始为draft
     public async Task<ApiResult<ChapterDetailResponse>> CreateChapterAsync(string workId, CreateChapterRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -105,6 +109,8 @@ public class ChapterApplication(
         });
     }
 
+    // 更新章节：若传入Content则同步更新字数统计和最后保存时间
+    // 使用数据库事务保证章节保存和作品总字数更新原子性
     public async Task<ApiResult<ChapterDetailResponse>> UpdateChapterAsync(string workId, string chapterId, UpdateChapterRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -165,6 +171,7 @@ public class ChapterApplication(
         });
     }
 
+    // 删除章节：使用事务保证章节删除和作品总字数回算原子完成
     public async Task<ApiResult> DeleteChapterAsync(string workId, string chapterId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

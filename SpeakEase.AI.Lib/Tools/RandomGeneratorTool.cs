@@ -69,6 +69,7 @@ public sealed class RandomGeneratorTool : IToolExecutor
 
         try
         {
+            // 从 JSON arguments 中提取所有可能的参数
             using var doc = JsonDocument.Parse(arguments);
             var root = doc.RootElement;
 
@@ -90,7 +91,7 @@ public sealed class RandomGeneratorTool : IToolExecutor
             if (root.TryGetProperty("items", out var itemsProp) && itemsProp.ValueKind == JsonValueKind.Array)
                 items = itemsProp.EnumerateArray().Select(i => i.GetString() ?? "").ToList();
         }
-        catch { /* 忽略 */ }
+        catch { /* 忽略 JSON 解析错误 */ }
 
         if (string.IsNullOrEmpty(mode))
         {
@@ -107,6 +108,7 @@ public sealed class RandomGeneratorTool : IToolExecutor
 
         try
         {
+            // 根据 mode 参数执行不同的随机生成策略
             resultObj = mode switch
             {
                 "integer" => new { mode, value = random.Next(min, max + 1), min, max },

@@ -10,6 +10,7 @@ using SpeakEase.AI.Lib.OpenAIModel;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 世界观设定查询工具：查询世界观设定，支持按分区 world_rules/geography/factions/history 筛选
 public sealed class GetWorldSettingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

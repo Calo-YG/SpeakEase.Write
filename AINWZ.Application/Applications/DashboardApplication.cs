@@ -7,13 +7,12 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
-/// <summary>
-/// 仪表板应用服务实现。
-/// </summary>
+// 仪表板应用服务：聚合用户的创作统计数据（总字数、作品数、创作天数、AI调用次数）
 public class DashboardApplication(
     SpeakEaseDbContext dbContext,
     IUserContext userContext) : IDashboardApplication
 {
+    // 获取仪表板统计数据：汇总当前用户的所有作品信息
     public async Task<ApiResult<DashboardStatsResponse>> GetStatsAsync(CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -31,6 +30,7 @@ public class DashboardApplication(
             ? (int)(DateTime.Now - works.Min(x => x.CreateAt)).TotalDays + 1
             : 0;
 
+        // 统计用户所有AI调用次数（不分类型）
         var aiCallCount = await dbContext.LlmCallLogs.AsNoTracking()
             .Where(x => x.OwnerId == userId)
             .CountAsync(cancellationToken);
@@ -44,6 +44,7 @@ public class DashboardApplication(
         });
     }
 
+    // 获取最近更新的作品列表，按更新时间倒序取前N条
     public async Task<ApiResult<List<RecentWorkItemResponse>>> GetRecentWorksAsync(int limit, CancellationToken cancellationToken = default)
     {
         if (limit <= 0) limit = 5;

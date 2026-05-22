@@ -8,21 +8,23 @@ using SpeakEase.Write.Infrastructure.AI.Contract;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
+// Agent基类，封装ReAct推理-行动循环的通用逻辑，所有小说创作Agent均继承此类
 public abstract class AgentBase(
     IChatCompatible llm,
     IToolCapable tools,
     ILogger logger) : INovelAgent
 {
-    protected readonly IChatCompatible Llm = llm;
-    protected readonly IToolCapable Tools = tools;
-    protected readonly ILogger Logger = logger;
+    protected readonly IChatCompatible Llm = llm; // LLM客户端，用于与AI模型通信
+    protected readonly IToolCapable Tools = tools; // 工具执行器，用于调用Agent定义的工具
+    protected readonly ILogger Logger = logger; // 日志记录器
 
-    private bool _toolsRegistered;
+    private bool _toolsRegistered; // 标记工具是否已注册，避免重复注册
 
-    public abstract string Name { get; }
-    public abstract string DisplayName { get; }
-    public abstract string BuildPrompt();
+    public abstract string Name { get; } // Agent唯一标识名称
+    public abstract string DisplayName { get; } // Agent显示名称
+    public abstract string BuildPrompt(); // 构建Agent的系统提示词
 
+    // Agent元数据：内容类型、是否需要项目记忆、是否过滤历史、默认LLM参数
     public virtual AgentMetadata Metadata => new()
     {
         ContentType = "plain",
@@ -31,8 +33,9 @@ public abstract class AgentBase(
         DefaultParameters = AgentParameters.Default
     };
 
-    public virtual string RouteDescription => DisplayName;
+    public virtual string RouteDescription => DisplayName; // Agent功能描述，用于路由匹配
 
+    // 注册Agent所需的工具定义，仅执行一次（幂等操作）
     public virtual void RegisterTools(IToolCapable toolCapable)
     {
         if (_toolsRegistered) return;
@@ -41,12 +44,16 @@ public abstract class AgentBase(
         _toolsRegistered = true;
     }
 
+    // 获取该Agent需要的工具定义列表，由子类覆写
     protected abstract IEnumerable<ToolDefinition> GetToolDefinitions();
 
+    // 核心方法：流式执行ReAct推理-行动循环
+    // 循环内依次执行：LLM推理 → 解析工具调用 → 执行工具 → 将结果反馈给LLM，直到无工具调用或达到最大迭代次数
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteStreamAsync(
         AgentRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        // 参数校验：确保SystemPrompt/UserMessage至少有一个，MaxIterations在1-50之间
         var validationError = ValidateRequest(request);
         if (validationError != null)
         {
@@ -63,10 +70,12 @@ public abstract class AgentBase(
             yield break;
         }
 
+        // 注册工具并构建初始消息列表
         RegisterTools(Tools);
 
         var messages = BuildMessages(request);
 
+        // 构建LLM调用上下文（温度、TopP、频率惩罚等参数）
         var ctx = new LLMTurnContext
         {
             Model = request.Model,
@@ -81,6 +90,7 @@ public abstract class AgentBase(
         Logger.LogInformation("[{Agent}] 开始执行, model={Model}, maxIter={MaxIter}, msgCount={MsgCount}",
             Name, request.Model, request.MaxIterations, messages.Count);
 
+        // ReAct主循环：最多迭代MaxIterations次
         for (var i = 0; i < request.MaxIterations; i++)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -92,6 +102,7 @@ public abstract class AgentBase(
             var iterStopwatch = Stopwatch.StartNew();
             LLMTurnResult turnResult = null;
 
+            // 流式调用LLM，逐块接收content/reasoning/tool_call/done事件
             await foreach (var tc in Llm.StreamAsync(ctx, messages, Tools.Tools, cancellationToken))
             {
                 switch (tc.Type)
@@ -117,6 +128,7 @@ public abstract class AgentBase(
                 continue;
             }
 
+            // LLM调用失败：返回错误信息并终止执行
             if (!turnResult.Success)
             {
                 var errorMessage = string.IsNullOrWhiteSpace(turnResult.ErrorMessage)
@@ -139,11 +151,13 @@ public abstract class AgentBase(
                 yield break;
             }
 
+            // LLM返回了工具调用：将Assistant消息加入上下文，依次执行工具并反馈结果
             if (turnResult.HasToolCalls)
             {
                 Logger.LogDebug("[{Agent}] 迭代 {Iter} 调用 {ToolCount} 个工具, elapsed={Elapsed}ms",
                     Name, i + 1, turnResult.ToolCalls.Count, iterStopwatch.ElapsedMilliseconds);
 
+                // 将带工具调用的Assistant消息加入对话历史
                 messages.Add(new AssistantMessage
                 {
                     Content = turnResult.Content ?? string.Empty,
@@ -169,11 +183,13 @@ public abstract class AgentBase(
                         Name, toolName, tr.Success, toolStopwatch.ElapsedMilliseconds);
 
                     yield return new AgentStreamChunk { Type = "tool_result", ToolResult = tr };
+                    // 将工具执行结果（Tool消息）加入对话历史，供LLM下一轮迭代参考
                     messages.Add(ChatMessage.Tool(tc.Id, tr.Content ?? string.Empty));
                 }
             }
             else
             {
+                // LLM不再调用工具，认为任务已完成：返回最终文本内容
                 Logger.LogInformation("[{Agent}] 迭代 {Iter} 完成, elapsed={Elapsed}ms, reason=无工具调用,结束循环",
                     Name, i + 1, iterStopwatch.ElapsedMilliseconds);
 
@@ -195,6 +211,7 @@ public abstract class AgentBase(
             }
         }
 
+        // 循环耗尽：达到最大迭代次数仍未完成任务
         Logger.LogWarning("[{Agent}] 达到最大迭代次数 {MaxIter}, elapsed={Elapsed}ms", Name, request.MaxIterations, agentStopwatch.ElapsedMilliseconds);
 
         yield return new AgentStreamChunk
@@ -210,6 +227,7 @@ public abstract class AgentBase(
         };
     }
 
+    // 校验请求参数：确保提示词非空、迭代次数在合理范围(1-50)
     private static string ValidateRequest(AgentRequest req)
     {
         if (string.IsNullOrWhiteSpace(req.SystemPrompt) && string.IsNullOrWhiteSpace(req.UserMessage))
@@ -224,6 +242,7 @@ public abstract class AgentBase(
         return null;
     }
 
+    // 构建发送给LLM的完整消息列表：SystemPrompt → 对话历史 → UserMessage
     private static List<ChatMessage> BuildMessages(AgentRequest req)
     {
         var msgs = new List<ChatMessage>();

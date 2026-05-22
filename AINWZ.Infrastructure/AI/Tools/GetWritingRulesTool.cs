@@ -8,6 +8,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 写作规则查询工具：获取作品的写作规则与约束要求，续写时必须遵守
 public sealed class GetWritingRulesTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

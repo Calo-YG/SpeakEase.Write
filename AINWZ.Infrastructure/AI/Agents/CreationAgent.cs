@@ -7,6 +7,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
+// 创作Agent：负责角色设计、角色信息更新、人物关系建立、角色成长线规划
+// 核心能力：创建有深度有层次的角色，确保角色与世界观和情节逻辑自洽
 public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogger<CreationAgent> logger)
     : AgentBase(llm, tools, logger), ICreationAgent
 {
@@ -14,8 +16,9 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
 
     public override string DisplayName => "创作Agent";
 
-    public string CreationDomain => "角色设计与创意生成";
+    public string CreationDomain => "角色设计与创意生成"; // 创作领域标识
 
+    // Agent元数据：内容类型为角色，LLM参数偏保守(0.7温度)，大MaxTokens支持完整角色档案输出
     public override AgentMetadata Metadata => new()
     {
         ContentType = "character",
@@ -24,6 +27,8 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
 
     public override string RouteDescription => "创建角色/人物设计/创意灵感";
 
+    // 构建创作Agent的系统提示词：包含角色定义、ReAct工作模式、三种流程（创建/修改扩展/创意生成）、
+    // 角色设计九大原则、输出要求
     public override string BuildPrompt()
     {
         return """
@@ -126,6 +131,7 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
 """;
     }
 
+    // 注册创作Agent所需的工具：作品信息、角色、世界观、关系、角色图谱、成长线、力量体系、世界法则等
     protected override IEnumerable<ToolDefinition> GetToolDefinitions()
     {
         yield return GetWorkInfoTool.ToolDefinition;

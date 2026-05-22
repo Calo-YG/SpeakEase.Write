@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 角色关系查询工具：按角色名称查询其完整的人际关系网络，返回关联角色名、关系类型和强度
 public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

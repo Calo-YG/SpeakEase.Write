@@ -3,7 +3,8 @@ using SpeakEase.AI.Lib.OpenAIModel;
 namespace SpeakEase.AI.Lib.Models;
 
 /// <summary>
-/// 流式单轮交互增量片段
+/// 流式单轮交互增量片段。
+/// LLM 策略（如 OpenAICompatible）通过此类型将每次 SSE 增量数据转发给 ReActAgent。
 /// </summary>
 public sealed class LLMTurnChunk
 {

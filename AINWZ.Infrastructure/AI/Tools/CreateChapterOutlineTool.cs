@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 章节大纲创建工具：创建/更新章节大纲，自动计算章节序号，新卷时自动创建卷
 public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

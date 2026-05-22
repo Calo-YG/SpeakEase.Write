@@ -6,6 +6,8 @@ using SpeakEase.Write.Infrastructure.AI.Contract;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
+// 文风审查Agent：专精于识别和消除"AI生成文本"的痕迹，逐段审查写作文本
+// 核心能力：按五个维度（用词/心理/对话/环境/句式）扫描AI味问题，输出结构化审查报告
 public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogger<CritiqueAgent> logger)
     : AgentBase(llm, tools, logger), ICritiqueAgent
 {
@@ -13,6 +15,7 @@ public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogg
 
     public override string DisplayName => "文风审查Agent";
 
+    // Agent元数据：内容类型为文风审查，低温度(0.3)确保评估稳定，频率惩罚和存在惩罚为0避免重复检测误判
     public override AgentMetadata Metadata => new()
     {
         ContentType = "critique",
@@ -21,6 +24,8 @@ public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogg
 
     public override string RouteDescription => "检查文风AI味/让文字更自然更像人写";
 
+    // 构建文风审查Agent的系统提示词：包含角色定义、五轮审查流程（用词→心理→对话→环境→句式）、
+    // 五大维度汇总参考、结构化输出格式
     public override string BuildPrompt()
     {
         return """
@@ -131,6 +136,7 @@ public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogg
 """;
     }
 
+    // 文风审查Agent不注册任何工具——仅审查文本，无需查询数据库或执行写操作
     protected override IEnumerable<ToolDefinition> GetToolDefinitions()
     {
         yield break;

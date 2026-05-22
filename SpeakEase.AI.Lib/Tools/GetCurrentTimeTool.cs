@@ -39,6 +39,7 @@ public sealed class GetCurrentTimeTool : IToolExecutor
         string timezoneId = null;
         try
         {
+            // 从 JSON arguments 中提取 timezone 参数（可选）
             using var doc = JsonDocument.Parse(arguments);
             if (doc.RootElement.TryGetProperty("timezone", out var prop))
                 timezoneId = prop.GetString();
@@ -47,12 +48,14 @@ public sealed class GetCurrentTimeTool : IToolExecutor
 
         try
         {
+            // 获取指定时区或本地时区
             var zone = !string.IsNullOrEmpty(timezoneId)
                 ? TimeZoneInfo.FindSystemTimeZoneById(timezoneId)
                 : TimeZoneInfo.Local;
 
             var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, zone).DateTime;
 
+            // 返回多种格式的时间信息
             var result = JsonSerializer.Serialize(new
             {
                 iso8601 = now.ToString("o"),

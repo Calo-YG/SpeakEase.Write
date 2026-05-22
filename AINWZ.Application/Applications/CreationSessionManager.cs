@@ -11,6 +11,7 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// AI 创作会话管理器：管理创作会话的生命周期（创建、对话轮次、归档、暂停/恢复、回滚）
 public class CreationSessionManager(
     SpeakEaseDbContext db,
     ILogger<CreationSessionManager> logger,
@@ -18,10 +19,13 @@ public class CreationSessionManager(
     IMemoryProvider memory,
     ISnowflakeIdGenerator snowflakeIdGenerator) : ICreationSessionManager
 {
+    // 每 N 轮对话触发一次归档检查
     private const int MaxTurnsBeforeArchive = 10;
 
+    // 会话过期时间，超时后自动标记为 expired
     private static readonly TimeSpan SessionExpiration = TimeSpan.FromHours(24);
 
+    // 为指定作品启动新的创作会话，同时关闭该作品上已有的活跃会话
     public async Task<ApiResult<CreationSessionDto>> StartSessionAsync(string workId)
     {
         var userId = userContext.UserId;
@@ -54,6 +58,7 @@ public class CreationSessionManager(
         return MapToResult(entity);
     }
 
+    // 记录一轮对话（轮次+1），达到归档阈值时自动归档并返回新会话
     public async Task<ApiResult<CreationSessionDto>> RecordTurnAsync(string sessionId)
     {
         var userId = userContext.UserId;
@@ -83,6 +88,7 @@ public class CreationSessionManager(
         return MapToResult(session);
     }
 
+    // 追加一轮完整对话（用户消息 + AI 消息 + 工具调用结果），在事务中原子完成
     public async Task<ApiResult<CreationSessionDto>> AppendTurnAsync(
         string sessionId,
         string userMessage,
@@ -133,6 +139,7 @@ public class CreationSessionManager(
         return MapToResult(session);
     }
 
+    // 当轮次达到 MaxTurnsBeforeArchive * 2 时归档当前会话并创建新的活跃会话
     private async Task<bool> PerformArchiveAsync(AICreationSessionEntity currentSession, string userId)
     {
         if (currentSession.TurnCount >= MaxTurnsBeforeArchive * 2)
@@ -172,6 +179,7 @@ public class CreationSessionManager(
             : MapToResult(newSession);
     }
 
+    // 采纳 AI 生成的内容：将当前轮次的内容追加到已采纳列表中
     public async Task<ApiResult> AdoptContentAsync(string sessionId, AdoptContentRequest request)
     {
         var userId = userContext.UserId;
@@ -197,6 +205,7 @@ public class CreationSessionManager(
         return new ApiResult(true);
     }
 
+    // 暂停会话：将状态从 active 改为 paused
     public async Task<ApiResult<CreationSessionDto>> PauseSessionAsync(string sessionId)
     {
         var userId = userContext.UserId;
@@ -215,6 +224,7 @@ public class CreationSessionManager(
         return MapToResult(session);
     }
 
+    // 取消会话并清除已采纳内容，同时使该会话的内存缓存失效
     public async Task<ApiResult> CancelSessionAsync(string sessionId)
     {
         var userId = userContext.UserId;
@@ -235,6 +245,7 @@ public class CreationSessionManager(
         return new ApiResult(true);
     }
 
+    // 恢复暂停的会话：将状态从 paused 改为 active 并刷新过期时间
     public async Task<ApiResult<CreationSessionDto>> ResumeSessionAsync(string sessionId)
     {
         var userId = userContext.UserId;
@@ -254,6 +265,7 @@ public class CreationSessionManager(
         return MapToResult(session);
     }
 
+    // 回滚到指定轮次：删除 targetTurn 之后的所有消息和已采纳内容
     public async Task<ApiResult> RollbackToTurnAsync(string sessionId, int targetTurn)
     {
         var userId = userContext.UserId;
@@ -284,6 +296,7 @@ public class CreationSessionManager(
         return new ApiResult(true);
     }
 
+    // 获取作品当前活跃会话（status = active 且最近活跃的）
     public async Task<ApiResult<CreationSessionDto>> GetActiveSessionAsync(string workId)
     {
         var userId = userContext.UserId;
@@ -307,6 +320,7 @@ public class CreationSessionManager(
             : MapToResult(session);
     }
 
+    // 列出作品下所有创作会话，按开始时间倒序
     public async Task<ApiResult<List<CreationSessionDto>>> ListSessionsAsync(string workId)
     {
         var userId = userContext.UserId;
@@ -339,6 +353,7 @@ public class CreationSessionManager(
         return new ApiResult<List<CreationSessionDto>>(sessions);
     }
 
+    // 批量过期处理：将超时的活跃会话标记为 expired，返回影响行数
     public async Task<int> ExpireStaleSessionsAsync()
     {
         return await db.AICreationSessions
@@ -349,12 +364,14 @@ public class CreationSessionManager(
                 .SetProperty(x => x.LastActivityAt, DateTime.Now));
     }
 
+    // 保存一轮对话消息记录（用户消息 + 工具结果 + AI 回复）
     public async Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)> toolResults = null)
     {
         db.AICreationMessages.AddRange(BuildTurnMessages(sessionId, turnNumber, userMessage, aiMessage, toolResults));
         await db.SaveChangesAsync();
     }
 
+    // 构建一轮对话的消息实体列表：user → tool(s) → assistant
     private List<AICreationMessageEntity> BuildTurnMessages(
         string sessionId,
         int turnNumber,
@@ -407,6 +424,7 @@ public class CreationSessionManager(
         return messages;
     }
 
+    // 获取会话的消息历史，支持限制返回条数（默认 200，最大 200）
     public async Task<ApiResult<List<SessionMessageResponse>>> GetSessionMessagesAsync(string sessionId, int? limit = null)
     {
         var userId = userContext.UserId;
@@ -422,6 +440,7 @@ public class CreationSessionManager(
         if (!ownsSession)
             return new ApiResult<List<SessionMessageResponse>>("会话不存在或无权访问。", 404);
 
+        // 限制单次查询最多 200 条消息，防止大数据量查询
         var take = limit.HasValue
             ? Math.Clamp(limit.Value, 1, 200)
             : 200;
@@ -448,6 +467,7 @@ public class CreationSessionManager(
         return new ApiResult<List<SessionMessageResponse>>(result);
     }
 
+    // 通过会话 ID 获取会话实体，同时校验归属权
     private async Task<AICreationSessionEntity> GetOwnedSessionAsync(string sessionId, string userId)
     {
         var session = await db.AICreationSessions.FindAsync(sessionId);
@@ -462,6 +482,7 @@ public class CreationSessionManager(
             .AnyAsync(x => x.Id == workId && x.UserId == userId);
     }
 
+    // 使用 ExecuteUpdateAsync 批量关闭作品下的活跃会话（不加载到内存）
     private async Task CloseActiveSessionForWorkAsync(string workId, string userId, string status, string reason)
     {
         await db.AICreationSessions
@@ -472,12 +493,14 @@ public class CreationSessionManager(
                 .SetProperty(x => x.LastActivityAt, DateTime.Now));
     }
 
+    // 反序列化已采纳内容 JSON，失败时返回空列表
     private static List<AdoptedItem> DeserializeAdopted(string json)
     {
         if (string.IsNullOrWhiteSpace(json)) return new List<AdoptedItem>();
         return JsonHelper.Deserialize<List<AdoptedItem>>(json) ?? new List<AdoptedItem>();
     }
 
+    // 将会话实体映射为响应 DTO
     private static ApiResult<CreationSessionDto> MapToResult(AICreationSessionEntity entity)
     {
         return new ApiResult<CreationSessionDto>(new CreationSessionDto

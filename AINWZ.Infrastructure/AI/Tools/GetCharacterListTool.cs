@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 角色列表查询工具：返回作品所有角色的名称、ID、身份和性格概要，不返回详细背景
 public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

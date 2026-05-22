@@ -8,6 +8,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 世界设定搜索工具：按关键词在世界设定的摘要和JSON内容中搜索匹配项
 public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

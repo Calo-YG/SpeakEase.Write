@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 角色详情查询工具：按姓名模糊匹配查询角色完整设定（人物关系、背景、性格等）
 public sealed class GetCharacterTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

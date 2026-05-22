@@ -7,6 +7,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
+// 写作Agent：负责章节正文的创作、续写、润色和扩写
+// 核心能力：文学性创作，严格遵循已有设定，管理伏笔埋设与回收、时间线维护
 public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<WriteAgent> logger)
     : AgentBase(llm, tools, logger), IWriteAgent
 {
@@ -14,8 +16,9 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override string DisplayName => "写作Agent";
 
-    public string WritingStyle => "文学性创作";
+    public string WritingStyle => "文学性创作"; // 写作风格标识
 
+    // Agent元数据：内容类型为章节，需要过滤历史消息，默认高温度(0.9)以增强创造性
     public override AgentMetadata Metadata => new()
     {
         ContentType = "chapter",
@@ -25,6 +28,8 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override string RouteDescription => "写作/续写/润色/扩写章节正文";
 
+    // 构建写作Agent的系统提示词：包含角色定义、ReAct工作模式、四项讲故事原则、
+    // 四项写作原则、三条核心心法、文风规范（环境/心理/对话/句式/用词）、写作法典正反例对照
     public override string BuildPrompt()
     {
         return """
@@ -343,6 +348,7 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 """;
     }
 
+    // 注册写作Agent所需的全部工具：作品信息、世界观、大纲、角色、章节、伏笔、时间线、写作规则等
     protected override IEnumerable<ToolDefinition> GetToolDefinitions()
     {
         yield return GetWorkInfoTool.ToolDefinition;

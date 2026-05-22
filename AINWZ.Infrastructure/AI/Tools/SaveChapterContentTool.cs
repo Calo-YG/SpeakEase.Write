@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 章节正文保存工具：保存/更新章节正文内容，章节不存在时自动创建（同时自动创建缺少的卷），写完后自动重算全文字数
 public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

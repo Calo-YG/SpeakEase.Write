@@ -2,6 +2,10 @@ using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
+    /// <summary>
+    /// OpenAI Chat Completion 请求体。
+    /// 对应 POST /v1/chat/completions 的 JSON body，支持工具调用、流式、JSON 模式等参数。
+    /// </summary>
     public class ChatCompletionRequest
     {
         [JsonPropertyName("model")]
@@ -55,6 +59,9 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         public string User { get; set; }
     }
 
+    /// <summary>
+    /// 响应格式配置，支持 text / json_object / json_schema 模式
+    /// </summary>
     public class ResponseFormat
     {
         [JsonPropertyName("type")]
@@ -65,6 +72,9 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         public JsonSchemaDefinition JsonSchema { get; set; }
     }
 
+    /// <summary>
+    /// JSON Schema 定义，用于 Structured Output 模式
+    /// </summary>
     public class JsonSchemaDefinition
     {
         [JsonPropertyName("name")]

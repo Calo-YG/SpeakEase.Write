@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 角色成长弧查询工具：返回角色从出场到当前的所有成长阶段，用于续写时保持角色发展连贯
 public sealed class GetCharacterArcTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

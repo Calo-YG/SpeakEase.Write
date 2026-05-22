@@ -2,6 +2,10 @@ using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
+    /// <summary>
+    /// OpenAI Chat Completion 非流式响应体。
+    /// 对应 POST /v1/chat/completions 的 JSON 返回体，支持工具调用、Usage 统计、错误信息。
+    /// </summary>
     public class ChatCompletionResponse
     {
         [JsonPropertyName("id")]
@@ -31,9 +35,11 @@ namespace SpeakEase.AI.Lib.OpenAIModel
         public ErrorInfo Error { get; set; }
 
         [JsonIgnore]
+        // 便捷属性：判断响应是否包含工具调用
         public bool HasToolCalls => Choices.Count > 0 && (Choices[0].Message?.ToolCalls?.Any() ?? false);
 
         [JsonIgnore]
+        // 便捷属性：获取第一个工具调用（用于单工具调用场景）
         public ToolCall FirstToolCall => Choices.Count > 0 ? Choices[0].Message?.ToolCalls?.FirstOrDefault() : null;
     }
 }

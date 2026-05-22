@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 力量体系创建/更新工具：创建修炼体系/魔法体系等结构化定义，存储等级/能力/资源规则
 public sealed class CreatePowerSystemTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

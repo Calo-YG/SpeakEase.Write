@@ -10,15 +10,18 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 灵感管理应用服务：管理作品关联的灵感/想法记录，支持增删改查和归档
 public class InspirationApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<InspirationApplication> logger) : IInspirationApplication
 {
+    // 校验用户是否为作品的拥有者
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 列出作品下当前用户的所有灵感，按创建时间倒序排列
     public async Task<ApiResult<List<InspirationRecordResponse>>> ListInspirationsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -44,6 +47,7 @@ public class InspirationApplication(
         return new ApiResult<List<InspirationRecordResponse>>(list);
     }
 
+    // 创建灵感：默认类型为idea，归档状态为false
     public async Task<ApiResult<InspirationRecordResponse>> CreateInspirationAsync(string workId, SaveInspirationRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -86,6 +90,7 @@ public class InspirationApplication(
         });
     }
 
+    // 更新灵感：部分字段更新，标题为空时拒绝
     public async Task<ApiResult<InspirationRecordResponse>> UpdateInspirationAsync(string workId, string id, SaveInspirationRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -124,6 +129,7 @@ public class InspirationApplication(
         });
     }
 
+    // 删除灵感记录
     public async Task<ApiResult> DeleteInspirationAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -141,6 +147,7 @@ public class InspirationApplication(
         return new ApiResult(true);
     }
 
+    // 设置灵感的归档状态（true=归档隐藏, false=取消归档）
     public async Task<ApiResult> ArchiveInspirationAsync(string workId, string id, ArchiveInspirationRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

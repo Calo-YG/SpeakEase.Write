@@ -8,6 +8,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 角色更新工具：按 work_id+name 精确匹配角色，至少更新一个字段
 public sealed class UpdateCharacterTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 人物关系创建/更新工具：按角色名称匹配双方角色，自动查找已有关系并更新或新建
 public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

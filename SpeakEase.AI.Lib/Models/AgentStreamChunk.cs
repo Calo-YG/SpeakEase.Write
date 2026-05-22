@@ -3,7 +3,8 @@ using SpeakEase.AI.Lib.OpenAIModel;
 namespace SpeakEase.AI.Lib.Models;
 
 /// <summary>
-/// Agent 流式执行的增量片段
+/// Agent 流式执行的增量片段。
+/// ReActAgent 将 LLMTurnChunk 转换为更上层友好的格式，通过此类型推送。
 /// </summary>
 public sealed class AgentStreamChunk
 {

@@ -66,6 +66,7 @@ namespace SpeakEase.AI.Lib.Tools
             var skillname = string.Empty;
             try
             {
+                // 解析 JSON arguments 中的 path 和 skillName 参数
                 using var doc = JsonDocument.Parse(arguments);
                 var root = doc.RootElement;
 
@@ -89,6 +90,7 @@ namespace SpeakEase.AI.Lib.Tools
                 if (string.IsNullOrEmpty(path))
                     path = $"wwwroot\\skills\\agent-browser-0.2.0\\SKILL.md";
 
+                // 拼接完整物理路径并读取文件内容
                 var skillPath = System.IO.Path.Combine(hostEnvironment.ContentRootPath, path);
 
                 var fileinfo = new FileInfo(skillPath);
@@ -103,11 +105,12 @@ namespace SpeakEase.AI.Lib.Tools
                     };
                 }
 
+                // 以流式方式读取技能文档，避免大文件一次性加载
                 using var fileStream = fileinfo.OpenRead();
 
                 using var reader = new StreamReader(fileStream);
 
-                string content = await reader.ReadToEndAsync();
+                string content = await reader.ReadToEndAsync(cancellationToken);
 
                 return new ToolResult
                 {

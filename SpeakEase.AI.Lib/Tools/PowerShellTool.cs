@@ -103,7 +103,7 @@ public sealed class PowerShellTool : IToolExecutor
     /// <inheritdoc />
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken cancellationToken = default)
     {
-        // 安全防线 1：全局开关
+        // === 安全防线 1：全局开关 ===
         if (!_options.Enabled)
         {
             return new ToolResult
@@ -117,11 +117,12 @@ public sealed class PowerShellTool : IToolExecutor
         string command = null;
         try
         {
+            // 从 JSON arguments 中提取 command 参数
             using var doc = JsonDocument.Parse(arguments);
             if (doc.RootElement.TryGetProperty("command", out var prop))
                 command = prop.GetString();
         }
-        catch { /* 忽略 */ }
+        catch { /* 忽略 JSON 解析错误 */ }
 
         if (string.IsNullOrWhiteSpace(command))
         {
@@ -133,7 +134,8 @@ public sealed class PowerShellTool : IToolExecutor
             };
         }
 
-        // 安全防线 2：黑名单过滤
+        // === 安全防线 2：黑名单过滤 ===
+        // 检查命令是否包含禁止的关键词（忽略大小写），防止危险操作
         var commandUpper = command.ToUpperInvariant();
         foreach (var blocked in _options.Blacklist)
         {
@@ -148,7 +150,7 @@ public sealed class PowerShellTool : IToolExecutor
             }
         }
 
-        // 安全防线 3：白名单过滤（白名单非空时启用）
+        // === 安全防线 3：白名单过滤（白名单非空时启用）===
         if (_options.Whitelist is { Count: > 0 })
         {
             var allowed = _options.Whitelist.Any(w => commandUpper.StartsWith(w.ToUpperInvariant()));
@@ -163,15 +165,16 @@ public sealed class PowerShellTool : IToolExecutor
             }
         }
 
-        // 构造启动参数，安全防线 4：ConstrainedLanguage 只读模式
+        // === 安全防线 4：ConstrainedLanguage 只读模式 + 进程配置 ===
+        // pwsh.exe 的启动参数设置，支持 ConstrainedLanguage 限制模式
         var psi = new ProcessStartInfo
         {
             FileName = "pwsh.exe",
             Arguments = _options.ReadOnlyMode
                 ? $"-NoProfile -NoLogo -Command \"{EscapeForProcessArg(command)}\""
                 : $"-NoProfile -NoLogo -Command \"{EscapeForProcessArg(command)}\"",
-            UseShellExecute = false,
-            CreateNoWindow = true,
+            UseShellExecute = false,   // 使用 CreateProcess 而非 Shell Execute，允许重定向
+            CreateNoWindow = true,      // 不创建窗口
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             StandardOutputEncoding = Encoding.UTF8,
@@ -181,11 +184,12 @@ public sealed class PowerShellTool : IToolExecutor
 
         if (_options.ReadOnlyMode)
         {
-            // 通过环境变量设置 ConstrainedLanguage 模式
+            // 通过环境变量 __PSLockdownPolicy 启用 ConstrainedLanguage 模式
             psi.Environment["__PSLockdownPolicy"] = "1";
         }
 
-        // 安全防线 5：超时控制
+        // === 安全防线 5：超时控制 ===
+        // 创建组合 CancellationToken，命令超时时触发取消
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         cts.CancelAfter(TimeSpan.FromSeconds(_options.TimeoutSeconds));
 
@@ -195,6 +199,7 @@ public sealed class PowerShellTool : IToolExecutor
             process = new Process { StartInfo = psi };
             process.Start();
 
+            // 异步读取 stdout 和 stderr
             var stdoutTask = process.StandardOutput.ReadToEndAsync(cts.Token);
             var stderrTask = process.StandardError.ReadToEndAsync(cts.Token);
 
@@ -203,7 +208,7 @@ public sealed class PowerShellTool : IToolExecutor
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
 
-            // 输出截断
+            // 输出截断：防止超长输出占用过多内存和 Token
             if (_options.MaxOutputLength > 0 && stdout.Length > _options.MaxOutputLength)
                 stdout = stdout[.._options.MaxOutputLength] + $"\n...[已截断，总长度 {stdout.Length}]";
             if (_options.MaxOutputLength > 0 && stderr.Length > _options.MaxOutputLength)
@@ -223,7 +228,7 @@ public sealed class PowerShellTool : IToolExecutor
                 Content = result
             };
         }
-        // 独立捕获超时异常，避免冒泡为 500 错误
+        // 独立捕获超时异常（cts 组合中的超时触发，非外部 cancellationToken 取消）
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             KillProcessSafe(process);

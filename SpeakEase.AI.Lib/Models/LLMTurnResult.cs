@@ -34,10 +34,19 @@ public sealed class LLMTurnResult
 
     public bool Success { get; set; } = true;
 
+    /// <summary>
+    /// 失败时的错误消息
+    /// </summary>
     public string ErrorMessage { get; set; }
 
+    /// <summary>
+    /// LLM 返回的 finish_reason（如 stop、tool_calls、length）
+    /// </summary>
     public string FinishReason { get; set; }
 
+    /// <summary>
+    /// LLM 响应中的请求 ID，用于问题排查
+    /// </summary>
     public string RequestId { get; set; }
 
     /// <summary>

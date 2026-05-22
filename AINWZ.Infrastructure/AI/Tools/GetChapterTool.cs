@@ -8,6 +8,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 章节查询工具：按章节ID查询单个章节的完整信息（标题/正文/摘要/字数），支持内容截断
 public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

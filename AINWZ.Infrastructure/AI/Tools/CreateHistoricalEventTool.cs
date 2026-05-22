@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 世界历史事件创建/更新工具：创建背景历史事件（非故事时间线），如上古大战、王朝更替等
 public sealed class CreateHistoricalEventTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

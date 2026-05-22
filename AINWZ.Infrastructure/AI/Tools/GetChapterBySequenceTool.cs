@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 按序号查询章节工具：根据作品ID和章节序号精确查询章节内容，超长时自动截断
 public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

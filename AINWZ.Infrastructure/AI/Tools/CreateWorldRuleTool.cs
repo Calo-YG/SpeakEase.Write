@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 世界法则创建/更新工具：创建天道法则/世界限制机制，如物理法则/天道规则/魔法法则/社会禁忌
 public sealed class CreateWorldRuleTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

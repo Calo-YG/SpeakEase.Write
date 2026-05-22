@@ -71,9 +71,11 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
     /// </summary>
     public void Init()
     {
+        // 已初始化则跳过，避免重复注册工具和技能
         if (_initialized) return;
         _initialized = true;
 
+        // 注册所有内置工具：Echo、角色名生成、数学计算、时间、PowerShell、随机数、文本分析、技能查找
         toolCapable.RegisterTool(EchoTool.ToolDefinition);
         toolCapable.RegisterTool(CharacterNameGeneratorTool.ToolDefinition);
         toolCapable.RegisterTool(CalculateTool.ToolDefinition);
@@ -82,6 +84,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
         toolCapable.RegisterTool(RandomGeneratorTool.ToolDefinition);
         toolCapable.RegisterTool(TextAnalyzerTool.ToolDefinition);
         toolCapable.RegisterTool(SkillFindTool.ToolDefinition);
+        // 注册内置技能：Agent Browser 无头浏览器自动化
         skilCapable.RegiSkill(new SkillDefinition { Description = "无头浏览器自动化，支持网页导航、点击、输入、截图，内置 PowerShell 执行和网络搜索能力", Name = "Agent Browser", Path = @"wwwroot\skills\agent-browser-0.2.0\SKILL.md" });
     }
 
@@ -92,16 +95,18 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // 初始化累加器和辅助变量
         var totalUsage = new UsageInfo();
         var allToolResults = new List<ToolResult>();
         int iteration = 0;
 
+        // 确保工具和技能已注册
         Init();
 
         // 构建消息列表：SystemPrompt + Skill 摘要 + UserMessage + 历史对话
         var messages = BuildMessages(request);
 
-        // 构建不变上下文
+        // 构建 ReAct 循环内每次迭代不变的 LLM 上下文（模型、温度、最大 Token）
         var turnContext = new LLMTurnContext
         {
             Model = request.Model,
@@ -109,14 +114,17 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
             MaxTokens = request.MaxTokens
         };
 
-        // ReAct 循环
+        // === ReAct 主循环 ===
+        // 每轮迭代：调用 LLM → 检查结果 → 执行工具调用 / 直接回答
         for (; iteration < request.MaxIterations; iteration++)
         {
+            // 调用 LLM 策略执行单轮对话
             var turnResult = await llmStrategy.ChatAsync(turnContext, messages, toolCapable.Tools, cancellationToken);
 
-            // 累加 usage
+            // 累加本轮的 Token 用量到总用量
             AccumulateUsage(totalUsage, turnResult.Usage);
 
+            // LLM 调用失败，返回空结果并标记错误原因
             if (!turnResult.Success)
             {
                 return new AgentResponse
@@ -129,26 +137,29 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
                 };
             }
 
+            // LLM 返回了工具调用请求
             if (turnResult.HasToolCalls)
             {
-                // 追加 AssistantMessage（含 tool_calls）
+                // 将包含 tool_calls 的 Assistant 消息添加到对话历史
                 messages.Add(new AssistantMessage
                 {
                     Content = turnResult.Content ?? string.Empty,
                     ToolCalls = turnResult.ToolCalls
                 });
 
-                // 执行每个工具调用并追加 ToolMessage
+                // 依次执行每个工具调用，并将结果作为 ToolMessage 回填到对话历史
                 foreach (var toolCall in turnResult.ToolCalls)
                 {
                     var toolResult = await toolCapable.ExecuteAsync(toolCall, cancellationToken);
                     allToolResults.Add(toolResult);
+                    // 工具执行结果以 ToolMessage 形式追加，LLM 在下一轮可据此继续推理
                     messages.Add(ChatMessage.Tool(toolCall.Id, toolResult.Content ?? string.Empty));
                 }
+                // 继续下一轮循环，让 LLM 根据工具结果决定下一步
             }
             else
             {
-                // 无 tool_calls，循环结束
+                // LLM 直接给出最终回答，循环结束
                 messages.Add(ChatMessage.Assistant(turnResult.Content));
 
                 return new AgentResponse
@@ -164,7 +175,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
             }
         }
 
-        // 超出最大迭代次数
+        // 超出最大迭代次数仍未得到最终回答
         return new AgentResponse
         {
             Content = string.Empty,
@@ -201,15 +212,19 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
         var allToolResults = new List<ToolResult>();
         int iteration = 0;
 
+        // === ReAct 流式循环 ===
+        // 与非流式逻辑一致，但每轮的结果通过 IAsyncEnumerable 逐块 yield 给调用方
         for (; iteration < request.MaxIterations; iteration++)
         {
             LLMTurnResult turnResult = null;
 
+            // 消费 LLM 流式响应，逐块转发给上层
             await foreach (var turnChunk in llmStrategy.StreamAsync(turnContext, messages, toolCapable.Tools, cancellationToken))
             {
                 switch (turnChunk.Type)
                 {
                     case "content":
+                        // 文本增量：直接转发
                         yield return new AgentStreamChunk
                         {
                             Type = "content",
@@ -218,6 +233,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
                         break;
 
                     case "tool_call":
+                        // 工具调用增量：转发给前端展示
                         yield return new AgentStreamChunk
                         {
                             Type = "tool_call",
@@ -226,17 +242,19 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
                         break;
 
                     case "done":
+                        // 单轮 LLM 交互完成，获取完整结果
                         turnResult = turnChunk.TurnResult;
                         break;
                 }
             }
 
-            // 累加 usage
+            // 累加本轮的 Token 用量
             AccumulateUsage(totalUsage, turnResult?.Usage);
 
             if (turnResult is null)
                 continue;
 
+            // LLM 调用失败，发送错误信息和最终响应
             if (!turnResult.Success)
             {
                 var errorMessage = string.IsNullOrWhiteSpace(turnResult.ErrorMessage)
@@ -259,27 +277,30 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
                 yield break;
             }
 
+            // LLM 返回了工具调用请求
             if (turnResult.HasToolCalls)
             {
-                // 追加 AssistantMessage（含 tool_calls）
+                // 将包含 tool_calls 的 Assistant 消息追加到对话历史
                 messages.Add(new AssistantMessage
                 {
                     Content = turnResult.Content ?? string.Empty,
                     ToolCalls = turnResult.ToolCalls
                 });
 
-                // 执行工具调用
+                // 执行工具调用并实时推送工具结果
                 foreach (var toolCall in turnResult.ToolCalls)
                 {
                     var toolResult = await toolCapable.ExecuteAsync(toolCall, cancellationToken);
                     allToolResults.Add(toolResult);
 
+                    // 流式推送工具执行结果
                     yield return new AgentStreamChunk
                     {
                         Type = "tool_result",
                         ToolResult = toolResult
                     };
 
+                    // 将工具结果追加到对话历史供下一轮 LLM 调用
                     messages.Add(ChatMessage.Tool(toolCall.Id, toolResult.Content ?? string.Empty));
                 }
 
@@ -287,7 +308,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
             }
             else
             {
-                // 无工具调用，流式结束
+                // LLM 直接给出最终回答，流式结束
                 messages.Add(ChatMessage.Assistant(turnResult.Content));
 
                 var finalResponse = new AgentResponse
@@ -335,6 +356,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
     /// </summary>
     private static void AccumulateUsage(UsageInfo total, UsageInfo increment)
     {
+        // 增量为空时跳过（流式场景下 usage 可能为 null）
         if (increment is null) return;
         total.PromptTokens += increment.PromptTokens;
         total.CompletionTokens += increment.CompletionTokens;
@@ -348,7 +370,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
     {
         var messages = new List<ChatMessage>();
 
-        // 合并 SystemPrompt：请求级 + Skill 摘要
+        // 合并 SystemPrompt：请求指定的提示词（或默认）+ Skill 摘要
         var systemPrompt = BuildSystemPrompt(request);
 
         if (!string.IsNullOrEmpty(systemPrompt))
@@ -356,7 +378,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
             messages.Add(ChatMessage.System(systemPrompt));
         }
 
-        // 追加历史对话
+        // 追加历史对话消息（多轮对话上下文）
         if (request.ConversationHistory?.Count > 0)
         {
             messages.AddRange(request.ConversationHistory);
@@ -378,6 +400,7 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
     {
         var sb = new StringBuilder();
 
+        // 优先使用请求指定的 SystemPrompt，否则使用默认的 ReAct 系统提示词
         var systemPrompt = request.SystemPrompt ?? SystemPropmt;
 
         if (string.IsNullOrEmpty(request.SystemPrompt))
@@ -387,10 +410,12 @@ public sealed class ReActAgent(IToolCapable toolCapable, ISkilCapable skilCapabl
 
         sb.Append(systemPrompt);
 
+        // 追加已注册技能摘要，让 LLM 知道可用的技能
         var skillPrompt = skilCapable.BuildSkillPropmt();
 
         if (!string.IsNullOrEmpty(skillPrompt))
         {
+            // 确保技能提示词与系统提示词之间有换行
             if (sb.Length > 0) sb.AppendLine();
 
             sb.Append(skillPrompt);

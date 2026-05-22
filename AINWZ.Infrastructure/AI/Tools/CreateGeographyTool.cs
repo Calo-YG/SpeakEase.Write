@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 地理创建/更新工具：创建大陆/国家/城市等地理条目，支持层级关系（parent_name 指定上级区域）
 public sealed class CreateGeographyTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

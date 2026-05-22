@@ -8,6 +8,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 写作规则保存工具：保存或更新作品的写作规则与约束要求，覆盖已有规则
 public sealed class SaveWritingRulesTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

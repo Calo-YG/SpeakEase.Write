@@ -8,6 +8,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
+// 审核Agent：全面审核作品的设定一致性、伏笔健康度、时间线合理性、角色关系准确性、情节逻辑严密性
+// 核心能力：按七个维度系统化检查，输出结构化审核报告，支持问题严重度分级
 public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<AuditAgent> logger)
     : AgentBase(llm, tools, logger), IAuditAgent
 {
@@ -15,8 +17,9 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override string DisplayName => "审核Agent";
 
-    public string AuditScope { get; set; } = "all";
+    public string AuditScope { get; set; } = "all"; // 审核范围，默认审核全部维度
 
+    // Agent元数据：内容类型为审核报告，低温度(0.2)确保审核结果客观稳定，大MaxTokens支持长报告输出
     public override AgentMetadata Metadata => new()
     {
         ContentType = "audit_report",
@@ -25,6 +28,8 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override string RouteDescription => "检查一致性/审查漏洞/发现矛盾";
 
+    // 构建审核Agent的系统提示词：包含角色定义、七个审核维度（角色/设定/情节/伏笔/时间线/章节/字数进度）、
+    // 审核原则、输出格式要求
     public override string BuildPrompt()
     {
         return """
@@ -137,6 +142,7 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 """;
     }
 
+    // 注册审核Agent所需的工具：作品信息、章节、角色、世界观、大纲、伏笔、时间线、势力、地理、历史事件等
     protected override IEnumerable<ToolDefinition> GetToolDefinitions()
     {
         yield return GetWorkInfoTool.ToolDefinition;

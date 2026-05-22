@@ -2,6 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
+    /// <summary>
+    /// User 消息：用户输入，支持纯文本、ContentPart 数组（图文混合）、图片 URL 等。
+    /// </summary>
     public class UserMessage : ChatMessage
     {
         [JsonIgnore]

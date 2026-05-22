@@ -8,11 +8,13 @@ using SpeakEase.Write.Infrastructure.AI.Contract;
 
 namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 
+// 意图路由器：通过 LLM 将用户输入分类到对应的创作 Agent，支持单 Agent 和管线（pipeline）多 Agent 链式路由
 public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<CreationRouter> logger)
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
     private readonly ILogger<CreationRouter> _logger = logger;
 
+    // 使用 LLM 进行意图分类，返回路由结果（包含 Agent 名称、管线、分类原因）
     public async Task<RouteResult> DecideWithLLMAsync(string userMessage, IEnumerable<INovelAgent> agents, CancellationToken ct = default)
     {
         var agentsList = agents.ToList();
@@ -25,6 +27,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
 
             var llm = scope.ServiceProvider.GetRequiredService<IChatCompatible>();
             var turnContext = new LLMTurnContext { Model = llmContext.Model, Temperature = 0.1 };
+            // 构建意图分类的 system prompt，描述各 Agent 的职责和分类规则
             var systemPrompt = $$"""
 你是一个意图分类器，负责将用户输入精准分类到以下 Agent。根据用户的真实意图和工作性质做出判断：
 
@@ -66,12 +69,14 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
                 ChatMessage.User(userMessage)
             };
 
+            // 调用 LLM 获取分类结果（JSON 格式）
             var result = await llm.ChatAsync(turnContext, messages, null, ct);
             var content = result?.Content ?? "";
 
             using var doc = JsonDocument.Parse(content);
             var root = doc.RootElement;
 
+            // 解析 pipeline 模式：多 Agent 链式执行
             if (root.TryGetProperty("pipeline", out var pipelineProp) && pipelineProp.ValueKind == JsonValueKind.Array)
             {
                 var names = pipelineProp.EnumerateArray()
@@ -80,6 +85,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
                     .Select(x => x.ToLower())
                     .ToList();
 
+                // 验证管线中的 Agent 名称是否有效，去除重复
                 var pipeline = new List<string>();
                 foreach (var n in names)
                 {
@@ -103,6 +109,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
                 }
             }
 
+            // 解析单一 Agent 模式
             if (root.TryGetProperty("agent", out var a))
             {
                 var agentRaw = (a.GetString() ?? "general").ToLower();
@@ -120,6 +127,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
                 }
             }
 
+            // LLM 分类失败时默认回退到 general Agent
             return new RouteResult
             {
                 AgentName = "general",
@@ -131,6 +139,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
         {
             _logger.LogWarning(ex, "LLM意图分类失败，回退到关键词路由");
 
+            // 异常兜底：默认路由到 general Agent
             return new RouteResult
             {
                 AgentName = "general",
@@ -141,6 +150,7 @@ public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<Cr
     }
 }
 
+// 路由结果：包含目标 Agent 名称、内容类型、分类原因、管线列表
 public sealed class RouteResult
 {
     public string AgentName { get; set; } = string.Empty;

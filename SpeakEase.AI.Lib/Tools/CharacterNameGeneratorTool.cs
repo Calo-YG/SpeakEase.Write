@@ -10,6 +10,7 @@ namespace SpeakEase.AI.Lib.Tools;
 /// </summary>
 public sealed class CharacterNameGeneratorTool : IToolExecutor
 {
+    // 中文姓氏（百家姓前108个）
     private static readonly string[] SurnamesCn = ["赵","钱","孙","李","周","吴","郑","王","冯","陈","褚","卫","蒋","沈","韩","杨","朱","秦","许","何","吕","张","曹","谢","邹","苏","潘","葛","范","彭","鲁","韦","马","苗","凤","花","方","俞","任","袁","柳","唐","罗","薛","雷","贺","龙","段","温","顾","孟","黄","穆","萧","尹","姚","邵","湛","汪","祁","毛","禹","狄","米","贝","明","臧","计","成","戴","宋","茅","庞","熊","纪","舒","屈","项","祝","董","梁","杜","阮","蓝","闵","席","季","麻","强","路","童","程","嵇","邢","裴","丁","石","崔","高","龙","万","叶","黎","白","容","向","易","廖","庾","耿","文","庄","晏","司","巩","聂","晁","勾","敖","融","冷","辛","阚","那","简","饶","空","曾","母","沙","乜","养","鞠","须","丰","巢","关","蒯","相","查","后","荆","红","游","竺","权","逯","盖","益","桓","公","濮","扈"];
     private static readonly string[] GivenNamesCnMale = ["伟","强","磊","军","勇","杰","涛","明","超","刚","平","辉","健","俊","波","国","斌","宏","志","宁","兴","良","海","山","仁","鑫","建","文","博","诚","天","翔","飞","鹏","宇","辰","浩","睿","泽","逸"];
     private static readonly string[] GivenNamesCnFemale = ["芳","娜","静","敏","婷","丽","莉","燕","艳","娟","霞","秀","玲","桂","萍","慧","琳","璐","欣","瑶","梦","薇","晴","雪","怡","颖","蕾","洁","茜","媛","诗","雨","萱","彤","菲","月","云","露","霜","冰"];
@@ -57,13 +58,15 @@ public sealed class CharacterNameGeneratorTool : IToolExecutor
 
         try
         {
+            // 解析 JSON arguments 中的 style 和 count 参数
             using var doc = JsonDocument.Parse(arguments);
             if (doc.RootElement.TryGetProperty("style", out var s))
                 style = s.GetString();
             if (doc.RootElement.TryGetProperty("count", out var c))
+                // 限制生成数量 1-20，防止异常输入
                 count = Math.Max(1, Math.Min(c.GetInt32(), 20));
         }
-        catch { /* 忽略 */ }
+        catch { /* 忽略 JSON 解析错误 */ }
 
         if (string.IsNullOrEmpty(style))
         {
@@ -78,6 +81,7 @@ public sealed class CharacterNameGeneratorTool : IToolExecutor
         var random = Random.Shared;
         var names = new List<string>();
 
+        // 根据 style 参数选择不同的姓名组合策略
         for (int i = 0; i < count; i++)
         {
             names.Add(style switch

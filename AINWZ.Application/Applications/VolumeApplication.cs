@@ -10,15 +10,18 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 卷管理应用服务：管理作品的分卷结构，支持卷的增删改查、合并、章节移入/移出
 public class VolumeApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<VolumeApplication> logger) : IVolumeApplication
 {
+    // 校验用户是否为作品的拥有者
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 列出作品下所有卷，按序号排序，同时统计每卷包含的章节数
     public async Task<ApiResult<List<VolumeItemResponse>>> ListVolumesAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -42,6 +45,7 @@ public class VolumeApplication(
         return new ApiResult<List<VolumeItemResponse>>(volumes);
     }
 
+    // 创建新卷：序号默认为当前最大序号+1，支持手动指定
     public async Task<ApiResult<VolumeItemResponse>> CreateVolumeAsync(string workId, CreateVolumeRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -76,6 +80,7 @@ public class VolumeApplication(
         return new ApiResult<VolumeItemResponse>(ToResponse(entity, 0));
     }
 
+    // 更新卷：部分字段更新（标题、摘要、序号），返回当前章节数
     public async Task<ApiResult<VolumeItemResponse>> UpdateVolumeAsync(string workId, string volumeId, UpdateVolumeRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -101,6 +106,7 @@ public class VolumeApplication(
         return new ApiResult<VolumeItemResponse>(ToResponse(entity, chapterCount));
     }
 
+    // 删除卷：使用ExecuteUpdateAsync批量解绑章节（不加载到内存），再删除卷实体
     public async Task<ApiResult> DeleteVolumeAsync(string workId, string volumeId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -126,6 +132,7 @@ public class VolumeApplication(
         return new ApiResult(true);
     }
 
+    // 合并卷：将源卷下所有章节移至目标卷末尾（重排序号），并删除源卷
     public async Task<ApiResult> MergeVolumesAsync(string workId, string volumeId, MergeVolumeRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -147,6 +154,7 @@ public class VolumeApplication(
         if (target is null)
             return new ApiResult("目标卷不存在。", 404);
 
+        // 获取目标卷当前最大序号，用于后续章节重新编号
         var maxSeqInTarget = await dbContext.Chapters.AsNoTracking()
             .Where(x => x.VolumeId == request.TargetVolumeId)
             .Select(x => (int?)x.Sequence)
@@ -157,6 +165,7 @@ public class VolumeApplication(
             .OrderBy(x => x.Sequence)
             .ToListAsync(cancellationToken);
 
+        // 将源卷章节逐个转移并重新编号
         foreach (var chapter in sourceChapters)
         {
             chapter.VolumeId = request.TargetVolumeId;
@@ -172,6 +181,7 @@ public class VolumeApplication(
         return new ApiResult(true);
     }
 
+    // 将章节移入指定卷
     public async Task<ApiResult> MoveChapterAsync(string workId, string chapterId, string targetVolumeId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -202,6 +212,7 @@ public class VolumeApplication(
         return new ApiResult(true);
     }
 
+    // 将章节从卷中移出（设为未归属状态）
     public async Task<ApiResult> RemoveChapterFromVolumeAsync(string workId, string chapterId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

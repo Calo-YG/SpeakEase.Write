@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 
+// 创作编排器：路由 → 构建上下文 → 串行执行 Agent 管线，以 SSE 流式返回结果
 public sealed class CreationOrchestrator(
     CreationRouter router,
     IOpenAIContext llmContext,
@@ -16,6 +17,7 @@ public sealed class CreationOrchestrator(
     IEnumerable<INovelAgent> agents,
     ILogger<CreationOrchestrator> logger)
 {
+    // 执行完整的 Agent 管线：LLM 意图路由 → 逐个 Agent 执行 → 流式返回 chunk
     public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
         string sessionId,
@@ -25,6 +27,7 @@ public sealed class CreationOrchestrator(
         double? requestedTemperature = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        // 步骤1：通过 LLM 进行意图路由，确定管线（pipeline）
         var pipelineStopwatch = Stopwatch.StartNew();
         var agentList = agents.ToList();
         var route = await router.DecideWithLLMAsync(userMessage, agentList, cancellationToken);
@@ -49,8 +52,10 @@ public sealed class CreationOrchestrator(
             })
         };
 
+        // 步骤2：解析 LLM 配置（ApiKey / Model / MaxTokens 等）
         await llmContext.ResolveAsync(cancellationToken);
 
+        // 步骤3：按管线顺序逐个执行 Agent，前一个 Agent 的输出作为后续 Agent 的上下文
         var previousResult = string.Empty;
         for (var i = 0; i < pipeline.Count; i++)
         {
@@ -82,6 +87,7 @@ public sealed class CreationOrchestrator(
                 })
             };
 
+            // 构建 Agent 专属上下文（历史消息 + 项目记忆 + token 预算裁剪）
             var sessionContext = await agentContextBuilder.BuildContextAsync(
                 workId,
                 sessionId,
@@ -105,6 +111,7 @@ public sealed class CreationOrchestrator(
                 })
             };
 
+            // 管线模式下，将前一个 Agent 的结果附带到消息中
             var chainMessage = i > 0 && !string.IsNullOrEmpty(previousResult)
                 ? $"{userMessage}\n\n[Previous agent result]\n{previousResult}"
                 : userMessage;
@@ -125,6 +132,7 @@ public sealed class CreationOrchestrator(
                 UserId = sessionContext.UserId
             };
 
+            // 通过流式枚举器逐块输出 Agent 执行结果
             var stepStopwatch = Stopwatch.StartNew();
             previousResult = string.Empty;
             var hadError = false;
@@ -140,6 +148,7 @@ public sealed class CreationOrchestrator(
                 yield return chunk;
             }
 
+            // 任一 Agent 出错则中止整个管线
             if (hadError)
             {
                 logger.LogError(
@@ -164,6 +173,7 @@ public sealed class CreationOrchestrator(
         logger.LogInformation("Pipeline completed, totalElapsed={Elapsed}ms", pipelineStopwatch.ElapsedMilliseconds);
     }
 
+    // 包裹 Agent 的 IAsyncEnumerable，捕获 MoveNextAsync 异常并转为 error chunk
     private async IAsyncEnumerable<AgentStreamChunk> StreamAgentChunks(
         INovelAgent agent,
         AgentRequest request,
@@ -188,6 +198,7 @@ public sealed class CreationOrchestrator(
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    // 捕获非取消类异常，后续以 error chunk 形式返回
                     moveNextException = ex;
                 }
 
@@ -214,11 +225,13 @@ public sealed class CreationOrchestrator(
         }
     }
 
+    // 解析最大迭代次数，默认 10，范围 [1, 50]
     private static int ResolveMaxIterations(int requested)
     {
         return Math.Clamp(requested <= 0 ? 10 : requested, 1, 50);
     }
 
+    // 解析最大输出 token 数：取 Agent 默认值、请求值、配置值三者中的最小值
     private static int ResolveMaxTokens(int agentMaxTokens, int? requestedMaxTokens, int configuredMaxTokens)
     {
         var candidates = new List<int>();

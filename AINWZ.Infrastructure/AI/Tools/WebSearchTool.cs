@@ -8,6 +8,7 @@ using SpeakEase.AI.Lib.OpenAIModel;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 网络搜索工具：通过 DuckDuckGo 搜索互联网信息，解析搜索结果页面并返回标题/摘要/URL
 public sealed partial class WebSearchTool(IHttpClientFactory httpClientFactory) : IToolExecutor
 {
     private readonly IHttpClientFactory _httpClientFactory = httpClientFactory;

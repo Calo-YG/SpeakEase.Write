@@ -10,23 +10,28 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 伏笔管理应用服务：管理伏笔的 CRUD、状态流转和待回收伏笔查询
 public class ForeshadowingApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<ForeshadowingApplication> logger) : IForeshadowingApplication
 {
+    // 合法的伏笔状态枚举（pending 待回收 / resolved 已回收 / abandoned 放弃）
     private static readonly HashSet<string> AllowedStatuses = new() { "pending", "resolved", "abandoned" };
 
+    // 验证作品归属权
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 验证章节是否存在且属于指定作品（空章节 ID 视为跳过校验）
     private async Task<bool> ChapterExistsAsync(string chapterId, string workId, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(chapterId)) return true;
         return await dbContext.Chapters.AnyAsync(c => c.Id == chapterId && c.WorkId == workId, ct);
     }
 
+    // 查询作品下所有伏笔，支持按状态过滤（onlyPending），按重要性降序排列
     public async Task<ApiResult<List<ForeshadowingItemResponse>>> ListForeshadowingsAsync(string workId, bool? onlyPending = null, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -54,6 +59,7 @@ public class ForeshadowingApplication(
         return new ApiResult<List<ForeshadowingItemResponse>>(list);
     }
 
+    // 按 ID 获取单个伏笔详情
     public async Task<ApiResult<ForeshadowingItemResponse>> GetForeshadowingByIdAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -77,6 +83,7 @@ public class ForeshadowingApplication(
         return new ApiResult<ForeshadowingItemResponse>(result);
     }
 
+    // 创建伏笔：校验章节存在性、状态合法性和 resolved 状态必须有回收章节
     public async Task<ApiResult<ForeshadowingItemResponse>> CreateForeshadowingAsync(string workId, SaveForeshadowingRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -129,6 +136,7 @@ public class ForeshadowingApplication(
         });
     }
 
+    // 更新伏笔：支持部分字段更新（仅更新非 null 字段），含状态合法性校验
     public async Task<ApiResult<ForeshadowingItemResponse>> UpdateForeshadowingAsync(string workId, string id, SaveForeshadowingRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -181,6 +189,7 @@ public class ForeshadowingApplication(
         });
     }
 
+    // 删除伏笔（物理删除）
     public async Task<ApiResult> DeleteForeshadowingAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -201,6 +210,7 @@ public class ForeshadowingApplication(
         return new ApiResult(true);
     }
 
+    // 查询待回收伏笔：状态为 pending 且已有埋设章节的伏笔
     public async Task<ApiResult<List<ForeshadowingItemResponse>>> ListPendingResolutionsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

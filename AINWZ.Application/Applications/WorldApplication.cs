@@ -10,17 +10,20 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 世界观应用服务：管理世界观设定、地理、势力、力量体系、世界规则、历史事件
 public class WorldApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<WorldApplication> logger) : IWorldApplication
 {
+    // 验证作品归属权，确保用户只能操作自己的作品
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
     // ═══════════ WorldSetting ═══════════
 
+    // 获取或自动创建世界观设定：首次访问时如果不存在则自动创建空设定
     public async Task<ApiResult<WorldSettingResponse>> GetOrCreateWorldSettingAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -61,6 +64,7 @@ public class WorldApplication(
         });
     }
 
+    // 更新世界观设定：仅更新请求中非 null 的字段
     public async Task<ApiResult<WorldSettingResponse>> UpdateWorldSettingAsync(string workId, SaveWorldSettingRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -93,6 +97,7 @@ public class WorldApplication(
 
     // ═══════════ Geography ═══════════
 
+    // 查询作品下所有地理节点，按类型和名称排序
     public async Task<ApiResult<List<GeographyResponse>>> ListGeographiesAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -113,6 +118,7 @@ public class WorldApplication(
         return new ApiResult<List<GeographyResponse>>(list);
     }
 
+    // 创建地理节点：需先确保世界观设定已存在
     public async Task<ApiResult<GeographyResponse>> CreateGeographyAsync(string workId, SaveGeographyRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -152,6 +158,7 @@ public class WorldApplication(
         });
     }
 
+    // 更新地理节点：仅更新请求中非 null 的字段
     public async Task<ApiResult<GeographyResponse>> UpdateGeographyAsync(string workId, string id, SaveGeographyRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -178,6 +185,7 @@ public class WorldApplication(
         });
     }
 
+    // 删除地理节点（物理删除，不级联删除子节点）
     public async Task<ApiResult> DeleteGeographyAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -195,6 +203,7 @@ public class WorldApplication(
 
     // ═══════════ Faction ═══════════
 
+    // 查询作品下所有势力，按类型和名称排序
     public async Task<ApiResult<List<FactionResponse>>> ListFactionsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -215,6 +224,7 @@ public class WorldApplication(
         return new ApiResult<List<FactionResponse>>(list);
     }
 
+    // 创建势力：需先确保世界观设定已存在
     public async Task<ApiResult<FactionResponse>> CreateFactionAsync(string workId, SaveFactionRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -254,6 +264,7 @@ public class WorldApplication(
         });
     }
 
+    // 更新势力：仅更新请求中非 null 的字段
     public async Task<ApiResult<FactionResponse>> UpdateFactionAsync(string workId, string id, SaveFactionRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -280,6 +291,7 @@ public class WorldApplication(
         });
     }
 
+    // 删除势力（物理删除）
     public async Task<ApiResult> DeleteFactionAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -297,6 +309,7 @@ public class WorldApplication(
 
     // ═══════════ PowerSystem ═══════════
 
+    // 查询作品下所有力量体系，按名称排序
     public async Task<ApiResult<List<PowerSystemResponse>>> ListPowerSystemsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -317,6 +330,7 @@ public class WorldApplication(
         return new ApiResult<List<PowerSystemResponse>>(list);
     }
 
+    // 创建力量体系：需先确保世界观设定已存在
     public async Task<ApiResult<PowerSystemResponse>> CreatePowerSystemAsync(string workId, SavePowerSystemRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -356,6 +370,7 @@ public class WorldApplication(
         });
     }
 
+    // 更新力量体系：仅更新请求中非 null 的字段
     public async Task<ApiResult<PowerSystemResponse>> UpdatePowerSystemAsync(string workId, string id, SavePowerSystemRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -382,6 +397,7 @@ public class WorldApplication(
         });
     }
 
+    // 删除力量体系（物理删除）
     public async Task<ApiResult> DeletePowerSystemAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -399,6 +415,7 @@ public class WorldApplication(
 
     // ═══════════ WorldRule ═══════════
 
+    // 查询作品下所有世界规则，按规则类型和名称排序
     public async Task<ApiResult<List<WorldRuleResponse>>> ListWorldRulesAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -419,6 +436,7 @@ public class WorldApplication(
         return new ApiResult<List<WorldRuleResponse>>(list);
     }
 
+    // 创建世界规则：需先确保世界观设定已存在
     public async Task<ApiResult<WorldRuleResponse>> CreateWorldRuleAsync(string workId, SaveWorldRuleRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -458,6 +476,7 @@ public class WorldApplication(
         });
     }
 
+    // 更新世界规则：仅更新请求中非 null 的字段
     public async Task<ApiResult<WorldRuleResponse>> UpdateWorldRuleAsync(string workId, string id, SaveWorldRuleRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -484,6 +503,7 @@ public class WorldApplication(
         });
     }
 
+    // 删除世界规则（物理删除）
     public async Task<ApiResult> DeleteWorldRuleAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -501,6 +521,7 @@ public class WorldApplication(
 
     // ═══════════ HistoricalEvent ═══════════
 
+    // 查询作品下所有历史事件，按事件时间排序
     public async Task<ApiResult<List<HistoricalEventResponse>>> ListHistoricalEventsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -522,6 +543,7 @@ public class WorldApplication(
         return new ApiResult<List<HistoricalEventResponse>>(list);
     }
 
+    // 创建历史事件：需先确保世界观设定已存在
     public async Task<ApiResult<HistoricalEventResponse>> CreateHistoricalEventAsync(string workId, SaveHistoricalEventRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -563,6 +585,7 @@ public class WorldApplication(
         });
     }
 
+    // 更新历史事件：仅更新请求中非 null 的字段
     public async Task<ApiResult<HistoricalEventResponse>> UpdateHistoricalEventAsync(string workId, string id, SaveHistoricalEventRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -591,6 +614,7 @@ public class WorldApplication(
         });
     }
 
+    // 删除历史事件（物理删除）
     public async Task<ApiResult> DeleteHistoricalEventAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -606,6 +630,7 @@ public class WorldApplication(
         return new ApiResult(true);
     }
 
+    // 获取世界观设定下各子实体的数量统计（地理、势力、力量体系、规则、历史事件）
     public async Task<ApiResult<Dictionary<string, int>>> GetSubEntityCountsAsync(string workId, string worldSettingId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -617,6 +642,7 @@ public class WorldApplication(
         if (setting is null)
             return new ApiResult<Dictionary<string, int>>("世界观设定不存在。", 404);
 
+        // 如果传入了 worldSettingId 则使用传入值，否则使用查到的 setting Id
         var actualSettingId = string.IsNullOrEmpty(worldSettingId) ? setting.Id : worldSettingId;
 
         var counts = new Dictionary<string, int>

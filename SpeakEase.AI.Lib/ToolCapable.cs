@@ -20,7 +20,7 @@ namespace SpeakEase.AI.Lib
         {
             ArgumentNullException.ThrowIfNull(tool);
 
-            // 按函数名去重，避免重复注册
+            // 按函数名去重：同名函数不重复注册
             if (tool.Function?.Name is not null &&
                 _tools.Any(t => t.Function?.Name == tool.Function.Name))
                 return;
@@ -34,6 +34,7 @@ namespace SpeakEase.AI.Lib
             ArgumentNullException.ThrowIfNull(toolCall);
 
             var toolName = toolCall.Function?.Name;
+            // 缺少工具名时返回错误
             if (string.IsNullOrEmpty(toolName))
             {
                 return new ToolResult
@@ -46,11 +47,13 @@ namespace SpeakEase.AI.Lib
                 };
             }
 
+            // 创建异步 DI 作用域，确保 KeyedService 解析在隔离的 scope 中进行
             await using var scope = serviceProvider.CreateAsyncScope();
             IToolExecutor executor;
 
             try
             {
+                // 根据工具名从 DI 容器获取对应的 IToolExecutor 实现
                 executor = scope.ServiceProvider.GetRequiredKeyedService<IToolExecutor>(toolName);
             }
             catch (InvalidOperationException)
@@ -67,6 +70,7 @@ namespace SpeakEase.AI.Lib
 
             try
             {
+                // 执行工具调用，将结果回填 ToolCallId 和 ToolName
                 var result = await executor.ExecuteAsync(toolCall.Function.Arguments, cancellationToken);
                 result.ToolCallId ??= toolCall.Id;
                 result.ToolName ??= toolName;
@@ -74,6 +78,7 @@ namespace SpeakEase.AI.Lib
             }
             catch (Exception ex)
             {
+                // 捕获工具执行异常，返回统一错误格式，避免单个工具异常导致整个流程崩溃
                 return new ToolResult
                 {
                     ToolCallId = toolCall.Id,

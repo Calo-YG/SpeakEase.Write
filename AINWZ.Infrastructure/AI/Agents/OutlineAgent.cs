@@ -7,6 +7,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
+// 大纲Agent：负责故事结构与情节规划，从全书总纲到卷大纲再到章节大纲逐级生成
+// 核心能力：三幕式/英雄之旅等叙事框架设计，字数规划与节奏控制
 public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogger<OutlineAgent> logger)
     : AgentBase(llm, tools, logger), IOutlineAgent
 {
@@ -14,8 +16,9 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
     public override string DisplayName => "大纲Agent";
 
-    public string OutlineDomain => "故事结构与情节规划";
+    public string OutlineDomain => "故事结构与情节规划"; // 大纲领域标识
 
+    // Agent元数据：内容类型为大纲，不使用项目记忆，LLM参数偏保守(0.7温度)
     public override AgentMetadata Metadata => new()
     {
         ContentType = "outline",
@@ -24,6 +27,8 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 
     public override string RouteDescription => "管理大纲/情节规划/章节结构";
 
+    // 构建大纲Agent的系统提示词：包含角色定义、ReAct工作模式、四种流程（从零规划/修改扩展/头脑风暴/参数确认）、
+    // 大纲生成顺序、信息嵌入规则、设计原则
     public override string BuildPrompt()
     {
         return """
@@ -191,6 +196,7 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
 """;
     }
 
+    // 注册大纲Agent所需的工具：作品信息、世界观、角色、大纲操作、势力、地理、时间线、伏笔等
     protected override IEnumerable<ToolDefinition> GetToolDefinitions()
     {
         yield return GetWorkInfoTool.ToolDefinition;

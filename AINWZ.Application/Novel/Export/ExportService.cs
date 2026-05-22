@@ -6,8 +6,10 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Application.Novel.Export;
 
+// 小说导出服务：将作品内容导出为TXT或EPUB格式，支持按章节序号范围筛选
 public class ExportService(SpeakEaseDbContext db)
 {
+    // 导出为TXT格式：包含作品元信息（标题、题材、字数）和各章节内容（HTML转纯文本）
     public async Task<(byte[] Content, string FileName, string ContentType)> ExportTxtAsync(
         string workId, int? startSequence = null, int? endSequence = null, CancellationToken ct = default)
     {
@@ -48,6 +50,7 @@ public class ExportService(SpeakEaseDbContext db)
         return (content, fileName, "text/plain; charset=utf-8");
     }
 
+    // 导出为EPUB格式：使用ZIP打包标准EPUB结构（mimetype → META-INF → OEBPS内容文件）
     public async Task<(byte[] Content, string FileName, string ContentType)> ExportEpubAsync(
         string workId, int? startSequence = null, int? endSequence = null, CancellationToken ct = default)
     {
@@ -145,6 +148,7 @@ public class ExportService(SpeakEaseDbContext db)
         return (content, fileName, "application/epub+zip");
     }
 
+    // 查询章节列表：优先返回已发布章节，若无已发布章节则回退到全部章节（含草稿）
     private async Task<List<Domain.Entities.Works.ChapterEntity>> QueryChaptersAsync(
         string workId, int? startSequence, int? endSequence, CancellationToken ct)
     {
@@ -155,11 +159,13 @@ public class ExportService(SpeakEaseDbContext db)
         if (endSequence.HasValue)
             query = query.Where(c => c.Sequence <= endSequence.Value);
 
+        // 先尝试查询已发布状态章节
         var chapters = await query
             .Where(c => c.Status == "published")
             .OrderBy(c => c.Sequence)
             .ToListAsync(ct);
 
+        // 如果已发布章节为空，回退到全部章节（含草稿）
         if (chapters.Count == 0)
         {
             query = db.Chapters.AsNoTracking().Where(c => c.WorkId == workId);
@@ -174,6 +180,7 @@ public class ExportService(SpeakEaseDbContext db)
         return chapters;
     }
 
+    // 构建导出文件名：根据序号范围生成不同的文件名后缀
     private static string BuildFileName(string title, string ext, int? startSequence, int? endSequence)
     {
         var baseName = SanitizeFileName(title);
@@ -186,6 +193,7 @@ public class ExportService(SpeakEaseDbContext db)
         return $"{baseName}.{ext}";
     }
 
+    // HTML转纯文本：将<br>转为换行、<p>转为双换行，移除所有HTML标签并解码HTML实体
     private static string HtmlToPlainText(string html)
     {
         var text = Regex.Replace(html, "<br\\s*/?>", "\n");
@@ -195,6 +203,7 @@ public class ExportService(SpeakEaseDbContext db)
         return text.Trim();
     }
 
+    // 纯文本转XHTML：将文本按段落分割，包裹<p>标签并XML转义
     private static string PlainTextToXhtml(string text)
     {
         var sb = new StringBuilder();
@@ -208,9 +217,11 @@ public class ExportService(SpeakEaseDbContext db)
         return sb.ToString();
     }
 
+    // XML特殊字符转义：防止 &、<、>、" 破坏XML文档结构
     private static string EscapeXml(string text)
         => text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
 
+    // 清理文件名中的非法字符（Windows/Linux文件系统不支持的特殊字符）
     private static string SanitizeFileName(string name)
     {
         var invalid = Path.GetInvalidFileNameChars();

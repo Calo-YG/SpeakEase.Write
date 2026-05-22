@@ -9,14 +9,13 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
-/// <summary>
-/// 标签管理应用服务实现。
-/// </summary>
+// 标签管理应用服务：提供标签的CRUD和热门标签查询，标签用于内容分类
 public class TagApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     ILogger<TagApplication> logger) : ITagApplication
 {
+    // 实体→响应DTO映射
     private static TagItemResponse ToResponse(TagEntity x) => new()
     {
         Id = x.Id,
@@ -26,6 +25,7 @@ public class TagApplication(
         UsageCount = x.UsageCount
     };
 
+    // 按分类查询标签列表，不传分类则返回全部标签；按使用次数降序、名称升序排列
     public async Task<ApiResult<List<TagItemResponse>>> ListTagsAsync(string category, CancellationToken cancellationToken = default)
     {
         var query = dbContext.Tags.AsNoTracking();
@@ -48,6 +48,7 @@ public class TagApplication(
         return new ApiResult<List<TagItemResponse>>(list);
     }
 
+    // 创建新标签：默认分类为"content"，默认颜色为灰色
     public async Task<ApiResult<TagItemResponse>> CreateTagAsync(SaveTagRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -72,6 +73,7 @@ public class TagApplication(
         return new ApiResult<TagItemResponse>(ToResponse(entity));
     }
 
+    // 更新标签：支持部分更新（Name、Category、Color可单独修改）
     public async Task<ApiResult<TagItemResponse>> UpdateTagAsync(string id, SaveTagRequest request, CancellationToken cancellationToken = default)
     {
         var entity = await dbContext.Tags.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -88,6 +90,7 @@ public class TagApplication(
         return new ApiResult<TagItemResponse>(ToResponse(entity));
     }
 
+    // 删除标签
     public async Task<ApiResult> DeleteTagAsync(string id, CancellationToken cancellationToken = default)
     {
         var entity = await dbContext.Tags.FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
@@ -101,6 +104,7 @@ public class TagApplication(
         return new ApiResult(true);
     }
 
+    // 获取热门标签：按使用次数降序取前N条（默认20条）
     public async Task<ApiResult<List<TagItemResponse>>> GetHotTagsAsync(int limit, CancellationToken cancellationToken = default)
     {
         if (limit <= 0) limit = 20;

@@ -46,6 +46,7 @@ public sealed class TextAnalyzerTool : IToolExecutor
 
         try
         {
+            // 从 JSON arguments 中提取 text 和 summary_length 参数
             using var doc = JsonDocument.Parse(arguments);
             var root = doc.RootElement;
             if (root.TryGetProperty("text", out var textProp))
@@ -53,7 +54,7 @@ public sealed class TextAnalyzerTool : IToolExecutor
             if (root.TryGetProperty("summary_length", out var lenProp))
                 summaryLength = lenProp.GetInt32();
         }
-        catch { /* 忽略 */ }
+        catch { /* 忽略 JSON 解析错误 */ }
 
         if (string.IsNullOrEmpty(text))
         {
@@ -65,12 +66,15 @@ public sealed class TextAnalyzerTool : IToolExecutor
             });
         }
 
+        // 统计各项指标
         var charCount = text.Length;
         var wordCount = text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        // 使用正则匹配中英文句子结束符号
         var sentenceCount = System.Text.RegularExpressions.Regex.Matches(text, @"[。！？.!?\n]").Count;
-        if (sentenceCount == 0) sentenceCount = 1;
+        if (sentenceCount == 0) sentenceCount = 1; // 至少算 1 句
         var paragraphCount = text.Split(new[] { "\n\n", "\r\n\r\n" }, StringSplitOptions.RemoveEmptyEntries).Length;
 
+        // 按 summary_length 截取摘要
         string summary = summaryLength > 0 && text.Length > summaryLength
             ? text[..summaryLength] + "..."
             : summaryLength > 0 ? text : null;

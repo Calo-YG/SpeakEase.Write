@@ -13,12 +13,14 @@ namespace SpeakEase.Write.Application.Applications;
 /// <summary>
 /// 作品管理应用服务实现。
 /// </summary>
+// 管理作品的 CRUD 操作，删除时在事务中级联清理所有关联数据
 public class WorkApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<WorkApplication> logger) : IWorkApplication
 {
+    // 分页查询用户作品列表：先分页查 ID，再按 ID 批量查详情（避免 SELECT * 到内存再分页）
     public async Task<ApiResult<PageResult<WorkItemResponse>>> QueryWorksAsync(WorkQueryRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -82,6 +84,7 @@ public class WorkApplication(
             PageResult<WorkItemResponse>.Create(total, items, pageIndex, pageSize));
     }
 
+    // 按 ID 获取作品详情，同时查询关联的章节数和卷数
     public async Task<ApiResult<WorkItemResponse>> GetByIdAsync(string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -114,6 +117,7 @@ public class WorkApplication(
         });
     }
 
+    // 创建新作品：初始状态为 draft，总字数为 0
     public async Task<ApiResult<WorkItemResponse>> CreateWorkAsync(CreateWorkRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Title))
@@ -159,6 +163,7 @@ public class WorkApplication(
         });
     }
 
+    // 更新作品信息：仅更新请求中非 null 的字段
     public async Task<ApiResult<WorkItemResponse>> UpdateWorkAsync(string id, UpdateWorkRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -201,6 +206,7 @@ public class WorkApplication(
         });
     }
 
+    // 删除作品及其所有关联数据：在事务中使用 ExecuteDeleteAsync 批量删除，避免加载到内存
     public async Task<ApiResult> DeleteWorkAsync(string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -210,9 +216,11 @@ public class WorkApplication(
         if (entity is null)
             return new ApiResult($"未找到标识为 {id} 的作品。", 404);
 
+        // 事务：确保所有关联数据清理成功后统一提交，失败则全部回滚
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         try
         {
+            // 先获取章节 ID 列表，用于级联删除章节版本
             var chapterIds = await dbContext.Chapters.Where(x => x.WorkId == id).Select(x => x.Id).ToListAsync(cancellationToken);
             if (chapterIds.Count > 0)
                 await dbContext.ChapterVersions.Where(x => chapterIds.Contains(x.ChapterId)).ExecuteDeleteAsync(cancellationToken);
@@ -220,6 +228,7 @@ public class WorkApplication(
 
             await dbContext.Volumes.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
+            // 角色相关数据清理
             await dbContext.Characters.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.CharacterRelationships.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.CharacterArcs.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
@@ -227,15 +236,18 @@ public class WorkApplication(
             await dbContext.CharacterGraphEdges.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.CharacterGraphs.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
+            // 大纲数据：先获取大纲 ID 再批量删除大纲节点
             var outlineIds = await dbContext.Outlines.Where(x => x.WorkId == id).Select(x => x.Id).ToListAsync(cancellationToken);
             if (outlineIds.Count > 0)
                 await dbContext.OutlineNodes.Where(x => outlineIds.Contains(x.OutlineId)).ExecuteDeleteAsync(cancellationToken);
             await dbContext.Outlines.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
+            // 故事相关数据
             await dbContext.Foreshadowings.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.TimelineEvents.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.InspirationRecords.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
+            // 世界观相关数据
             await dbContext.WorldRules.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.PowerSystems.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.Factions.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
@@ -243,12 +255,14 @@ public class WorkApplication(
             await dbContext.HistoricalEvents.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.WorldSettings.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
+            // AI 相关数据
             await dbContext.AICreationSessions.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.MemorySnapshots.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.ContextAssemblyLogs.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.AIGenerationTasks.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.ChapterAnalysisResults.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
+            // 最后删除作品本身
             dbContext.Works.Remove(entity);
             await dbContext.SaveChangesAsync(cancellationToken);
 

@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 世界观设定保存工具：保存/更新作品世界观设定（世界名称/时代背景/风格/规则/地理/势力/历史），支持分区增量更新
 public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

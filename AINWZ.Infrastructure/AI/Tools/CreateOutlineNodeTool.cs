@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 大纲节点创建/更新工具：支持 book/volume/act/climax/resolution 五层节点，通过 parent_node_id 建立树状大纲结构
 public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

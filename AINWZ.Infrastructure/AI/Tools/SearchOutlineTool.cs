@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 大纲搜索工具：按关键词在大纲节点的标题/目标/关键事件中搜索匹配节点
 public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

@@ -2,6 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
+    /// <summary>
+    /// 流式响应中的单个 choice，包含增量 delta 而非完整 message。
+    /// </summary>
     public sealed class StreamChoice
     {
         [JsonPropertyName("index")]

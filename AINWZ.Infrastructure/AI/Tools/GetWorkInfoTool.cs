@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 作品信息查询工具：返回作品完整基本信息（简介/题材/风格/视角/字数/章节数/角色数等）
 public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsSnapshot<JsonSerializerOptions> snapshot) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

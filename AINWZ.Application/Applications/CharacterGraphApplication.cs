@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 角色图谱应用服务：管理角色关系图谱的增删查和布局更新
 public class CharacterGraphApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
@@ -17,6 +18,7 @@ public class CharacterGraphApplication(
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 列出作品下所有图谱（仅摘要信息，不含节点和边），按创建时间倒序
     public async Task<ApiResult<List<CharacterGraphResponse>>> ListGraphsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -38,6 +40,7 @@ public class CharacterGraphApplication(
         return new ApiResult<List<CharacterGraphResponse>>(list);
     }
 
+    // 获取图谱详情：包含所有节点（按重要度降序）和所有边
     public async Task<ApiResult<CharacterGraphResponse>> GetGraphDetailAsync(string workId, string graphId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -81,6 +84,7 @@ public class CharacterGraphApplication(
         });
     }
 
+    // 创建图谱：校验名称唯一性，初始版本号为1，状态为draft
     public async Task<ApiResult<CharacterGraphResponse>> CreateGraphAsync(string workId, SaveCharacterGraphRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -122,6 +126,7 @@ public class CharacterGraphApplication(
         });
     }
 
+    // 删除图谱及关联的所有节点和边（级联删除）
     public async Task<ApiResult> DeleteGraphAsync(string workId, string graphId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -134,6 +139,7 @@ public class CharacterGraphApplication(
         if (entity == null)
             return new ApiResult("图谱不存在。", 404);
 
+        // 加载图谱关联的所有节点和边，用于级联删除
         var nodes = await dbContext.CharacterGraphNodes.Where(n => n.GraphId == graphId).ToListAsync(cancellationToken);
         var edges = await dbContext.CharacterGraphEdges.Where(e => e.GraphId == graphId).ToListAsync(cancellationToken);
 
@@ -145,6 +151,7 @@ public class CharacterGraphApplication(
         return new ApiResult(true);
     }
 
+    // 更新图谱布局JSON（节点位置信息），不修改图谱元数据
     public async Task<ApiResult<CharacterGraphResponse>> UpdateLayoutAsync(string workId, string graphId, UpdateGraphLayoutRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

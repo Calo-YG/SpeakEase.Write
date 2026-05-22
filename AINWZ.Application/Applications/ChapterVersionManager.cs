@@ -11,8 +11,10 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 章节版本管理器：管理章节内容的版本创建、查询、回滚、合并、另存为新章节
 public sealed class ChapterVersionManager : IChapterVersionManager
 {
+    // 每个章节最大保留版本数，超出后自动清理旧版本
     private const int MaxVersionsPerChapter = 20;
 
     private readonly SpeakEaseDbContext _db;
@@ -32,6 +34,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         _log = log;
     }
 
+    // 为章节创建新版本：版本号自增，创建后触发保留策略清理
     public async Task<ApiResult<ChapterVersionDto>> CreateVersionAsync(CreateVersionRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.ChapterId))
@@ -70,6 +73,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
 
         _db.ChapterVersions.Add(entity);
         await _db.SaveChangesAsync();
+        // 创建版本后立即执行保留策略，超出上限的旧版本将被清理
         await EnforceRetentionPolicyAsync(request.ChapterId);
 
         _log.LogInformation("章节 {ChapterId} 创建版本 {Version}（来源：{Source}）",
@@ -78,6 +82,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         return new ApiResult<ChapterVersionDto>(MapToSummaryDto(entity));
     }
 
+    // 列出章节的所有版本，按版本号倒序
     public async Task<ApiResult<List<ChapterVersionDto>>> ListVersionsAsync(string chapterId)
     {
         var versions = await _db.ChapterVersions
@@ -99,6 +104,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         return new ApiResult<List<ChapterVersionDto>>(versions);
     }
 
+    // 获取单个版本的详细信息（含完整内容），需校验归属权
     public async Task<ApiResult<ChapterVersionDetailDto>> GetVersionAsync(string versionId)
     {
         var version = await _db.ChapterVersions
@@ -111,6 +117,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         return new ApiResult<ChapterVersionDetailDto>(MapToDetailDto(version));
     }
 
+    // 回滚章节内容到指定版本：用目标版本的内容覆盖当前章节，并创建一个 rollback 类型的版本记录
     public async Task<ApiResult<ChapterVersionDto>> RollbackToVersionAsync(string chapterId, string targetVersionId)
     {
         var chapter = await _db.Chapters
@@ -161,6 +168,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         return new ApiResult<ChapterVersionDto>(MapToSummaryDto(rollbackEntity));
     }
 
+    // 合并版本：将当前章节内容与指定版本内容拼接，创建一个 merge 类型的版本记录
     public async Task<ApiResult<ChapterVersionDto>> MergeFromVersionAsync(string chapterId, string sourceVersionId)
     {
         var chapter = await _db.Chapters
@@ -214,6 +222,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         return new ApiResult<ChapterVersionDto>(MapToSummaryDto(mergeEntity));
     }
 
+    // 删除指定版本（物理删除），需校验归属权
     public async Task<ApiResult> DeleteVersionAsync(string versionId)
     {
         var version = await _db.ChapterVersions
@@ -230,6 +239,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         return new ApiResult(true);
     }
 
+    // 将版本内容另存为新章节：从指定版本创建独立章节，添加到作品章节列表末尾
     public async Task<ApiResult<ChapterItemResponse>> SaveAsNewChapterAsync(SaveAsNewChapterRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.ChapterId))
@@ -251,6 +261,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         if (sourceVersion == null)
             return new ApiResult<ChapterItemResponse>("源版本不存在", 404);
 
+        // 获取当前最大 sequence 并 +1，新章节排到最后
         var maxSeq = await _db.Chapters.AsNoTracking()
             .Where(c => c.WorkId == work.Id)
             .Select(c => (int?)c.Sequence)
@@ -291,9 +302,11 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         });
     }
 
+    // 验证版本来源是否合法
     private static bool IsValidSource(string source)
         => source is "manual" or "autosave" or "ai-generate" or "rollback" or "merge";
 
+    // 将版本实体映射为摘要 DTO（不含完整内容）
     private static ChapterVersionDto MapToSummaryDto(ChapterVersionEntity entity)
         => new ChapterVersionDto
         {
@@ -306,6 +319,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
             CreatedAt = entity.CreateAt
         };
 
+    // 将版本实体映射为详情 DTO（含完整内容）
     private static ChapterVersionDetailDto MapToDetailDto(ChapterVersionEntity entity)
         => new ChapterVersionDetailDto
         {
@@ -319,6 +333,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
             CreatedAt = entity.CreateAt
         };
 
+    // 版本保留策略：超出 MaxVersionsPerChapter 时，删除版本号最小的旧版本
     private async Task EnforceRetentionPolicyAsync(string chapterId)
     {
         var count = await _db.ChapterVersions
@@ -326,6 +341,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
 
         if (count <= MaxVersionsPerChapter) return;
 
+        // 计算超出上限的数量，取出最早（版本号最小）的记录 ID 批量删除
         var excess = count - MaxVersionsPerChapter;
         var oldestIds = await _db.ChapterVersions
             .Where(v => v.ChapterId == chapterId)
@@ -341,12 +357,14 @@ public sealed class ChapterVersionManager : IChapterVersionManager
         _log.LogDebug("章节 {ChapterId} 已清理 {Count} 个旧版本", chapterId, excess);
     }
 
+    // 安全截断字符串，用于生成章节标题
     private static string SafeTruncate(string text, int maxLen)
     {
         if (string.IsNullOrEmpty(text) || text.Length <= maxLen) return text ?? string.Empty;
         return text[..maxLen];
     }
 
+    // 计算字数（非空白字符的数量）
     private static int CountWords(string content)
     {
         if (string.IsNullOrWhiteSpace(content)) return 0;

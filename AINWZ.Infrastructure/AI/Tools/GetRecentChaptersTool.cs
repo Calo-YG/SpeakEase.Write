@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 最近章节查询工具：返回作品尾部最近N章或指定章节附近的前后均衡窗口，用于续写参考上下文
 public sealed class GetRecentChaptersTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

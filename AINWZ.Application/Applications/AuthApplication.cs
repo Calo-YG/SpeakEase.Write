@@ -16,9 +16,7 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
-/// <summary>
-/// 认证应用服务实现。
-/// </summary>
+// 认证应用服务：处理用户注册、登录、令牌刷新，含密码哈希和JWT令牌管理
 public class AuthApplication(
     SpeakEaseDbContext dbContext,
     ITokenManager tokenManager,
@@ -26,7 +24,7 @@ public class AuthApplication(
     ISnowflakeIdGenerator snowflakeIdGenerator,
     IOptions<JwtOptions> jwtOptions) : IAuthApplication
 {
-    /// <inheritdoc />
+    // 用户注册：验证参数 → 检查账户唯一性 → 创建用户 → 自动登录返回Token
     public async Task<ApiResult<TokenResponse>> RegisterAsync(RegisterRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Account))
@@ -76,6 +74,7 @@ public class AuthApplication(
         };
 
         dbContext.Users.Add(user);
+        // DbUpdateException 可能由账户或邮箱唯一约束冲突导致
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -85,12 +84,12 @@ public class AuthApplication(
             return new ApiResult<TokenResponse>("该账户或邮箱已被注册。", 409);
         }
 
-        // 注册成功后自动登录，生成 token
+        // 注册成功后自动登录，生成JWT令牌
         var tokenResult = await GenerateTokenResponseAsync(user.Id, user.Account, user.NickName, user.Role);
         return new ApiResult<TokenResponse>(tokenResult);
     }
 
-    /// <inheritdoc />
+    // 用户登录：验证账户密码 → 检查激活状态 → 必要时重哈希密码 → 生成Token
     public async Task<ApiResult<TokenResponse>> LoginAsync(LoginRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Account))
@@ -126,6 +125,7 @@ public class AuthApplication(
             return new ApiResult<TokenResponse>("账户或密码错误。", 401);
         }
 
+        // 密码验证成功但算法已过时，使用ExecuteUpdateAsync原子更新密码哈希（不加载实体）
         if (verification.NeedsRehash)
         {
             var newSalt = PasswordHasher.GenerateSalt();
@@ -142,7 +142,7 @@ public class AuthApplication(
         return new ApiResult<TokenResponse>(tokenResult);
     }
 
-    /// <inheritdoc />
+    // 刷新令牌：从缓存查找RefreshToken对应的用户 → 验证用户状态 → 发放新Token并移除旧令牌
     public async Task<ApiResult<TokenResponse>> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.RefreshToken))
@@ -150,7 +150,7 @@ public class AuthApplication(
             return new ApiResult<TokenResponse>("刷新令牌不能为空。", 400);
         }
 
-        // 从缓存中查找刷新令牌对应的用户信息
+        // 从缓存中查找RefreshToken对应的用户ID（缓存key格式：RefreshToken_{token}）
         var cacheKey = string.Format(UserInfomationConst.RefreshTokenKey, request.RefreshToken);
         var userId = await cacheService.GetOrSetAsync<string>(cacheKey, () => Task.FromResult<string>(null));
 
@@ -178,9 +178,7 @@ public class AuthApplication(
         return new ApiResult<TokenResponse>(tokenResult);
     }
 
-    /// <summary>
-    /// 生成 Token 响应（AccessToken + RefreshToken），并将 RefreshToken 存入缓存。
-    /// </summary>
+    // 生成Token响应：组装Claims → 生成AccessToken和RefreshToken → 将RefreshToken写入缓存
     private async Task<TokenResponse> GenerateTokenResponseAsync(string userId, string account, string nickName, string role)
     {
         var claims = new List<Claim>
@@ -194,7 +192,7 @@ public class AuthApplication(
         var accessToken = tokenManager.GenerateAccessToken(claims);
         var refreshToken = tokenManager.GenerateRefreshToken();
 
-        // 将 RefreshToken 存入缓存，key = RefreshToken_{token}，value = userId
+        // 将RefreshToken写入缓存（支持内存+Redis双级缓存），过期时间从配置读取
         var cacheKey = string.Format(UserInfomationConst.RefreshTokenKey, refreshToken);
         var refreshExpire = TimeSpan.FromDays(jwtOptions.Value.RefreshExpire);
         await cacheService.RefreshAsync(cacheKey, userId, memoryExpiry: refreshExpire, redisExpiry: refreshExpire);
@@ -207,8 +205,6 @@ public class AuthApplication(
         };
     }
 
-    /// <summary>
-    /// 验证邮箱格式。
-    /// </summary>
+    // 验证邮箱格式
     private static bool IsValidEmail(string email) => ValidationHelper.IsValidEmail(email);
 }

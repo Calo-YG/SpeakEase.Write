@@ -14,6 +14,7 @@ namespace SpeakEase.Write.Application.Applications
     /// <summary>
     /// 模型提供商管理应用服务实现（单表：AIModelDefinitionEntity）。
     /// </summary>
+    // 管理 AI 模型提供商的注册、更新、删除和模型列表查询
     public class ModelApplication(
         SpeakEaseDbContext dbContext,
         ISnowflakeIdGenerator idGenerator,
@@ -21,6 +22,7 @@ namespace SpeakEase.Write.Application.Applications
         ILogger<ModelApplication> logger) : IModelApplication
     {
         /// <inheritdoc />
+        // 获取所有已注册的模型提供商列表
         public async Task<ApiResult<List<ModelProviderResponse>>> GetProvidersAsync(CancellationToken cancellationToken = default)
         {
             var list = await dbContext.AIModelDefinitions
@@ -42,6 +44,7 @@ namespace SpeakEase.Write.Application.Applications
         }
 
         /// <inheritdoc />
+        // 按 ID 获取单个模型提供商
         public async Task<ApiResult<ModelProviderResponse>> GetProviderByIdAsync(string id, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -73,6 +76,7 @@ namespace SpeakEase.Write.Application.Applications
         }
 
         /// <inheritdoc />
+        // 创建模型提供商：参数验证 + API 连通性检测后入库
         public async Task<ApiResult<ModelProviderResponse>> CreateProviderAsync(SaveProviderRequest request, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(request.Provider))
@@ -138,6 +142,7 @@ namespace SpeakEase.Write.Application.Applications
         }
 
         /// <inheritdoc />
+        // 更新模型提供商：仅在 ApiBaseUrl 或 ApiKey 变更时重新验证连通性
         public async Task<ApiResult<ModelProviderResponse>> UpdateProviderAsync(string id, SaveProviderRequest request, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -218,6 +223,7 @@ namespace SpeakEase.Write.Application.Applications
         }
 
         /// <inheritdoc />
+        // 删除模型提供商（物理删除）
         public async Task<ApiResult> DeleteProviderAsync(string id, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(id))
@@ -242,6 +248,7 @@ namespace SpeakEase.Write.Application.Applications
         }
 
         /// <inheritdoc />
+        // 通过 OpenAI 兼容 API 的 GET /models 获取提供商支持的模型列表
         public async Task<ApiResult<List<string>>> GetProviderModelsAsync(string id, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(id))

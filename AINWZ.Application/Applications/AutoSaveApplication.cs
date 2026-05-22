@@ -9,17 +9,21 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 自动保存应用服务：统一处理前端不同实体（章节/角色/世界观/大纲/灵感）的自动保存请求
+// 根据EntityType路由到对应实体的保存逻辑，并在内容变更时失效AI记忆缓存
 public sealed class AutoSaveApplication(
     SpeakEaseDbContext db,
     IUserContext user,
     IMemoryProvider memory,
     ILogger<AutoSaveApplication> logger) : IAutoSaveApplication
 {
+    // 支持的自动保存实体类型集合（大小写不敏感）
     private static readonly HashSet<string> SupportedTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         "chapter", "character", "worldsetting", "outline", "inspiration"
     };
 
+    // 自动保存入口：校验实体类型后按类型路由到对应处理方法
     public async Task<ApiResult> AutoSaveAsync(AutoSaveRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.EntityType))
@@ -49,6 +53,8 @@ public sealed class AutoSaveApplication(
         }
     }
 
+    // 自动保存章节：Content→章节正文, Title→标题, Summary→摘要
+    // 内容变更后同步更新作品总字数并失效AI缓存
     private async Task<ApiResult> AutoSaveChapter(string chapterId, AutoSaveRequest req, string userId, DateTime now, CancellationToken ct)
     {
         var entity = await db.Chapters.FirstOrDefaultAsync(c => c.Id == chapterId && c.OwnerId == userId, ct);
@@ -76,6 +82,7 @@ public sealed class AutoSaveApplication(
             changed = true;
         }
 
+        // 仅在内容实际变更时才执行保存和缓存失效
         if (!changed) return new ApiResult(true);
 
         entity.UpdateBy = userId;
@@ -83,6 +90,7 @@ public sealed class AutoSaveApplication(
 
         await db.SaveChangesAsync(ct);
 
+        // 内容变更后更新作品总字数（仅章节类型需同步）
         if (contentChanged)
         {
             var totalWords = await db.Chapters.AsNoTracking()
@@ -101,6 +109,7 @@ public sealed class AutoSaveApplication(
         return new ApiResult(true);
     }
 
+    // 自动保存角色：Content→背景故事, Summary→性格, Title→身份
     private async Task<ApiResult> AutoSaveCharacter(string characterId, AutoSaveRequest req, string userId, DateTime now, CancellationToken ct)
     {
         var entity = await db.Characters.FirstOrDefaultAsync(c => c.Id == characterId && c.OwnerId == userId, ct);
@@ -136,6 +145,7 @@ public sealed class AutoSaveApplication(
         return new ApiResult(true);
     }
 
+    // 自动保存世界观：Content→JSON内容, Summary→摘要, Title→世界观名称
     private async Task<ApiResult> AutoSaveWorldSetting(string worldSettingId, AutoSaveRequest req, string userId, DateTime now, CancellationToken ct)
     {
         var entity = await db.WorldSettings.FirstOrDefaultAsync(w => w.Id == worldSettingId && w.OwnerId == userId, ct);
@@ -171,6 +181,7 @@ public sealed class AutoSaveApplication(
         return new ApiResult(true);
     }
 
+    // 自动保存大纲节点：Content→目标描述, Title→节点标题
     private async Task<ApiResult> AutoSaveOutline(string outlineNodeId, AutoSaveRequest req, string userId, DateTime now, CancellationToken ct)
     {
         var entity = await db.OutlineNodes.FirstOrDefaultAsync(o => o.Id == outlineNodeId && o.OwnerId == userId, ct);
@@ -201,6 +212,7 @@ public sealed class AutoSaveApplication(
         return new ApiResult(true);
     }
 
+    // 自动保存灵感：Content→内容, Title→标题
     private async Task<ApiResult> AutoSaveInspiration(string inspirationId, AutoSaveRequest req, string userId, DateTime now, CancellationToken ct)
     {
         var entity = await db.InspirationRecords.FirstOrDefaultAsync(i => i.Id == inspirationId && i.UserId == userId, ct);

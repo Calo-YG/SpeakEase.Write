@@ -3,7 +3,8 @@ using SpeakEase.AI.Lib.Models;
 namespace SpeakEase.AI.Lib.Contract
 {
     /// <summary>
-    /// ReAct 模式 Agent 接口，支持 Tool 注册、Skill 注册和 Pipeline Filter
+    /// ReAct 模式 Agent 接口。
+    /// 支持：非流式/流式执行、多轮 Tool/Skill 调用循环、历史对话管理。
     /// </summary>
     public interface IReActAgent
     {

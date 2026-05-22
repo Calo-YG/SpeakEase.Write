@@ -40,11 +40,12 @@ public sealed class CalculateTool : IToolExecutor
         string expression = null;
         try
         {
+            // 从 JSON arguments 中提取 expression 参数
             using var doc = JsonDocument.Parse(arguments);
             if (doc.RootElement.TryGetProperty("expression", out var prop))
                 expression = prop.GetString();
         }
-        catch { /* 忽略 */ }
+        catch { /* 忽略 JSON 解析错误，expression 将为 null */ }
 
         if (string.IsNullOrWhiteSpace(expression))
         {
@@ -58,7 +59,7 @@ public sealed class CalculateTool : IToolExecutor
 
         try
         {
-            // 安全白名单：仅允许数字、运算符、括号、小数点、空格
+            // 安全白名单：仅允许数字、运算符、括号、小数点、空格，防止代码注入
             var sanitized = expression.Trim();
             if (!System.Text.RegularExpressions.Regex.IsMatch(sanitized, @"^[\d+\-*/().%\s]+$"))
             {
@@ -70,6 +71,7 @@ public sealed class CalculateTool : IToolExecutor
                 });
             }
 
+            // 使用 DataTable.Compute 进行安全的算术表达式求值
             var result = new DataTable().Compute(sanitized, null);
 
             return Task.FromResult(new ToolResult

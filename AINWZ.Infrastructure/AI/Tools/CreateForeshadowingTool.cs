@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 伏笔创建/更新工具：记录章节中埋下的悬念/伏笔，支持设置重要性等级和预期回收章节
 public sealed class CreateForeshadowingTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

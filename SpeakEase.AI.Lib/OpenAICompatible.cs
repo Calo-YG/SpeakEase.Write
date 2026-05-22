@@ -25,8 +25,10 @@ namespace SpeakEase.AI.Lib
         private readonly IOpenAIContext _context = context ?? throw new ArgumentNullException(nameof(context));
         private readonly ILogger<OpenAICompatible> _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
+        // HttpClient 命名标识，与 DI 注册时使用的名称一致
         private const string HttpClientName = "SpeakEase.LLM";
 
+        // 全局共享的 JSON 序列化配置：忽略 null 值、使用宽松编码（避免 Unicode 转义）
         private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
         {
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -42,18 +44,22 @@ namespace SpeakEase.AI.Lib
         {
             ArgumentNullException.ThrowIfNull(context);
 
+            // 动态解析当前用户的 LLM 配置（API Key、模型、Base URL 等）
             await _context.ResolveAsync(cancellationToken);
 
+            // 构建 OpenAI Chat Completion 请求体
             var request = BuildRequest(context, messages, tools, stream: false);
 
             _logger.LogDebug(
                 "ChatAsync 开始: Model={Model}, Messages={MsgCount}, Tools={ToolCount}",
                 request.Model, request.Messages?.Count ?? 0, request.Tools?.Count ?? 0);
 
+            // 发送 HTTP POST 请求到 chat/completions 端点
             using var httpRequest = CreateRequestMessage("chat/completions", request);
             using var response = await GetClient().SendAsync(
                 httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
+            // HTTP 状态码非 2xx，返回错误
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -68,11 +74,13 @@ namespace SpeakEase.AI.Lib
                 };
             }
 
+            // 反序列化完整响应体为 ChatCompletionResponse
             await using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
             var result = await JsonSerializer.DeserializeAsync<ChatCompletionResponse>(
                 responseStream, JsonOptions, cancellationToken)
                 ?? throw new InvalidOperationException("LLM 响应反序列化失败。");
 
+            // LLM 返回了协议级错误（如速率限制、内容过滤等）
             if (result.Error != null)
             {
                 var errorMsg = FormatError(result.Error);
@@ -87,7 +95,9 @@ namespace SpeakEase.AI.Lib
                 };
             }
 
+            // 取第一个 choice 作为本轮结果
             var firstChoice = result.Choices?.FirstOrDefault();
+            // 判断 LLM 是否请求了工具调用
             var hasToolCalls = firstChoice?.Message?.ToolCalls?.Any() ?? false;
 
             _logger.LogInformation(
@@ -122,8 +132,10 @@ namespace SpeakEase.AI.Lib
         {
             ArgumentNullException.ThrowIfNull(context);
 
+            // 动态解析当前用户的 LLM 配置
             await _context.ResolveAsync(cancellationToken);
 
+            // 构建流式请求体（Stream = true）
             var request = BuildRequest(context, messages, tools, stream: true);
 
             _logger.LogDebug(
@@ -134,6 +146,7 @@ namespace SpeakEase.AI.Lib
             using var response = await GetClient().SendAsync(
                 httpRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
 
+            // HTTP 状态码非 2xx，通过流式输出错误后终止
             if (!response.IsSuccessStatusCode)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -157,29 +170,34 @@ namespace SpeakEase.AI.Lib
             _logger.LogInformation("StreamAsync 流式连接已建立: Model={Model}, StatusCode={StatusCode}",
                 request.Model, (int)response.StatusCode);
 
+            // 建立 SSE 流读取器，逐行解析 Server-Sent Events
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var reader = new StreamReader(stream, Encoding.UTF8);
 
-            var contentBuilder = new StringBuilder();
-            var reasoningBuilder = new StringBuilder();
-            var toolCallAccumulators = new Dictionary<int, ToolCallAccumulator>();
+            // 流式片段累积器的初始化
+            var contentBuilder = new StringBuilder();          // 累积文本内容
+            var reasoningBuilder = new StringBuilder();        // 累积思考链内容（DeepSeek 等模型）
+            var toolCallAccumulators = new Dictionary<int, ToolCallAccumulator>(); // 按 index 累积工具调用 delta
             string finishReason = null;
             string responseModel = context.Model;
             string requestId = null;
             UsageInfo usage = null;
-            bool anySseData = false;
-            bool hasProtocolError = false;
+            bool anySseData = false;       // 标记是否收到过有效 SSE 数据
+            bool hasProtocolError = false; // 标记是否收到过协议错误
             string protocolError = null;
 
+            // === SSE 行解析循环 ===
             while (true)
             {
                 var line = await reader.ReadLineAsync(cancellationToken);
                 if (line is null)
                     break;
 
+                // 跳过空行和非 data: 行
                 if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:"))
                     continue;
 
+                // 提取 data: 后的 JSON 数据
                 var data = line[5..].Trim();
                 if (data == "[DONE]")
                     break;
@@ -188,6 +206,7 @@ namespace SpeakEase.AI.Lib
                 if (chunk is null)
                     continue;
 
+                // 流式 chunk 包含协议错误（如速率限制、内容过滤）
                 if (chunk.Error != null)
                 {
                     var errorMsg = FormatError(chunk.Error);
@@ -202,12 +221,14 @@ namespace SpeakEase.AI.Lib
 
                 anySseData = true;
 
+                // 更新请求级元数据（响应中的 Id 和 Model）
                 if (!string.IsNullOrEmpty(chunk.Id))
                     requestId = chunk.Id;
 
                 if (!string.IsNullOrEmpty(chunk.Model))
                     responseModel = chunk.Model;
 
+                // 累加流式 Usage（部分 LLM 在流式中间或最后发送 usage chunk）
                 if (chunk.Usage != null)
                 {
                     usage ??= new UsageInfo();
@@ -227,6 +248,7 @@ namespace SpeakEase.AI.Lib
                 if (delta == null)
                     continue;
 
+                // 思维链增量（DeepSeek R1 等模型的 reasoning_content）
                 if (!string.IsNullOrEmpty(delta.ReasoningContent))
                 {
                     reasoningBuilder.Append(delta.ReasoningContent);
@@ -237,6 +259,7 @@ namespace SpeakEase.AI.Lib
                     };
                 }
 
+                // 普通文本内容增量
                 if (!string.IsNullOrEmpty(delta.Content))
                 {
                     contentBuilder.Append(delta.Content);
@@ -247,10 +270,12 @@ namespace SpeakEase.AI.Lib
                     };
                 }
 
+                // 工具调用增量：每个 chunk 中 tool_calls 的 delta 片段需要按 index 合并累积
                 if (delta.ToolCalls != null)
                 {
                     foreach (var toolCallDelta in delta.ToolCalls)
                     {
+                        // 将增量片段合并到累加器中
                         StreamToolCallHelper.MergeDelta(toolCallAccumulators, toolCallDelta);
 
                         yield return new LLMTurnChunk
@@ -272,9 +297,11 @@ namespace SpeakEase.AI.Lib
                 }
             }
 
+            // 判断是否包含工具调用：累加器有数据且 finishReason 为 tool_calls 或未指定但有累积数据
             var hasToolCalls = toolCallAccumulators.Count > 0 &&
                 (finishReason == "tool_calls" || finishReason == null && toolCallAccumulators.Count > 0);
 
+            // 未收到任何有效 SSE 数据（可能返回了空流或非 SSE 格式）
             if (!anySseData)
             {
                 _logger.LogWarning("StreamAsync 未收到有效的 SSE 数据, StatusCode={StatusCode}", (int)response.StatusCode);
@@ -317,6 +344,7 @@ namespace SpeakEase.AI.Lib
             };
         }
 
+        // 格式化 LLM 协议级错误信息，合并 Code + Type + Message
         private static string FormatError(ErrorInfo error)
         {
             if (error == null) return string.Empty;
@@ -327,6 +355,7 @@ namespace SpeakEase.AI.Lib
             return string.Join(" ", parts);
         }
 
+        // 格式化 HTTP 级错误信息，截断过长响应体（防止日志溢出）
         private static string FormatHttpError(HttpResponseMessage response, string body)
         {
             var message = $"AI 服务返回错误，状态码 {(int)response.StatusCode} {response.ReasonPhrase}";
@@ -342,6 +371,7 @@ namespace SpeakEase.AI.Lib
             return _httpClientFactory.CreateClient(HttpClientName);
         }
 
+        // 构建 HTTP 请求消息：设置 Base URL + 路径 + JSON 请求体 + Bearer Token 鉴权
         private HttpRequestMessage CreateRequestMessage<T>(string path, T body)
         {
             var baseUri = new Uri(_context.Url.TrimEnd('/') + "/");
@@ -350,6 +380,7 @@ namespace SpeakEase.AI.Lib
                 Content = JsonContent.Create(body, options: JsonOptions)
             };
 
+            // 使用 Bearer Token 方式进行 API Key 鉴权
             if (!string.IsNullOrWhiteSpace(_context.ApiKey))
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _context.ApiKey);
 
@@ -374,11 +405,14 @@ namespace SpeakEase.AI.Lib
             Stream = stream
         };
 
+        // 解析最大输出 Token 数：取请求值与全局上限的较小值，确保不超过配额
         private int? ResolveMaxTokens(int? requestedMaxTokens)
         {
+            // 全局未配置上限，直接使用请求值
             if (_context.MaxOutputTokens <= 0)
                 return requestedMaxTokens;
 
+            // 取 min(请求值, 全局上限)，防止单次请求消耗过多 Token
             if (requestedMaxTokens is > 0)
                 return Math.Min(requestedMaxTokens.Value, _context.MaxOutputTokens);
 

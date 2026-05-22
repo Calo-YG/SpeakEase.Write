@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Exceptions;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// AI创作助手应用服务：处理与AI编排器的对话交互，支持同步和流式两种响应模式
 public sealed class AgentApplication(
     CreationOrchestrator orchestrator,
     ICreationSessionManager sessionManager) : IAgentApplication
@@ -16,16 +17,21 @@ public sealed class AgentApplication(
     private readonly CreationOrchestrator _orchestrator = orchestrator;
     private readonly ICreationSessionManager _sessionManager = sessionManager;
 
+    // 同步聊天：收集AI编排器返回的所有内容片段后，一次性返回完整响应
     public async Task<AgentResponse> ChatAsync(AgentChatRequestDto request, CancellationToken cancellationToken = default)
     {
+        // 参数校验：检查WorkId、Messages等必填项
         ValidateRequest(request);
 
         var workId = request.WorkId.Trim();
+        // 提取最新一条用户消息作为AI输入
         var userMessage = ExtractLatestUserMessage(request.Messages);
+        // 确保有活跃的创作会话（不存在则自动创建）
         var sessionId = await EnsureActiveSessionAsync(workId);
         var contentParts = new List<string>();
         var errorMessage = string.Empty;
 
+        // 通过AI编排器执行对话，收集返回的内容块
         await foreach (var chunk in _orchestrator.ExecuteAsync(
             workId,
             sessionId,
@@ -42,10 +48,13 @@ public sealed class AgentApplication(
                 errorMessage = chunk.Content;
         }
 
+        // 如果AI编排器返回错误，直接抛出业务异常
         if (!string.IsNullOrWhiteSpace(errorMessage))
             BusinessThrow.ThrowException(errorMessage);
 
+        // 拼接所有内容片段为完整响应文本
         var aiContent = string.Join(string.Empty, contentParts);
+        // 将本轮对话（用户消息+AI回复）追加到会话记录
         var appendResult = await _sessionManager.AppendTurnAsync(
             sessionId,
             userMessage,
@@ -62,19 +71,25 @@ public sealed class AgentApplication(
         };
     }
 
+    // 流式聊天：实时yield返回AI编排器的内容块（SSE），完成后记录对话历史
     public async IAsyncEnumerable<AgentStreamChunk> StreamChatAsync(
         AgentChatRequestDto request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        // 参数校验：检查WorkId、Messages等必填项
         ValidateRequest(request);
 
         var workId = request.WorkId.Trim();
+        // 提取最新一条用户消息作为AI输入
         var userMessage = ExtractLatestUserMessage(request.Messages);
+        // 确保有活跃的创作会话（不存在则自动创建）
         var sessionId = await EnsureActiveSessionAsync(workId);
         var accumulatedContent = new StringBuilder();
+        // 收集工具调用结果用于记录会话历史
         var toolResults = new List<(string ToolName, bool Success, string Content)>();
         var hadError = false;
 
+        // 流式执行AI编排器，实时yield内容块给调用方
         await foreach (var chunk in _orchestrator.ExecuteAsync(
             workId,
             sessionId,
@@ -90,6 +105,7 @@ public sealed class AgentApplication(
             if (chunk.Type == "error")
                 hadError = true;
 
+            // 截断过长的工具结果内容（超过500字符），避免存储过大
             if (chunk.Type == "tool_result" && chunk.ToolResult is { } result)
             {
                 var truncated = result.Content?.Length > 500
@@ -102,9 +118,11 @@ public sealed class AgentApplication(
             yield return chunk;
         }
 
+        // 如果流式过程中发生错误，不再记录会话历史
         if (hadError)
             yield break;
 
+        // 流式完成后，将本轮对话追加到会话记录（含工具调用结果）
         var appendResult = await _sessionManager.AppendTurnAsync(
             sessionId,
             userMessage,
@@ -116,6 +134,7 @@ public sealed class AgentApplication(
             BusinessThrow.ThrowException(appendResult.Message ?? "Failed to record conversation turn.");
     }
 
+    // 确保作品有活跃的AI创作会话：先查已有会话，没有则创建新会话
     private async Task<string> EnsureActiveSessionAsync(string workId)
     {
         var sessionResult = await _sessionManager.GetActiveSessionAsync(workId);
@@ -129,6 +148,7 @@ public sealed class AgentApplication(
         return startResult.Data.SessionId;
     }
 
+    // 校验聊天请求参数：WorkId和Messages（含至少一条user消息）不能为空
     private static void ValidateRequest(AgentChatRequestDto request)
     {
         if (request is null)
@@ -144,6 +164,7 @@ public sealed class AgentApplication(
             BusinessThrow.ThrowException("User message cannot be empty.");
     }
 
+    // 从消息列表中提取最新一条role为"user"的消息内容
     private static string ExtractLatestUserMessage(List<AgentChatMessage> messages)
     {
         if (messages == null || messages.Count == 0)

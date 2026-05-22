@@ -7,6 +7,8 @@ using SpeakEase.Write.Infrastructure.AI.Tools;
 
 namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
+// 世界观Agent：管理小说世界观的六维架构（世界规则/力量体系/天道法则/地理文明/势力格局/历史编年）
+// 核心能力：从宏观到微观构建层次分明、逻辑自洽的世界设定
 public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<WorldAgent> logger)
     : AgentBase(llm, tools, logger), IWorldAgent
 {
@@ -14,8 +16,9 @@ public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override string DisplayName => "世界观Agent";
 
-    public string WorldDomain => "世界观设定";
+    public string WorldDomain => "世界观设定"; // 世界观领域标识
 
+    // Agent元数据：内容类型为设定，LLM参数偏保守(0.7温度)，大MaxTokens支持长设定输出
     public override AgentMetadata Metadata => new()
     {
         ContentType = "setting",
@@ -24,6 +27,8 @@ public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 
     public override string RouteDescription => "管理世界观/世界设定/势力/地理";
 
+    // 构建世界观Agent的系统提示词：包含角色定义、ReAct工作模式、三种流程（新建/修改扩展/查询参考）、
+    // 六维架构的设计原则、输出要求
     public override string BuildPrompt()
     {
         return """
@@ -132,6 +137,7 @@ public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<
 """;
     }
 
+    // 注册世界观Agent所需的工具：作品信息、世界观、角色、大纲、势力、地理、力量体系、世界法则、历史事件等
     protected override IEnumerable<ToolDefinition> GetToolDefinitions()
     {
         yield return GetWorkInfoTool.ToolDefinition;

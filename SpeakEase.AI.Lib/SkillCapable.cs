@@ -24,21 +24,24 @@ namespace SpeakEase.AI.Lib
         {
             ArgumentNullException.ThrowIfNull(skill);
 
-            // 按名称去重，避免重复注册
+            // 按名称去重：同名技能（忽略大小写）不重复注册
             if (!string.IsNullOrEmpty(skill.Name) &&
                 _skills.Any(s => string.Equals(s.Name, skill.Name, StringComparison.OrdinalIgnoreCase)))
                 return;
 
             _skills.Add(skill);
-            _cachedPrompt = null; // 失效缓存
+            // 新技能注册后，缓存的提示词失效，下次 BuildSkillPropmt 时重建
+            _cachedPrompt = null;
         }
 
         /// <inheritdoc />
         public string BuildSkillPropmt()
         {
+            // 无技能时返回空
             if (_skills.Count == 0)
                 return string.Empty;
 
+            // 有缓存直接返回，避免重复构建字符串
             if (_cachedPrompt != null)
                 return _cachedPrompt;
 
@@ -47,7 +50,7 @@ namespace SpeakEase.AI.Lib
         }
 
         /// <summary>
-        /// 实际构建技能提示词的逻辑
+        /// 实际构建技能提示词的逻辑：生成 Markdown 格式的技能列表
         /// </summary>
         private string BuildSkillPromptCore()
         {

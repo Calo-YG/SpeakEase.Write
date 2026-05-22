@@ -9,14 +9,17 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 角色成长弧线应用服务：管理角色故事发展轨迹的阶段定义（初始状态→触发事件→变化状态）
 public class CharacterArcApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext) : ICharacterArcApplication
 {
+    // 验证当前用户是否拥有该作品的操作权限
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 按角色查询其所有成长弧线阶段，按阶段序号升序排列
     public async Task<ApiResult<List<CharacterArcResponse>>> ListArcsByCharacterAsync(string workId, string characterId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -38,6 +41,7 @@ public class CharacterArcApplication(
         return new ApiResult<List<CharacterArcResponse>>(list);
     }
 
+    // 查询作品下所有角色的成长弧线，先按角色ID再按阶段序号排序
     public async Task<ApiResult<List<CharacterArcResponse>>> ListAllArcsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -59,6 +63,7 @@ public class CharacterArcApplication(
         return new ApiResult<List<CharacterArcResponse>>(list);
     }
 
+    // 创建角色成长弧线阶段：定义角色的初始状态、触发事件和变化后的状态
     public async Task<ApiResult<CharacterArcResponse>> CreateArcAsync(string workId, string characterId, SaveCharacterArcRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -95,6 +100,7 @@ public class CharacterArcApplication(
         });
     }
 
+    // 更新成长弧线阶段：修改阶段标题、状态描述和触发事件
     public async Task<ApiResult<CharacterArcResponse>> UpdateArcAsync(string workId, string characterId, string arcId, SaveCharacterArcRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -126,6 +132,7 @@ public class CharacterArcApplication(
         });
     }
 
+    // 删除成长弧线阶段：软删除（从DbContext中移除）
     public async Task<ApiResult> DeleteArcAsync(string workId, string characterId, string arcId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

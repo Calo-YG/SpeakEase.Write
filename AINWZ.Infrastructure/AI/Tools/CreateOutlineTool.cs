@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 大纲创建工具：创建/更新作品的主大纲（聚合根），支持三幕式/四幕式/英雄之旅/自由结构
 public sealed class CreateOutlineTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

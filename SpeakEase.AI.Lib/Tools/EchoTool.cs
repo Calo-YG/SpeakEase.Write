@@ -39,12 +39,14 @@ public sealed class EchoTool : IToolExecutor
         string message = string.Empty;
         try
         {
+            // 尝试从 JSON arguments 中提取 message 参数
             using var doc = JsonDocument.Parse(arguments);
             if (doc.RootElement.TryGetProperty("message", out var prop))
                 message = prop.GetString() ?? string.Empty;
         }
         catch
         {
+            // JSON 解析失败时，将原始参数字符串作为回显内容
             message = arguments;
         }
 

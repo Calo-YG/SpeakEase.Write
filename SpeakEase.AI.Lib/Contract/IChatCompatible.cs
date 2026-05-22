@@ -4,8 +4,9 @@ using SpeakEase.AI.Lib.OpenAIModel;
 namespace SpeakEase.AI.Lib.Contract
 {
     /// <summary>
-    /// LLM 单轮交互策略：封装与 LLM 的一次请求/响应交互，
-    /// 使 ReActAgent 只关注循环编排逻辑，不感知底层协议细节。
+    /// LLM 单轮交互策略接口：封装与 LLM 的一次请求/响应交互。
+    /// ReActAgent 通过此接口与 LLM 通信，不感知底层协议（HTTP/SSE/WebSocket）和序列化细节。
+    /// 实现类负责：HTTP 通信、JSON 序列化/反序列化、流式 SSE 解析、Tool Call 增量拼接。
     /// </summary>
     public interface IChatCompatible
     {

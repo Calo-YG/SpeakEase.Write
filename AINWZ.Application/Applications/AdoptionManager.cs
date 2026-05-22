@@ -11,6 +11,7 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 内容采纳管理器：负责将AI生成的内容正式采纳到作品章节，含版本管理、字数统计和事务保护
 public sealed class AdoptionManager : IAdoptionManager
 {
     private readonly SpeakEaseDbContext _db;
@@ -33,8 +34,10 @@ public sealed class AdoptionManager : IAdoptionManager
         _log = log;
     }
 
+    // 完整采纳：将AI生成内容写入章节、创建版本快照，并在事务中同步更新作品总字数
     public async Task<ApiResult<ChapterDetailResponse>> AdoptFullAsync(AdoptChapterRequest request)
     {
+        // 参数校验：WorkId、ChapterId、Content 均不能为空
         if (string.IsNullOrWhiteSpace(request.WorkId))
             return new ApiResult<ChapterDetailResponse>("作品ID不能为空", 400);
         if (string.IsNullOrWhiteSpace(request.ChapterId))
@@ -42,6 +45,7 @@ public sealed class AdoptionManager : IAdoptionManager
         if (string.IsNullOrWhiteSpace(request.Content))
             return new ApiResult<ChapterDetailResponse>("采纳内容不能为空", 400);
 
+        // 验证作品归属：只有作品作者才能操作
         var work = await _db.Works.AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == request.WorkId && w.UserId == _user.UserId);
         if (work == null)
@@ -52,6 +56,7 @@ public sealed class AdoptionManager : IAdoptionManager
         if (chapter == null)
             return new ApiResult<ChapterDetailResponse>("章节不存在", 404);
 
+        // 先创建版本快照（来源标记为ai-generate）
         var versionResult = await _versionMgr.CreateVersionAsync(new CreateVersionRequest
         {
             ChapterId = request.ChapterId,
@@ -60,6 +65,7 @@ public sealed class AdoptionManager : IAdoptionManager
             Source = "ai-generate"
         });
 
+        // 更新章节内容、摘要和字数
         chapter.Content = request.Content;
         chapter.Summary = request.Summary;
         chapter.WordCount = CountWords(request.Content);
@@ -67,15 +73,19 @@ public sealed class AdoptionManager : IAdoptionManager
         chapter.UpdateBy = _user.UserId;
         chapter.UpdateAt = DateTime.Now;
 
+        // 开启事务：章节保存和作品字数统计需原子性完成
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
+            // 提交章节变更
             await _db.SaveChangesAsync();
 
+            // 重新汇总作品下所有章节的字数（数据库层面SUM，不加载到内存）
             var totalWords = await _db.Chapters.AsNoTracking()
                 .Where(c => c.WorkId == request.WorkId)
                 .SumAsync(c => c.WordCount);
 
+            // 使用ExecuteUpdateAsync批量更新作品总字数（IO-bound，不加载实体到内存）
             await _db.Works
                 .Where(w => w.Id == request.WorkId)
                 .ExecuteUpdateAsync(s => s
@@ -86,11 +96,13 @@ public sealed class AdoptionManager : IAdoptionManager
         }
         catch (Exception ex)
         {
+            // 事务失败时回滚，保证章节和作品统计数据一致性
             await transaction.RollbackAsync();
             _log.LogError(ex, "采纳内容到章节 {ChapterId} 事务失败，已回滚", request.ChapterId);
             return new ApiResult<ChapterDetailResponse>("采纳失败，请稍后重试", 500);
         }
 
+        // 如果提供了会话ID，标记该会话中的内容已被采纳
         if (!string.IsNullOrWhiteSpace(request.SessionId))
         {
             await _sessionMgr.AdoptContentAsync(request.SessionId, new AdoptContentRequest
@@ -118,6 +130,7 @@ public sealed class AdoptionManager : IAdoptionManager
         });
     }
 
+    // 放弃AI生成内容：取消对应的创作会话
     public async Task<ApiResult> DiscardAsync(string sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -129,6 +142,7 @@ public sealed class AdoptionManager : IAdoptionManager
         return new ApiResult(true);
     }
 
+    // 统计内容字数：按非空白字符计数
     private static int CountWords(string content)
     {
         if (string.IsNullOrWhiteSpace(content)) return 0;

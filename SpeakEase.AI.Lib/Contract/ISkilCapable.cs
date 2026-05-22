@@ -3,6 +3,9 @@ using SpeakEase.AI.Lib.OpenAIModel;
 
 namespace SpeakEase.AI.Lib.Contract
 {
+    /// <summary>
+    /// 技能能力接口：管理技能注册与技能摘要提示词生成
+    /// </summary>
     public interface ISkilCapable
     {
         /// <summary>

@@ -14,12 +14,14 @@ namespace SpeakEase.Write.Application.Applications;
 /// <summary>
 /// 参考资源应用服务实现。
 /// </summary>
+// 管理参考作品和参考段落的查询、收藏切换，段落添加时支持自动创建书籍
 public class ReferenceApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<ReferenceApplication> logger) : IReferenceApplication
 {
+    // 查询参考作品列表，支持关键词搜索，按评分降序
     public async Task<ApiResult<List<ReferenceWorkItemResponse>>> GetWorksAsync(ReferenceWorkQueryRequest request, CancellationToken cancellationToken = default)
     {
         var query = dbContext.ReferenceWorks.AsNoTracking();
@@ -43,6 +45,7 @@ public class ReferenceApplication(
         return new ApiResult<List<ReferenceWorkItemResponse>>(list);
     }
 
+    // 分页查询参考段落：先分页查 ID，再按 ID 批量查详情并附带作品信息和用户收藏状态
     public async Task<ApiResult<PageResult<ReferencePassageItemResponse>>> QueryPassagesAsync(ReferencePassageQueryRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -109,6 +112,7 @@ public class ReferenceApplication(
             PageResult<ReferencePassageItemResponse>.Create(total, items, pageIndex, pageSize));
     }
 
+    // 按 ID 获取段落详情，附带作品信息和当前用户收藏状态
     public async Task<ApiResult<ReferencePassageItemResponse>> GetPassageByIdAsync(string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -141,6 +145,7 @@ public class ReferenceApplication(
         });
     }
 
+    // 添加参考段落：在事务中按书名查找/创建书籍并保存段落，避免产生孤立的 ReferenceWork
     public async Task<ApiResult<ReferencePassageItemResponse>> AddPassageAsync(SaveReferencePassageRequest request, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(request.Content))
@@ -225,6 +230,7 @@ public class ReferenceApplication(
         return new ApiResult<ReferencePassageItemResponse>(response);
     }
 
+    // 删除参考段落（物理删除）
     public async Task<ApiResult> DeletePassageAsync(string id, CancellationToken cancellationToken = default)
     {
         var entity = await dbContext.ReferencePassages
@@ -240,6 +246,7 @@ public class ReferenceApplication(
         return new ApiResult(true);
     }
 
+    // 切换收藏状态：已收藏则取消（计数 -1），未收藏则添加（计数 +1）
     public async Task<ApiResult<bool>> ToggleFavoriteAsync(string passageId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -277,6 +284,7 @@ public class ReferenceApplication(
         return new ApiResult<bool>(isFavorited);
     }
 
+    // 解析 JSON 字符串为标签列表，解析失败返回空列表
     private static List<string> ParseJsonList(string json)
     {
         if (string.IsNullOrWhiteSpace(json)) return new();
@@ -284,6 +292,7 @@ public class ReferenceApplication(
         catch { return new(); }
     }
 
+    // 序列化标签列表为 JSON 字符串
     private static string SerializeJsonList(List<string> list)
         => JsonSerializer.Serialize(list);
 }

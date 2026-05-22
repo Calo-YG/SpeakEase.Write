@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 章节版本历史查询工具：返回章节的版本历史（手动保存/AI生成/自动保存），用于回溯风格或找回被覆盖内容
 public sealed class GetChapterVersionsTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

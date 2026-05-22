@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 时间线事件创建/更新工具：记录故事中发生的重要事件，支持 plot/character/world/backstory 四种类型
 public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

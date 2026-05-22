@@ -10,21 +10,25 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 时间线应用服务：管理作品中按时间轴排列的事件节点，支持关联章节和角色
 public class TimelineApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<TimelineApplication> logger) : ITimelineApplication
 {
+    // 校验用户是否为作品的拥有者
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 校验章节是否存在（空ID视为通过，允许事件不关联章节）
     private async Task<bool> ChapterExistsAsync(string chapterId, string workId, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(chapterId)) return true;
         return await dbContext.Chapters.AnyAsync(c => c.Id == chapterId && c.WorkId == workId, ct);
     }
 
+    // 批量校验关联角色ID是否都属于该作品
     private async Task<bool> CharactersExistAsync(List<string> characterIds, string workId, CancellationToken ct)
     {
         if (characterIds is null || characterIds.Count == 0) return true;
@@ -33,6 +37,7 @@ public class TimelineApplication(
         return existingCount == characterIds.Select(x => x).Distinct().Count();
     }
 
+    // 列出作品下所有时间线事件，按事件时间升序排列
     public async Task<ApiResult<List<TimelineEventItemResponse>>> ListTimelineEventsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -54,6 +59,7 @@ public class TimelineApplication(
         return new ApiResult<List<TimelineEventItemResponse>>(list);
     }
 
+    // 按ID获取单个时间线事件详情
     public async Task<ApiResult<TimelineEventItemResponse>> GetTimelineEventByIdAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -77,6 +83,7 @@ public class TimelineApplication(
         return new ApiResult<TimelineEventItemResponse>(result);
     }
 
+    // 创建时间线事件：校验关联章节和角色存在性后写入
     public async Task<ApiResult<TimelineEventItemResponse>> CreateTimelineEventAsync(string workId, SaveTimelineEventRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -123,6 +130,7 @@ public class TimelineApplication(
         });
     }
 
+    // 更新时间线事件：部分字段更新，保留未传入字段的原值
     public async Task<ApiResult<TimelineEventItemResponse>> UpdateTimelineEventAsync(string workId, string id, SaveTimelineEventRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -162,6 +170,7 @@ public class TimelineApplication(
         });
     }
 
+    // 删除时间线事件
     public async Task<ApiResult> DeleteTimelineEventAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -182,6 +191,8 @@ public class TimelineApplication(
         return new ApiResult(true);
     }
 
+    // 删除前依赖查询：查目标事件之后、且与目标事件共享关联角色的后续事件（上限20条）
+    // 用于提示用户删除该事件可能影响到的下游事件
     public async Task<ApiResult<List<TimelineEventItemResponse>>> ListEventsBeforeDeleteAsync(string workId, string eventId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;

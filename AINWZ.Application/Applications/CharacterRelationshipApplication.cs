@@ -10,21 +10,25 @@ using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
+// 角色关系应用服务：管理作品中角色之间的关联关系，支持增删改查和环形检测
 public class CharacterRelationshipApplication(
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     IUserContext userContext,
     ILogger<CharacterRelationshipApplication> logger) : ICharacterRelationshipApplication
 {
+    // 校验用户是否为作品的拥有者
     private async Task<bool> OwnsWorkAsync(string workId, string userId, CancellationToken ct)
         => await dbContext.Works.AnyAsync(x => x.Id == workId && x.UserId == userId, ct);
 
+    // 校验角色是否存在于指定作品中
     private async Task<bool> CharacterExistsAsync(string characterId, string workId, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(characterId)) return false;
         return await dbContext.Characters.AnyAsync(c => c.Id == characterId && c.WorkId == workId, ct);
     }
 
+    // 列出作品下所有角色关系，按关系类型排序
     public async Task<ApiResult<List<CharacterRelationshipResponse>>> ListRelationshipsAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -46,6 +50,7 @@ public class CharacterRelationshipApplication(
         return new ApiResult<List<CharacterRelationshipResponse>>(list);
     }
 
+    // 创建角色关系：校验源/目标角色存在性、防重复、防自引用
     public async Task<ApiResult<CharacterRelationshipResponse>> CreateRelationshipAsync(string workId, SaveCharacterRelationshipRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -101,6 +106,7 @@ public class CharacterRelationshipApplication(
         });
     }
 
+    // 更新角色关系：部分字段更新，允许修改源/目标角色和关系属性
     public async Task<ApiResult<CharacterRelationshipResponse>> UpdateRelationshipAsync(string workId, string id, SaveCharacterRelationshipRequest request, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -142,6 +148,7 @@ public class CharacterRelationshipApplication(
         });
     }
 
+    // 删除角色关系
     public async Task<ApiResult> DeleteRelationshipAsync(string workId, string id, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
@@ -159,17 +166,20 @@ public class CharacterRelationshipApplication(
         return new ApiResult(true);
     }
 
+    // 环形检测：基于DFS遍历关系图，检测角色间是否存在循环引用路径
     public async Task<ApiResult<Dictionary<string, List<string>>>> DetectCirclesAsync(string workId, CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
         if (!await OwnsWorkAsync(workId, userId, cancellationToken))
             return new ApiResult<Dictionary<string, List<string>>>("作品不存在或无权访问。", 404);
 
+        // 加载作品下所有角色关系，仅取源/目标ID
         var allRelations = await dbContext.CharacterRelationships.AsNoTracking()
             .Where(x => x.WorkId == workId)
             .Select(x => new { x.SourceCharacterId, x.TargetCharacterId, x.RelationshipType })
             .ToListAsync(cancellationToken);
 
+        // 构建有向图邻接表：源角色 → 目标角色列表
         var graph = new Dictionary<string, List<string>>();
         foreach (var rel in allRelations)
         {
@@ -180,10 +190,12 @@ public class CharacterRelationshipApplication(
 
         var circles = new Dictionary<string, List<string>>();
 
+        // 深度优先搜索检测环路：从某个节点出发，能否回到自身（且路径长度>1）
         bool Dfs(string current, string target, List<string> path, HashSet<string> visited)
         {
             if (current == target && path.Count > 1)
             {
+                // 找到环路，记录完整路径
                 var circlePath = new List<string>(path) { target };
                 circles[target] = circlePath;
                 return true;
@@ -200,6 +212,7 @@ public class CharacterRelationshipApplication(
             return false;
         }
 
+        // 对图中每个节点尝试检测其是否为环的起点
         foreach (var node in graph.Keys)
         {
             if (!circles.ContainsKey(node))

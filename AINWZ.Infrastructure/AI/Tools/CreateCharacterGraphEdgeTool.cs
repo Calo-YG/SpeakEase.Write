@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 角色图谱边工具：创建/更新图谱中两个节点之间的关系连线，支持节点ID和角色名称两种指定策略
 public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

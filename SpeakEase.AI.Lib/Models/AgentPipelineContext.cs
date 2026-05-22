@@ -2,7 +2,8 @@ using SpeakEase.AI.Lib.OpenAIModel;
 namespace SpeakEase.AI.Lib.Models;
 
 /// <summary>
-/// Pipeline Filter 上下文，携带当前 Agent 执行状态
+/// Pipeline Filter 上下文，携带当前 Agent 执行状态。
+/// 用于在 LLM 调用前后传递请求/响应信息，供 Filter 链进行拦截和修改。
 /// </summary>
 public sealed class AgentPipelineContext
 {

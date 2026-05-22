@@ -3,6 +3,7 @@ using SpeakEase.AI.Lib.Models;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 工具参数解析器：从 JSON 中提取并验证参数（字符串/整数/数组），统一错误收集和反馈
 public sealed class ToolArgumentParser
 {
     private readonly JsonElement _root;

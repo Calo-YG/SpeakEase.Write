@@ -4,8 +4,8 @@ using SpeakEase.AI.Lib.OpenAIModel;
 namespace SpeakEase.AI.Lib.Contract
 {
     /// <summary>
-    /// Agent 工具调用能力接口（可选）。
-    /// 实现此接口的 Agent 可以声明自己支持的工具并执行工具调用。
+    /// Agent 工具调用能力接口：管理工具定义注册与按名路由执行。
+    /// 工具通过 Keyed DI 按函数名解析对应的 IToolExecutor 实现。
     /// </summary>
     public interface IToolCapable
     {

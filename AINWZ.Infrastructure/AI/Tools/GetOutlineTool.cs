@@ -9,6 +9,7 @@ using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
+// 大纲查询工具：返回大纲基本信息（标题/结构模板/摘要）和节点列表，支持按卷或关键词筛选
 public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExecutor
 {
     private readonly IServiceScopeFactory _scopeFactory = scopeFactory;

@@ -2,6 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
+    /// <summary>
+    /// 非流式响应中的单个 choice，包含完整的 AssistantMessage。
+    /// </summary>
     public class Choice
     {
         [JsonPropertyName("index")]

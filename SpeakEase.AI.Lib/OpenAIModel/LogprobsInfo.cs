@@ -2,6 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
+    /// <summary>
+    /// Token 级别 logprob 信息（用于调试和评分）。
+    /// </summary>
     public class LogprobsInfo
     {
         [JsonPropertyName("content")]

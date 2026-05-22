@@ -2,6 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace SpeakEase.AI.Lib.OpenAIModel
 {
+    /// <summary>
+    /// Assistant 消息：LLM 返回的回复，可包含文本内容、思维链内容和工具调用请求。
+    /// </summary>
     public class AssistantMessage : ChatMessage
     {
         [JsonIgnore]

@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -34,23 +33,24 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory, IOpt
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var name = args.GetString("character_name", required: true);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var character = await db.Characters.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.WorkId == workId && c.Name == name, ct)
-            ?? await db.Characters.AsNoTracking().FirstOrDefaultAsync(c => c.WorkId == workId && c.Name != null && c.Name.Contains(name), ct);
+            .FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.Name == args.CharacterName, ct)
+            ?? await db.Characters.AsNoTracking().FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.Name != null && c.Name.Contains(args.CharacterName), ct);
 
         if (character == null)
-            return ToolResult.Fail($"未找到角色「{name}」", "character_not_found");
+            return ToolResult.Fail($"未找到角色「{args.CharacterName}」", "character_not_found");
 
         var relationships = await db.CharacterRelationships.AsNoTracking()
-            .Where(r => r.WorkId == workId && (r.SourceCharacterId == character.Id || r.TargetCharacterId == character.Id))
+            .Where(r => r.WorkId == args.WorkId && (r.SourceCharacterId == character.Id || r.TargetCharacterId == character.Id))
             .ToListAsync(ct);
 
         var relatedIds = relationships
@@ -89,5 +89,20 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory, IOpt
             character.Name,
             Relationships = relList
         }, snapshot.Value));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string CharacterName { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(CharacterName))
+                return ToolResult.Fail("缺少必需参数 'character_name'", "argument_parse_error");
+            return null;
+        }
     }
 }

@@ -1,9 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,16 +33,17 @@ public sealed class GetCharacterGraphTool(IServiceScopeFactory scopeFactory) : I
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var focusName = args.GetString("character_name");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var characters = await db.Characters.AsNoTracking()
-            .Where(c => c.WorkId == workId)
+            .Where(c => c.WorkId == args.WorkId)
             .Select(c => new { c.Id, c.Name, c.Identity })
             .ToListAsync(ct);
 
@@ -52,14 +53,14 @@ public sealed class GetCharacterGraphTool(IServiceScopeFactory scopeFactory) : I
         var characterMap = characters.ToDictionary(c => c.Id, c => c.Name ?? c.Id);
 
         var relationshipsQuery = db.CharacterRelationships.AsNoTracking()
-            .Where(r => r.WorkId == workId);
+            .Where(r => r.WorkId == args.WorkId);
 
-        if (!string.IsNullOrEmpty(focusName))
+        if (!string.IsNullOrEmpty(args.CharacterName))
         {
             var focusChar = characters.FirstOrDefault(c =>
-                c.Name != null && c.Name.Contains(focusName));
+                c.Name != null && c.Name.Contains(args.CharacterName));
             if (focusChar == null)
-                return ToolResult.Fail($"未找到角色「{focusName}」", "not_found");
+                return ToolResult.Fail($"未找到角色「{args.CharacterName}」", "not_found");
 
             relationshipsQuery = relationshipsQuery.Where(r =>
                 r.SourceCharacterId == focusChar.Id || r.TargetCharacterId == focusChar.Id);
@@ -87,9 +88,9 @@ public sealed class GetCharacterGraphTool(IServiceScopeFactory scopeFactory) : I
             }
         }
 
-        if (!string.IsNullOrEmpty(focusName))
+        if (!string.IsNullOrEmpty(args.CharacterName))
         {
-            var focusChar = characters.First(c => c.Name != null && c.Name.Contains(focusName));
+            var focusChar = characters.First(c => c.Name != null && c.Name.Contains(args.CharacterName));
             var relatedIds = relationships
                 .SelectMany(r => new[] { r.SourceCharacterId, r.TargetCharacterId })
                 .Where(id => id != focusChar.Id)
@@ -99,10 +100,23 @@ public sealed class GetCharacterGraphTool(IServiceScopeFactory scopeFactory) : I
             var unrelated = characters.Where(c => c.Id != focusChar.Id && !relatedIds.Contains(c.Id)).ToList();
             if (unrelated.Count > 0)
             {
-                sb.AppendLine($"\n与「{focusName}」暂无关系的角色: {string.Join("、", unrelated.Select(c => c.Name))}");
+                sb.AppendLine($"\n与「{args.CharacterName}」暂无关系的角色: {string.Join("、", unrelated.Select(c => c.Name))}");
             }
         }
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string CharacterName { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

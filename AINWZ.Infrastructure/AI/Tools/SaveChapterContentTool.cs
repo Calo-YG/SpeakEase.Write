@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -38,13 +39,11 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var content = args.GetString("content", required: true);
-        var chapterId = args.GetString("chapter_id");
-        var chapterSequence = args.GetInt32("chapter_sequence");
-        var chapterTitle = args.GetString("chapter_title");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
@@ -52,18 +51,18 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
 
         ChapterEntity chapter = null;
 
-        if (!string.IsNullOrEmpty(chapterId))
+        if (!string.IsNullOrEmpty(args.ChapterId))
             chapter = await db.Chapters.FirstOrDefaultAsync(
-                c => c.Id == chapterId && c.WorkId == workId, ct);
+                c => c.Id == args.ChapterId && c.WorkId == args.WorkId, ct);
 
-        if (chapter == null && chapterSequence > 0)
+        if (chapter == null && args.ChapterSequence > 0)
             chapter = await db.Chapters.FirstOrDefaultAsync(
-                c => c.WorkId == workId && c.Sequence == chapterSequence, ct);
+                c => c.WorkId == args.WorkId && c.Sequence == args.ChapterSequence, ct);
 
         if (chapter != null)
-            return await UpdateExisting(db, chapter, content, ct);
+            return await UpdateExisting(db, chapter, args.Content, ct);
 
-        return await CreateNew(db, idGen, workId, chapterSequence, chapterTitle, content, ct);
+        return await CreateNew(db, idGen, args.WorkId, args.ChapterSequence, args.ChapterTitle, args.Content, ct);
     }
 
     private static async Task<ToolResult> UpdateExisting(
@@ -179,5 +178,23 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
             .Where(w => w.Id == workId)
             .ExecuteUpdateAsync(s => s.SetProperty(w => w.TotalWordCount, totalWords)
                                       .SetProperty(w => w.UpdateAt, DateTime.Now), ct);
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Content { get; init; }
+        public string ChapterId { get; init; }
+        public int ChapterSequence { get; init; }
+        public string ChapterTitle { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Content))
+                return ToolResult.Fail("缺少必需参数 'content'", "argument_parse_error");
+            return null;
+        }
     }
 }

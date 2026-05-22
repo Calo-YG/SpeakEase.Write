@@ -1,9 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,25 +33,26 @@ public sealed class GetPowerSystemTool(IServiceScopeFactory scopeFactory) : IToo
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var name = args.GetString("name");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        var query = db.PowerSystems.AsNoTracking().Where(p => p.WorkId == workId);
+        var query = db.PowerSystems.AsNoTracking().Where(p => p.WorkId == args.WorkId);
 
-        if (!string.IsNullOrEmpty(name))
-            query = query.Where(p => p.Name == name);
+        if (!string.IsNullOrEmpty(args.Name))
+            query = query.Where(p => p.Name == args.Name);
 
         var systems = await query.ToListAsync(ct);
 
         if (systems.Count == 0)
-            return ToolResult.Fail(string.IsNullOrEmpty(name)
+            return ToolResult.Fail(string.IsNullOrEmpty(args.Name)
                 ? "当前作品暂无力量体系设定"
-                : $"未找到力量体系「{name}」", "not_found");
+                : $"未找到力量体系「{args.Name}」", "not_found");
 
         var sb = new StringBuilder();
         sb.AppendLine($"## 力量体系（共{systems.Count}个）");
@@ -67,5 +68,18 @@ public sealed class GetPowerSystemTool(IServiceScopeFactory scopeFactory) : IToo
         }
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Name { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

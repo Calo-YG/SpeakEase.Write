@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -35,33 +36,35 @@ public sealed class GetRecentChaptersTool(IServiceScopeFactory scopeFactory) : I
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var count = args.GetInt32("count", defaultValue: 3, min: 1, max: 10);
-        var anchorSeq = args.GetInt32("chapter_sequence");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
+
+        var count = args.Count != 0 ? args.Count : 3;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var baseQuery = db.Chapters.AsNoTracking()
-            .Where(c => c.WorkId == workId);
+            .Where(c => c.WorkId == args.WorkId);
 
-        if (anchorSeq > 0)
+        if (args.ChapterSequence > 0)
         {
             var maxSeq = await baseQuery.MaxAsync(c => (int?)c.Sequence, ct) ?? 0;
 
             var halfBefore = (count - 1) / 2;
             var remainingAfter = count - 1 - halfBefore;
 
-            var start = anchorSeq - halfBefore;
+            var start = args.ChapterSequence - halfBefore;
             if (start < 1)
             {
                 remainingAfter += 1 - start;
                 start = 1;
             }
 
-            var end = anchorSeq + remainingAfter;
+            var end = args.ChapterSequence + remainingAfter;
             if (end > maxSeq)
             {
                 start = Math.Max(1, start - (end - maxSeq));
@@ -80,7 +83,7 @@ public sealed class GetRecentChaptersTool(IServiceScopeFactory scopeFactory) : I
                 })
                 .ToListAsync(ct);
 
-            return FormatResult(chapters, $"以第{anchorSeq}章为中心（窗口 [{start}, {end}]）");
+            return FormatResult(chapters, $"以第{args.ChapterSequence}章为中心（窗口 [{start}, {end}]）");
         }
         else
         {
@@ -120,6 +123,22 @@ public sealed class GetRecentChaptersTool(IServiceScopeFactory scopeFactory) : I
         }
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public int Count { get; init; }
+        public int ChapterSequence { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (Count != 0 && (Count < 1 || Count > 10))
+                return ToolResult.Fail($"参数 'count' 值 {Count} 超出范围 [1, 10]", "argument_parse_error");
+            return null;
+        }
     }
 
     private sealed class ChapterRow

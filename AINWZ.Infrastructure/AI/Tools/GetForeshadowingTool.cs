@@ -1,9 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -38,18 +38,19 @@ public sealed class GetForeshadowingTool(IServiceScopeFactory scopeFactory) : IT
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var status = args.GetString("status");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var query = db.Foreshadowings.AsNoTracking()
-            .Where(x => x.WorkId == workId);
-        if (!string.IsNullOrEmpty(status))
-            query = query.Where(x => x.Status == status);
+            .Where(x => x.WorkId == args.WorkId);
+        if (!string.IsNullOrEmpty(args.Status))
+            query = query.Where(x => x.Status == args.Status);
 
         var foreshadowings = await query
             .OrderByDescending(x => x.Importance)
@@ -66,5 +67,18 @@ public sealed class GetForeshadowingTool(IServiceScopeFactory scopeFactory) : IT
             sb.AppendLine($"[{f.Status ?? "未设置"}] {f.Title} — {f.Description} (重要性：{f.Importance}，来源：{f.SetupChapterId ?? "未知"})");
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Status { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

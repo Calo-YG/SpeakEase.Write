@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -50,60 +50,76 @@ public sealed class CreateTimelineEventTool(IServiceScopeFactory scopeFactory) :
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var id = args.GetString("id");
-        var title = args.GetString("title", required: true);
-        var description = args.GetString("description");
-        var eventTime = args.GetString("event_time");
-        var eventType = args.GetString("event_type") ?? "plot";
-        var chapterId = args.GetString("chapter_id");
-        var relatedCharacterIds = args.GetStringArray("related_character_ids");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         TimelineEventEntity entity = null;
-        if (!string.IsNullOrEmpty(id))
-            entity = await db.TimelineEvents.FirstOrDefaultAsync(e => e.Id == id && e.WorkId == workId, ct);
+        if (!string.IsNullOrEmpty(args.Id))
+            entity = await db.TimelineEvents.FirstOrDefaultAsync(e => e.Id == args.Id && e.WorkId == args.WorkId, ct);
         if (entity == null)
-            entity = await db.TimelineEvents.FirstOrDefaultAsync(e => e.WorkId == workId && e.Title == title, ct);
+            entity = await db.TimelineEvents.FirstOrDefaultAsync(e => e.WorkId == args.WorkId && e.Title == args.Title, ct);
 
         if (entity != null)
         {
-            if (description != null) entity.Description = description;
-            if (!string.IsNullOrEmpty(eventTime))
-                entity.EventTime = DateTime.TryParse(eventTime, out var dt) ? dt : DateTime.MinValue;
-            if (!string.IsNullOrEmpty(eventType)) entity.EventType = eventType;
-            if (chapterId != null) entity.ChapterId = chapterId;
-            if (relatedCharacterIds.Count > 0) entity.RelatedCharacterIds = relatedCharacterIds;
+            if (args.Description != null) entity.Description = args.Description;
+            if (!string.IsNullOrEmpty(args.EventTime))
+                entity.EventTime = DateTime.TryParse(args.EventTime, out var dt) ? dt : DateTime.MinValue;
+            if (!string.IsNullOrEmpty(args.EventType)) entity.EventType = args.EventType;
+            if (args.ChapterId != null) entity.ChapterId = args.ChapterId;
+            if (args.RelatedCharacterIds != null && args.RelatedCharacterIds.Count > 0) entity.RelatedCharacterIds = args.RelatedCharacterIds;
             entity.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"时间线事件「{entity.Title}」已更新，ID: {entity.Id}");
         }
 
-        if (string.IsNullOrEmpty(description))
+        if (string.IsNullOrEmpty(args.Description))
             return ToolResult.Fail("创建事件必须提供 description");
-        if (string.IsNullOrEmpty(eventTime))
+        if (string.IsNullOrEmpty(args.EventTime))
             return ToolResult.Fail("创建事件必须提供 event_time");
 
         var newEntity = new TimelineEventEntity
         {
             Id = idGen.NextIdString(),
-            WorkId = workId,
-            Title = title,
-            Description = description,
-            EventTime = DateTime.TryParse(eventTime, out var dt2) ? dt2 : DateTime.MinValue,
-            EventType = eventType,
-            ChapterId = chapterId,
-            RelatedCharacterIds = relatedCharacterIds
+            WorkId = args.WorkId,
+            Title = args.Title,
+            Description = args.Description,
+            EventTime = DateTime.TryParse(args.EventTime, out var dt2) ? dt2 : DateTime.MinValue,
+            EventType = args.EventType ?? "plot",
+            ChapterId = args.ChapterId,
+            RelatedCharacterIds = args.RelatedCharacterIds ?? []
         };
 
         await db.TimelineEvents.AddAsync(newEntity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"时间线事件「{title}」已创建，ID: {newEntity.Id}，时间: {eventTime}");
+        return ToolResult.Ok($"时间线事件「{args.Title}」已创建，ID: {newEntity.Id}，时间: {args.EventTime}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Id { get; init; }
+        public string Title { get; init; }
+        public string Description { get; init; }
+        public string EventTime { get; init; }
+        public string EventType { get; init; }
+        public string ChapterId { get; init; }
+        public List<string> RelatedCharacterIds { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Title))
+                return ToolResult.Fail("缺少必需参数 'title'", "argument_parse_error");
+            return null;
+        }
     }
 }

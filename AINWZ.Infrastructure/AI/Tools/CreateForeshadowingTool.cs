@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -39,51 +39,69 @@ public sealed class CreateForeshadowingTool(IServiceScopeFactory scopeFactory) :
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var id = args.GetString("id");
-        var title = args.GetString("title", required: true);
-        var description = args.GetString("description");
-        var setupChapterId = args.GetString("setup_chapter_id");
-        var importance = args.GetInt32("importance", defaultValue: 0, min: 1, max: 5);
-        var expectedPayoffChapterId = args.GetString("expected_payoff_chapter_id");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         ForeshadowingEntity entity = null;
-        if (!string.IsNullOrEmpty(id))
-            entity = await db.Foreshadowings.FirstOrDefaultAsync(f => f.Id == id && f.WorkId == workId, ct);
+        if (!string.IsNullOrEmpty(args.Id))
+            entity = await db.Foreshadowings.FirstOrDefaultAsync(f => f.Id == args.Id && f.WorkId == args.WorkId, ct);
         if (entity == null)
-            entity = await db.Foreshadowings.FirstOrDefaultAsync(f => f.WorkId == workId && f.Title == title, ct);
+            entity = await db.Foreshadowings.FirstOrDefaultAsync(f => f.WorkId == args.WorkId && f.Title == args.Title, ct);
 
         if (entity != null)
         {
-            if (!string.IsNullOrEmpty(description)) entity.Description = description;
-            if (!string.IsNullOrEmpty(setupChapterId)) entity.SetupChapterId = setupChapterId;
-            if (importance > 0) entity.Importance = importance;
-            if (args.Has("expected_payoff_chapter_id")) entity.PayoffChapterId = expectedPayoffChapterId ?? string.Empty;
+            if (!string.IsNullOrEmpty(args.Description)) entity.Description = args.Description;
+            if (!string.IsNullOrEmpty(args.SetupChapterId)) entity.SetupChapterId = args.SetupChapterId;
+            if (args.Importance > 0) entity.Importance = args.Importance;
+            if (args.ExpectedPayoffChapterId != null) entity.PayoffChapterId = args.ExpectedPayoffChapterId ?? string.Empty;
             await db.SaveChangesAsync(ct);
-            return ToolResult.Ok($"伏笔「{title}」已更新，ID: {entity.Id}");
+            return ToolResult.Ok($"伏笔「{args.Title}」已更新，ID: {entity.Id}");
         }
 
         var newEntity = new ForeshadowingEntity
         {
             Id = idGen.NextIdString(),
-            WorkId = workId,
-            Title = title,
-            Description = description ?? string.Empty,
-            SetupChapterId = setupChapterId ?? string.Empty,
-            Importance = importance > 0 ? importance : 1,
+            WorkId = args.WorkId,
+            Title = args.Title,
+            Description = args.Description ?? string.Empty,
+            SetupChapterId = args.SetupChapterId ?? string.Empty,
+            Importance = args.Importance > 0 ? args.Importance : 1,
             Status = "active",
-            PayoffChapterId = expectedPayoffChapterId ?? string.Empty,
+            PayoffChapterId = args.ExpectedPayoffChapterId ?? string.Empty,
         };
 
         await db.Foreshadowings.AddAsync(newEntity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"伏笔「{title}」已记录，ID: {newEntity.Id}，预计回收章节: {expectedPayoffChapterId ?? "待定"}");
+        return ToolResult.Ok($"伏笔「{args.Title}」已记录，ID: {newEntity.Id}，预计回收章节: {args.ExpectedPayoffChapterId ?? "待定"}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Id { get; init; }
+        public string Title { get; init; }
+        public string Description { get; init; }
+        public string SetupChapterId { get; init; }
+        public int Importance { get; init; }
+        public string? ExpectedPayoffChapterId { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Title))
+                return ToolResult.Fail("缺少必需参数 'title'", "argument_parse_error");
+            if (Importance != 0 && (Importance < 1 || Importance > 5))
+                return ToolResult.Fail($"参数 'importance' 值 {Importance} 超出范围 [1, 5]", "argument_parse_error");
+            return null;
+        }
     }
 }

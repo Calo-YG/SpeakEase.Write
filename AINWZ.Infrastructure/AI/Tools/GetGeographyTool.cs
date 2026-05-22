@@ -1,9 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.World;
 using SpeakEase.Write.Infrastructure.Persistence;
 
@@ -39,18 +39,19 @@ public sealed class GetGeographyTool(IServiceScopeFactory scopeFactory) : IToolE
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var geoType = args.GetString("geography_type");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        var query = db.Geographies.AsNoTracking().Where(g => g.WorkId == workId);
+        var query = db.Geographies.AsNoTracking().Where(g => g.WorkId == args.WorkId);
 
-        if (!string.IsNullOrEmpty(geoType))
-            query = query.Where(g => g.GeographyType == geoType);
+        if (!string.IsNullOrEmpty(args.GeographyType))
+            query = query.Where(g => g.GeographyType == args.GeographyType);
 
         var geos = await query.OrderBy(g => g.Name).Take(200).ToListAsync(ct);
 
@@ -79,5 +80,18 @@ public sealed class GetGeographyTool(IServiceScopeFactory scopeFactory) : IToolE
         var children = all.Where(g => g.ParentGeographyId == geo.Id).OrderBy(g => g.Name);
         foreach (var child in children)
             BuildGeoTree(sb, child, map, all, depth + 1);
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string GeographyType { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

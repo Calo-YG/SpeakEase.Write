@@ -40,20 +40,22 @@ public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory, IOp
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var eventType = args.GetString("event_type");
-        var limit = args.GetInt32("limit", defaultValue: 20, min: 1, max: 50);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
+
+        var limit = args.Limit != 0 ? args.Limit : 20;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var query = db.TimelineEvents.AsNoTracking()
-            .Where(x => x.WorkId == workId);
+            .Where(x => x.WorkId == args.WorkId);
 
-        if (!string.IsNullOrEmpty(eventType))
-            query = query.Where(x => x.EventType == eventType);
+        if (!string.IsNullOrEmpty(args.EventType))
+            query = query.Where(x => x.EventType == args.EventType);
 
         var events = await query
             .OrderBy(x => x.EventTime)
@@ -74,5 +76,21 @@ public sealed class GetTimelineEventsTool(IServiceScopeFactory scopeFactory, IOp
             return ToolResult.Ok("暂无时间线事件记录。");
 
         return ToolResult.Ok(JsonSerializer.Serialize<object>(events, snapshot.Value));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string EventType { get; init; }
+        public int Limit { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (Limit != 0 && (Limit < 1 || Limit > 50))
+                return ToolResult.Fail($"参数 'limit' 值 {Limit} 超出范围 [1, 50]", "argument_parse_error");
+            return null;
+        }
     }
 }

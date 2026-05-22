@@ -35,18 +35,20 @@ public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory, IOption
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var keyword = args.GetString("keyword", required: true);
-        var limit = args.GetInt32("limit", defaultValue: 10, min: 1, max: 30);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
+
+        var limit = args.Limit != 0 ? args.Limit : 10;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var nodes = await db.OutlineNodes.AsNoTracking()
-            .Where(x => x.WorkId == workId
-                && (x.Title.Contains(keyword) || x.Goal.Contains(keyword) || x.KeyEvent.Contains(keyword)))
+            .Where(x => x.WorkId == args.WorkId
+                && (x.Title.Contains(args.Keyword) || x.Goal.Contains(args.Keyword) || x.KeyEvent.Contains(args.Keyword)))
             .OrderBy(x => x.Sequence)
             .Take(limit)
             .Select(x => new
@@ -62,8 +64,26 @@ public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory, IOption
             .ToListAsync(ct);
 
         if (nodes.Count == 0)
-            return ToolResult.Fail($"未找到匹配「{keyword}」的大纲节点", "no_matches");
+            return ToolResult.Fail($"未找到匹配「{args.Keyword}」的大纲节点", "no_matches");
 
         return ToolResult.Ok(JsonSerializer.Serialize(nodes, snapshot.Value));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Keyword { get; init; }
+        public int Limit { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Keyword))
+                return ToolResult.Fail("缺少必需参数 'keyword'", "argument_parse_error");
+            if (Limit != 0 && (Limit < 1 || Limit > 30))
+                return ToolResult.Fail($"参数 'limit' 值 {Limit} 超出范围 [1, 30]", "argument_parse_error");
+            return null;
+        }
     }
 }

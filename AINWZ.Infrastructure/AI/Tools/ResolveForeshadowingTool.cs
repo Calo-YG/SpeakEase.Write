@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -34,25 +34,45 @@ public sealed class ResolveForeshadowingTool(IServiceScopeFactory scopeFactory) 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var foreshadowingId = args.GetString("foreshadowing_id", required: true);
-        var payoffChapterId = args.GetString("payoff_chapter_id", required: true);
-        var resolution = args.GetString("resolution", required: true);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var entity = await db.Foreshadowings.FirstOrDefaultAsync(
-            x => x.Id == foreshadowingId && x.WorkId == workId, ct);
+            x => x.Id == args.ForeshadowingId && x.WorkId == args.WorkId, ct);
         if (entity == null)
-            return ToolResult.Fail($"伏笔 {foreshadowingId} 不存在，无法回扣", "not_found");
+            return ToolResult.Fail($"伏笔 {args.ForeshadowingId} 不存在，无法回扣", "not_found");
 
         entity.Status = "paid_off";
-        entity.PayoffChapterId = payoffChapterId;
+        entity.PayoffChapterId = args.PayoffChapterId;
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"伏笔「{entity.Title}」已回收，回收章节: {payoffChapterId}，方式: {resolution}");
+        return ToolResult.Ok($"伏笔「{entity.Title}」已回收，回收章节: {args.PayoffChapterId}，方式: {args.Resolution}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string ForeshadowingId { get; init; }
+        public string PayoffChapterId { get; init; }
+        public string Resolution { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(ForeshadowingId))
+                return ToolResult.Fail("缺少必需参数 'foreshadowing_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(PayoffChapterId))
+                return ToolResult.Fail("缺少必需参数 'payoff_chapter_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Resolution))
+                return ToolResult.Fail("缺少必需参数 'resolution'", "argument_parse_error");
+            return null;
+        }
     }
 }

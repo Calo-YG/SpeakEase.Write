@@ -34,16 +34,19 @@ public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory, IOpt
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var limit = args.GetInt32("limit", defaultValue: 30, min: 1, max: 100);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
+
+        var limit = args.Limit != 0 ? args.Limit : 30;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var characters = await db.Characters.AsNoTracking()
-            .Where(x => x.WorkId == workId)
+            .Where(x => x.WorkId == args.WorkId)
             .Take(limit)
             .OrderBy(x => x.Name)
             .Select(x => new
@@ -60,5 +63,20 @@ public sealed class GetCharacterListTool(IServiceScopeFactory scopeFactory, IOpt
             return ToolResult.Fail("当前作品暂无角色", "no_characters");
 
         return ToolResult.Ok(JsonSerializer.Serialize(characters, snapshot.Value));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public int Limit { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (Limit != 0 && (Limit < 1 || Limit > 100))
+                return ToolResult.Fail($"参数 'limit' 值 {Limit} 超出范围 [1, 100]", "argument_parse_error");
+            return null;
+        }
     }
 }

@@ -1,9 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,24 +33,25 @@ public sealed class GetCharacterArcTool(IServiceScopeFactory scopeFactory) : ITo
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var characterName = args.GetString("character_name", required: true);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var character = await db.Characters.FirstOrDefaultAsync(
-            c => c.WorkId == workId && c.Name == characterName, ct)
+            c => c.WorkId == args.WorkId && c.Name == args.CharacterName, ct)
             ?? await db.Characters.FirstOrDefaultAsync(
-                c => c.WorkId == workId && c.Name != null && c.Name.Contains(characterName), ct);
+                c => c.WorkId == args.WorkId && c.Name != null && c.Name.Contains(args.CharacterName), ct);
 
         if (character == null)
-            return ToolResult.Fail($"未找到角色「{characterName}」", "not_found");
+            return ToolResult.Fail($"未找到角色「{args.CharacterName}」", "not_found");
 
         var arcs = await db.CharacterArcs.AsNoTracking()
-            .Where(a => a.WorkId == workId && a.CharacterId == character.Id)
+            .Where(a => a.WorkId == args.WorkId && a.CharacterId == character.Id)
             .OrderBy(a => a.StageOrder)
             .ToListAsync(ct);
 
@@ -74,5 +75,20 @@ public sealed class GetCharacterArcTool(IServiceScopeFactory scopeFactory) : ITo
         }
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string CharacterName { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(CharacterName))
+                return ToolResult.Fail("缺少必需参数 'character_name'", "argument_parse_error");
+            return null;
+        }
     }
 }

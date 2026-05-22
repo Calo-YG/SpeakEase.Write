@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -44,65 +44,56 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var graphId = args.GetString("graph_id", required: true);
-        var edgeId = args.GetString("id");
-        var sourceNodeId = args.GetString("source_node_id");
-        var targetNodeId = args.GetString("target_node_id");
-        var sourceCharName = args.GetString("source_character_name");
-        var targetCharName = args.GetString("target_character_name");
-        var relationType = args.GetString("relation_type");
-        var label = args.GetString("label");
-        var weight = args.GetInt32("weight", defaultValue: 0, min: 1, max: 10);
-        var direction = args.GetString("direction");
-        var relationshipId = args.GetString("relationship_id");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var graph = await db.CharacterGraphs.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == graphId && x.WorkId == workId, ct);
+            .FirstOrDefaultAsync(x => x.Id == args.GraphId && x.WorkId == args.WorkId, ct);
         if (graph == null)
-            return ToolResult.Fail($"未找到图谱 {graphId}", "graph_not_found");
+            return ToolResult.Fail($"未找到图谱 {args.GraphId}", "graph_not_found");
 
-        if (!string.IsNullOrEmpty(edgeId))
+        if (!string.IsNullOrEmpty(args.Id))
         {
-            var existing = await db.CharacterGraphEdges.FindAsync(edgeId, ct);
+            var existing = await db.CharacterGraphEdges.FindAsync(args.Id, ct);
             if (existing == null)
-                return ToolResult.Fail($"未找到边 {edgeId}", "edge_not_found");
+                return ToolResult.Fail($"未找到边 {args.Id}", "edge_not_found");
 
-            if (!string.IsNullOrEmpty(relationType)) existing.RelationType = relationType;
-            if (args.Has("label")) existing.Label = label ?? string.Empty;
-            if (weight > 0) existing.Weight = weight;
-            if (args.Has("direction")) existing.Direction = direction ?? "directed";
-            if (args.Has("relationship_id")) existing.RelationshipId = relationshipId ?? string.Empty;
+            if (!string.IsNullOrEmpty(args.RelationType)) existing.RelationType = args.RelationType;
+            if (args.Label != null) existing.Label = args.Label ?? string.Empty;
+            if (args.Weight > 0) existing.Weight = args.Weight;
+            if (args.Direction != null) existing.Direction = args.Direction ?? "directed";
+            if (args.RelationshipId != null) existing.RelationshipId = args.RelationshipId ?? string.Empty;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"边已更新，ID: {existing.Id}");
         }
 
-        if (!string.IsNullOrEmpty(sourceNodeId) && !string.IsNullOrEmpty(targetNodeId))
+        if (!string.IsNullOrEmpty(args.SourceNodeId) && !string.IsNullOrEmpty(args.TargetNodeId))
         {
             var srcNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.Id == sourceNodeId && n.GraphId == graphId, ct);
+                .FirstOrDefaultAsync(n => n.Id == args.SourceNodeId && n.GraphId == args.GraphId, ct);
             var tgtNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.Id == targetNodeId && n.GraphId == graphId, ct);
-            if (srcNode == null) return ToolResult.Fail($"未找到源节点 {sourceNodeId}", "source_node_not_found");
-            if (tgtNode == null) return ToolResult.Fail($"未找到目标节点 {targetNodeId}", "target_node_not_found");
-            return await CreateOrUpdateEdge(db, idGen, graphId, workId, srcNode.Id, tgtNode.Id, relationType ?? "unknown", label ?? relationType ?? "unknown", weight > 0 ? weight : 5, direction ?? "directed", relationshipId, srcNode.DisplayName, tgtNode.DisplayName, ct);
+                .FirstOrDefaultAsync(n => n.Id == args.TargetNodeId && n.GraphId == args.GraphId, ct);
+            if (srcNode == null) return ToolResult.Fail($"未找到源节点 {args.SourceNodeId}", "source_node_not_found");
+            if (tgtNode == null) return ToolResult.Fail($"未找到目标节点 {args.TargetNodeId}", "target_node_not_found");
+            return await CreateOrUpdateEdge(db, idGen, args.GraphId, args.WorkId, srcNode.Id, tgtNode.Id, args.RelationType ?? "unknown", args.Label ?? args.RelationType ?? "unknown", args.Weight > 0 ? args.Weight : 5, args.Direction ?? "directed", args.RelationshipId, srcNode.DisplayName, tgtNode.DisplayName, ct);
         }
 
-        if (!string.IsNullOrEmpty(sourceCharName) && !string.IsNullOrEmpty(targetCharName))
+        if (!string.IsNullOrEmpty(args.SourceCharacterName) && !string.IsNullOrEmpty(args.TargetCharacterName))
         {
             var srcNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.GraphId == graphId && n.DisplayName == sourceCharName, ct);
+                .FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.DisplayName == args.SourceCharacterName, ct);
             var tgtNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.GraphId == graphId && n.DisplayName == targetCharName, ct);
-            if (srcNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{sourceCharName}」", "source_not_in_graph");
-            if (tgtNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{targetCharName}」", "target_not_in_graph");
-            return await CreateOrUpdateEdge(db, idGen, graphId, workId, srcNode.Id, tgtNode.Id, relationType ?? "unknown", label ?? relationType ?? "unknown", weight > 0 ? weight : 5, direction ?? "directed", relationshipId, sourceCharName, targetCharName, ct);
+                .FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.DisplayName == args.TargetCharacterName, ct);
+            if (srcNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{args.SourceCharacterName}」", "source_not_in_graph");
+            if (tgtNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{args.TargetCharacterName}」", "target_not_in_graph");
+            return await CreateOrUpdateEdge(db, idGen, args.GraphId, args.WorkId, srcNode.Id, tgtNode.Id, args.RelationType ?? "unknown", args.Label ?? args.RelationType ?? "unknown", args.Weight > 0 ? args.Weight : 5, args.Direction ?? "directed", args.RelationshipId, args.SourceCharacterName, args.TargetCharacterName, ct);
         }
 
         return ToolResult.Fail("新建边时请提供策略A（source_node_id+target_node_id）或策略B（source_character_name+target_character_name），更新时请提供 id", "missing_node_ref");
@@ -151,5 +142,32 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         await db.SaveChangesAsync(ct);
 
         return ToolResult.Ok($"边已创建: {sourceName} →[{relationType}]→ {targetName}，边ID: {edge.Id}，权重: {weight}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string GraphId { get; init; }
+        public string Id { get; init; }
+        public string SourceNodeId { get; init; }
+        public string TargetNodeId { get; init; }
+        public string SourceCharacterName { get; init; }
+        public string TargetCharacterName { get; init; }
+        public string RelationType { get; init; }
+        public string? Label { get; init; }
+        public int Weight { get; init; }
+        public string? Direction { get; init; }
+        public string? RelationshipId { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(GraphId))
+                return ToolResult.Fail("缺少必需参数 'graph_id'", "argument_parse_error");
+            if (Weight != 0 && (Weight < 1 || Weight > 10))
+                return ToolResult.Fail($"参数 'weight' 值 {Weight} 超出范围 [1, 10]", "argument_parse_error");
+            return null;
+        }
     }
 }

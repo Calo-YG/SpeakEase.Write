@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -38,67 +38,91 @@ public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var sourceName = args.GetString("source_name", required: true);
-        var targetName = args.GetString("target_name", required: true);
-        var relType = args.GetString("relationship_type", required: true);
-        var description = args.GetString("description");
-        var intensity = args.GetInt32("intensity", defaultValue: 5, min: 1, max: 10);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
+
+        var intensity = args.Intensity.HasValue ? args.Intensity.Value : 5;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var source = await db.Characters.FirstOrDefaultAsync(
-            c => c.WorkId == workId && c.Name == sourceName, ct)
+            c => c.WorkId == args.WorkId && c.Name == args.SourceName, ct)
             ?? await db.Characters.FirstOrDefaultAsync(
-                c => c.WorkId == workId && c.Name != null && c.Name.Contains(sourceName), ct);
+                c => c.WorkId == args.WorkId && c.Name != null && c.Name.Contains(args.SourceName), ct);
 
         var target = await db.Characters.FirstOrDefaultAsync(
-            c => c.WorkId == workId && c.Name == targetName, ct)
+            c => c.WorkId == args.WorkId && c.Name == args.TargetName, ct)
             ?? await db.Characters.FirstOrDefaultAsync(
-                c => c.WorkId == workId && c.Name != null && c.Name.Contains(targetName), ct);
+                c => c.WorkId == args.WorkId && c.Name != null && c.Name.Contains(args.TargetName), ct);
 
         if (source == null)
-            return ToolResult.Fail($"未找到角色「{sourceName}」", "source_not_found");
+            return ToolResult.Fail($"未找到角色「{args.SourceName}」", "source_not_found");
         if (target == null)
-            return ToolResult.Fail($"未找到角色「{targetName}」", "target_not_found");
+            return ToolResult.Fail($"未找到角色「{args.TargetName}」", "target_not_found");
         if (source.Id == target.Id)
             return ToolResult.Fail("不能为自己创建关系", "self_relationship");
 
         var existing = await db.CharacterRelationships.FirstOrDefaultAsync(
-            r => r.WorkId == workId &&
+            r => r.WorkId == args.WorkId &&
                  r.SourceCharacterId == source.Id &&
                  r.TargetCharacterId == target.Id, ct);
 
         if (existing != null)
         {
-            existing.RelationshipType = relType;
-            if (args.Has("intensity"))
+            existing.RelationshipType = args.RelationshipType;
+            if (args.Intensity.HasValue)
                 existing.Intensity = intensity;
-            if (!string.IsNullOrEmpty(description))
-                existing.Description = description;
+            if (!string.IsNullOrEmpty(args.Description))
+                existing.Description = args.Description;
             existing.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
-            return ToolResult.Ok($"关系已更新: {source.Name} →[{relType}]→ {target.Name}，强度: {intensity}");
+            return ToolResult.Ok($"关系已更新: {source.Name} →[{args.RelationshipType}]→ {target.Name}，强度: {intensity}");
         }
 
         var entity = new CharacterRelationshipEntity
         {
             Id = idGen.NextIdString(),
-            WorkId = workId,
+            WorkId = args.WorkId,
             SourceCharacterId = source.Id,
             TargetCharacterId = target.Id,
-            RelationshipType = relType,
-            Description = description ?? string.Empty,
+            RelationshipType = args.RelationshipType,
+            Description = args.Description ?? string.Empty,
             Intensity = intensity
         };
 
         await db.CharacterRelationships.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"关系已创建: {source.Name} →[{relType}]→ {target.Name}，强度: {intensity}，ID: {entity.Id}");
+        return ToolResult.Ok($"关系已创建: {source.Name} →[{args.RelationshipType}]→ {target.Name}，强度: {intensity}，ID: {entity.Id}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string SourceName { get; init; }
+        public string TargetName { get; init; }
+        public string RelationshipType { get; init; }
+        public string Description { get; init; }
+        public int? Intensity { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(SourceName))
+                return ToolResult.Fail("缺少必需参数 'source_name'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(TargetName))
+                return ToolResult.Fail("缺少必需参数 'target_name'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(RelationshipType))
+                return ToolResult.Fail("缺少必需参数 'relationship_type'", "argument_parse_error");
+            if (Intensity.HasValue && (Intensity.Value < 1 || Intensity.Value > 10))
+                return ToolResult.Fail($"参数 'intensity' 值 {Intensity.Value} 超出范围 [1, 10]", "argument_parse_error");
+            return null;
+        }
     }
 }

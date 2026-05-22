@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -38,48 +39,45 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var id = args.GetString("id");
-        var volumeSeq = args.GetInt32("volume_seq", defaultValue: 0, min: 1);
-        var volumeTitle = args.GetString("volume_title");
-        var chapterTitle = args.GetString("chapter_title", required: true);
-        var summary = args.GetString("summary");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         ChapterEntity chapter = null;
-        if (!string.IsNullOrEmpty(id))
-            chapter = await db.Chapters.FirstOrDefaultAsync(c => c.Id == id && c.WorkId == workId, ct);
-        if (chapter == null && volumeSeq > 0)
+        if (!string.IsNullOrEmpty(args.Id))
+            chapter = await db.Chapters.FirstOrDefaultAsync(c => c.Id == args.Id && c.WorkId == args.WorkId, ct);
+        if (chapter == null && args.VolumeSeq > 0)
         {
-            var volume = await db.Volumes.FirstOrDefaultAsync(v => v.WorkId == workId && v.Sequence == volumeSeq, ct);
+            var volume = await db.Volumes.FirstOrDefaultAsync(v => v.WorkId == args.WorkId && v.Sequence == args.VolumeSeq, ct);
             if (volume != null)
-                chapter = await db.Chapters.FirstOrDefaultAsync(c => c.WorkId == workId && c.VolumeId == volume.Id && c.Title == chapterTitle, ct);
+                chapter = await db.Chapters.FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.VolumeId == volume.Id && c.Title == args.ChapterTitle, ct);
         }
         if (chapter == null)
-            chapter = await db.Chapters.FirstOrDefaultAsync(c => c.WorkId == workId && c.Title == chapterTitle, ct);
+            chapter = await db.Chapters.FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.Title == args.ChapterTitle, ct);
 
         if (chapter != null)
         {
-            chapter.Title = chapterTitle;
-            if (!string.IsNullOrEmpty(summary)) chapter.Summary = summary;
+            chapter.Title = args.ChapterTitle;
+            if (!string.IsNullOrEmpty(args.Summary)) chapter.Summary = args.Summary;
             await db.SaveChangesAsync(ct);
-            return ToolResult.Ok($"章节大纲已更新：第{chapter.Sequence}章「{chapterTitle}」，章节ID: {chapter.Id}");
+            return ToolResult.Ok($"章节大纲已更新：第{chapter.Sequence}章「{args.ChapterTitle}」，章节ID: {chapter.Id}");
         }
 
-        var vol = await db.Volumes.FirstOrDefaultAsync(x => x.WorkId == workId && x.Sequence == volumeSeq, ct);
+        var vol = await db.Volumes.FirstOrDefaultAsync(x => x.WorkId == args.WorkId && x.Sequence == args.VolumeSeq, ct);
         if (vol == null)
         {
             vol = new VolumeEntity
             {
                 Id = idGen.NextIdString(),
-                WorkId = workId,
-                Sequence = volumeSeq > 0 ? volumeSeq : 1,
-                Title = volumeTitle ?? $"第{volumeSeq}卷",
+                WorkId = args.WorkId,
+                Sequence = args.VolumeSeq > 0 ? args.VolumeSeq : 1,
+                Title = args.VolumeTitle ?? $"第{args.VolumeSeq}卷",
                 Summary = string.Empty
             };
             await db.Volumes.AddAsync(vol, ct);
@@ -89,17 +87,17 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
         try
         {
             var maxChapterSeq = await db.Chapters.AsNoTracking()
-                .Where(x => x.WorkId == workId)
+                .Where(x => x.WorkId == args.WorkId)
                 .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
 
             var newChapter = new ChapterEntity
             {
                 Id = idGen.NextIdString(),
-                WorkId = workId,
+                WorkId = args.WorkId,
                 VolumeId = vol.Id,
                 Sequence = maxChapterSeq + 1,
-                Title = chapterTitle,
-                Summary = summary ?? string.Empty,
+                Title = args.ChapterTitle,
+                Summary = args.Summary ?? string.Empty,
                 WordCount = 0,
                 Status = "outline"
             };
@@ -108,12 +106,33 @@ public sealed class CreateChapterOutlineTool(IServiceScopeFactory scopeFactory) 
             await db.SaveChangesAsync(ct);
             await tx.CommitAsync(ct);
 
-            return ToolResult.Ok($"章节大纲已创建，卷: 第{vol.Sequence}卷「{vol.Title}」，章节: 第{newChapter.Sequence}章「{chapterTitle}」，章节ID: {newChapter.Id}");
+            return ToolResult.Ok($"章节大纲已创建，卷: 第{vol.Sequence}卷「{vol.Title}」，章节: 第{newChapter.Sequence}章「{args.ChapterTitle}」，章节ID: {newChapter.Id}");
         }
         catch
         {
             await tx.RollbackAsync(ct);
             throw;
+        }
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Id { get; init; }
+        public int VolumeSeq { get; init; }
+        public string VolumeTitle { get; init; }
+        public string ChapterTitle { get; init; }
+        public string Summary { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(ChapterTitle))
+                return ToolResult.Fail("缺少必需参数 'chapter_title'", "argument_parse_error");
+            if (VolumeSeq != 0 && VolumeSeq < 1)
+                return ToolResult.Fail($"参数 'volume_seq' 值 {VolumeSeq} 超出范围 [1, ∞]", "argument_parse_error");
+            return null;
         }
     }
 }

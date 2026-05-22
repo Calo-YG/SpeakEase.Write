@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -40,82 +40,100 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var graphId = args.GetString("graph_id", required: true);
-        var nodeId = args.GetString("id");
-        var characterName = args.GetString("character_name");
-        var characterId = args.GetString("character_id");
-        var nodeType = args.GetString("node_type");
-        var importance = args.GetInt32("importance", defaultValue: 0, min: 1, max: 10);
-        var styleJson = args.GetString("style_json");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var graph = await db.CharacterGraphs.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == graphId && x.WorkId == workId, ct);
+            .FirstOrDefaultAsync(x => x.Id == args.GraphId && x.WorkId == args.WorkId, ct);
         if (graph == null)
-            return ToolResult.Fail($"未找到图谱 {graphId}", "graph_not_found");
+            return ToolResult.Fail($"未找到图谱 {args.GraphId}", "graph_not_found");
 
         CharacterGraphNodeEntity existingNode = null;
-        if (!string.IsNullOrEmpty(nodeId))
-            existingNode = await db.CharacterGraphNodes.FindAsync(nodeId, ct);
+        if (!string.IsNullOrEmpty(args.Id))
+            existingNode = await db.CharacterGraphNodes.FindAsync(args.Id, ct);
 
-        if (existingNode == null && !string.IsNullOrEmpty(characterId))
-            existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(n => n.GraphId == graphId && n.CharacterId == characterId, ct);
+        if (existingNode == null && !string.IsNullOrEmpty(args.CharacterId))
+            existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.CharacterId == args.CharacterId, ct);
 
-        if (existingNode == null && !string.IsNullOrEmpty(characterName))
+        if (existingNode == null && !string.IsNullOrEmpty(args.CharacterName))
         {
-            var ch = await db.Characters.AsNoTracking().FirstOrDefaultAsync(c => c.WorkId == workId && c.Name == characterName, ct);
+            var ch = await db.Characters.AsNoTracking().FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.Name == args.CharacterName, ct);
             if (ch != null)
-                existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(n => n.GraphId == graphId && n.CharacterId == ch.Id, ct);
+                existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.CharacterId == ch.Id, ct);
         }
 
         if (existingNode != null)
         {
-            if (!string.IsNullOrEmpty(nodeType)) existingNode.NodeType = nodeType;
-            if (importance > 0) existingNode.Importance = importance;
-            if (args.Has("style_json")) existingNode.StyleJson = styleJson ?? string.Empty;
+            if (!string.IsNullOrEmpty(args.NodeType)) existingNode.NodeType = args.NodeType;
+            if (args.Importance > 0) existingNode.Importance = args.Importance;
+            if (args.StyleJson != null) existingNode.StyleJson = args.StyleJson ?? string.Empty;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"角色节点「{existingNode.DisplayName}」已更新，类型: {existingNode.NodeType}，重要度: {existingNode.Importance}");
         }
 
-        if (string.IsNullOrEmpty(characterName) && string.IsNullOrEmpty(characterId))
+        if (string.IsNullOrEmpty(args.CharacterName) && string.IsNullOrEmpty(args.CharacterId))
             return ToolResult.Fail("character_name 和 character_id 至少提供一个", "missing_character_ref");
 
         CharacterEntity character;
-        if (!string.IsNullOrEmpty(characterId))
+        if (!string.IsNullOrEmpty(args.CharacterId))
         {
             character = await db.Characters.AsNoTracking()
-                .FirstOrDefaultAsync(c => c.Id == characterId && c.WorkId == workId, ct);
+                .FirstOrDefaultAsync(c => c.Id == args.CharacterId && c.WorkId == args.WorkId, ct);
         }
         else
         {
             character = await db.Characters.AsNoTracking()
-                .FirstOrDefaultAsync(c => c.WorkId == workId && c.Name == characterName, ct);
+                .FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.Name == args.CharacterName, ct);
         }
 
         if (character == null)
-            return ToolResult.Fail($"未找到角色「{characterName ?? characterId}」", "character_not_found");
+            return ToolResult.Fail($"未找到角色「{args.CharacterName ?? args.CharacterId}」", "character_not_found");
 
         var node = new CharacterGraphNodeEntity
         {
             Id = idGen.NextIdString(),
-            GraphId = graphId,
-            WorkId = workId,
+            GraphId = args.GraphId,
+            WorkId = args.WorkId,
             CharacterId = character.Id,
             DisplayName = character.Name ?? character.Id,
-            NodeType = nodeType ?? "supporting",
-            Importance = importance > 0 ? importance : 5,
-            StyleJson = styleJson ?? string.Empty
+            NodeType = args.NodeType ?? "supporting",
+            Importance = args.Importance > 0 ? args.Importance : 5,
+            StyleJson = args.StyleJson ?? string.Empty
         };
 
         await db.CharacterGraphNodes.AddAsync(node, ct);
         await db.SaveChangesAsync(ct);
 
         return ToolResult.Ok($"角色节点「{node.DisplayName}」已添加到图谱，节点ID: {node.Id}，类型: {node.NodeType}，重要度: {node.Importance}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string GraphId { get; init; }
+        public string Id { get; init; }
+        public string CharacterName { get; init; }
+        public string CharacterId { get; init; }
+        public string NodeType { get; init; }
+        public int Importance { get; init; }
+        public string? StyleJson { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(GraphId))
+                return ToolResult.Fail("缺少必需参数 'graph_id'", "argument_parse_error");
+            if (Importance != 0 && (Importance < 1 || Importance > 10))
+                return ToolResult.Fail($"参数 'importance' 值 {Importance} 超出范围 [1, 10]", "argument_parse_error");
+            return null;
+        }
     }
 }

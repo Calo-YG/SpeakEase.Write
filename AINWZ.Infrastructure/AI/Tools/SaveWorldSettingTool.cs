@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.World;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -42,38 +41,32 @@ public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IT
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var worldName = args.GetString("world_name");
-        var eraBackground = args.GetString("era_background");
-        var overallStyle = args.GetString("overall_style");
-        var worldRules = args.GetString("world_rules");
-        var geography = args.GetString("geography");
-        var factions = args.GetString("factions");
-        var history = args.GetString("history");
-        var summary = args.GetString("summary");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
-        var entity = await db.WorldSettings.FirstOrDefaultAsync(x => x.WorkId == workId, ct);
+        var entity = await db.WorldSettings.FirstOrDefaultAsync(x => x.WorkId == args.WorkId, ct);
 
         if (entity == null)
         {
             entity = new WorldSettingEntity
             {
                 Id = idGen.NextIdString(),
-                WorkId = workId,
+                WorkId = args.WorkId,
             };
             db.WorldSettings.Add(entity);
         }
 
-        if (!string.IsNullOrEmpty(worldName)) entity.WorldName = worldName;
-        if (!string.IsNullOrEmpty(eraBackground)) entity.EraBackground = eraBackground;
-        if (!string.IsNullOrEmpty(overallStyle)) entity.OverallStyle = overallStyle;
-        if (!string.IsNullOrEmpty(summary)) entity.Summary = summary;
+        if (!string.IsNullOrEmpty(args.WorldName)) entity.WorldName = args.WorldName;
+        if (!string.IsNullOrEmpty(args.EraBackground)) entity.EraBackground = args.EraBackground;
+        if (!string.IsNullOrEmpty(args.OverallStyle)) entity.OverallStyle = args.OverallStyle;
+        if (!string.IsNullOrEmpty(args.Summary)) entity.Summary = args.Summary;
 
         var jsonObj = new Dictionary<string, string>();
 
@@ -91,23 +84,43 @@ public sealed class SaveWorldSettingTool(IServiceScopeFactory scopeFactory) : IT
             }
         }
 
-        if (!string.IsNullOrEmpty(worldRules)) jsonObj["worldRules"] = worldRules;
-        if (!string.IsNullOrEmpty(geography)) jsonObj["geography"] = geography;
-        if (!string.IsNullOrEmpty(factions)) jsonObj["factions"] = factions;
-        if (!string.IsNullOrEmpty(history)) jsonObj["history"] = history;
+        if (!string.IsNullOrEmpty(args.WorldRules)) jsonObj["worldRules"] = args.WorldRules;
+        if (!string.IsNullOrEmpty(args.Geography)) jsonObj["geography"] = args.Geography;
+        if (!string.IsNullOrEmpty(args.Factions)) jsonObj["factions"] = args.Factions;
+        if (!string.IsNullOrEmpty(args.History)) jsonObj["history"] = args.History;
 
         entity.JsonContent = JsonSerializer.Serialize(jsonObj);
         await db.SaveChangesAsync(ct);
 
         var savedParts = new List<string>();
-        if (!string.IsNullOrEmpty(worldName)) savedParts.Add("worldName");
-        if (!string.IsNullOrEmpty(eraBackground)) savedParts.Add("eraBackground");
-        if (!string.IsNullOrEmpty(overallStyle)) savedParts.Add("overallStyle");
-        if (!string.IsNullOrEmpty(worldRules)) savedParts.Add("worldRules");
-        if (!string.IsNullOrEmpty(geography)) savedParts.Add("geography");
-        if (!string.IsNullOrEmpty(factions)) savedParts.Add("factions");
-        if (!string.IsNullOrEmpty(history)) savedParts.Add("history");
+        if (!string.IsNullOrEmpty(args.WorldName)) savedParts.Add("worldName");
+        if (!string.IsNullOrEmpty(args.EraBackground)) savedParts.Add("eraBackground");
+        if (!string.IsNullOrEmpty(args.OverallStyle)) savedParts.Add("overallStyle");
+        if (!string.IsNullOrEmpty(args.WorldRules)) savedParts.Add("worldRules");
+        if (!string.IsNullOrEmpty(args.Geography)) savedParts.Add("geography");
+        if (!string.IsNullOrEmpty(args.Factions)) savedParts.Add("factions");
+        if (!string.IsNullOrEmpty(args.History)) savedParts.Add("history");
 
         return ToolResult.Ok(string.Format("世界观设定已保存，更新字段: {0}", string.Join(", ", savedParts)));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string WorldName { get; init; }
+        public string EraBackground { get; init; }
+        public string OverallStyle { get; init; }
+        public string WorldRules { get; init; }
+        public string Geography { get; init; }
+        public string Factions { get; init; }
+        public string History { get; init; }
+        public string Summary { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

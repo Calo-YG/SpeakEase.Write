@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -40,81 +41,97 @@ public sealed class CreateCharacterArcTool(IServiceScopeFactory scopeFactory) : 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var id = args.GetString("id");
-        var characterName = args.GetString("character_name", required: true);
-        var stageTitle = args.GetString("stage_title");
-        var initialState = args.GetString("initial_state");
-        var triggerEvent = args.GetString("trigger_event");
-        var changedState = args.GetString("changed_state");
-        var stageOrder = args.GetInt32("stage_order", min: 0);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         CharacterArcEntity arc = null;
-        if (!string.IsNullOrEmpty(id))
-            arc = await db.CharacterArcs.FirstOrDefaultAsync(a => a.Id == id && a.WorkId == workId, ct);
+        if (!string.IsNullOrEmpty(args.Id))
+            arc = await db.CharacterArcs.FirstOrDefaultAsync(a => a.Id == args.Id && a.WorkId == args.WorkId, ct);
 
         CharacterEntity character = null;
         if (arc == null)
         {
             character = await db.Characters.FirstOrDefaultAsync(
-                c => c.WorkId == workId && c.Name == characterName, ct)
+                c => c.WorkId == args.WorkId && c.Name == args.CharacterName, ct)
                 ?? await db.Characters.FirstOrDefaultAsync(
-                    c => c.WorkId == workId && c.Name != null && c.Name.Contains(characterName), ct);
+                    c => c.WorkId == args.WorkId && c.Name != null && c.Name.Contains(args.CharacterName), ct);
 
-            if (character != null && !string.IsNullOrEmpty(stageTitle))
+            if (character != null && !string.IsNullOrEmpty(args.StageTitle))
                 arc = await db.CharacterArcs.FirstOrDefaultAsync(
-                    a => a.WorkId == workId && a.CharacterId == character.Id && a.StageTitle == stageTitle, ct);
+                    a => a.WorkId == args.WorkId && a.CharacterId == character.Id && a.StageTitle == args.StageTitle, ct);
         }
 
         if (arc != null)
         {
-            if (!string.IsNullOrEmpty(stageTitle)) arc.StageTitle = stageTitle;
-            if (initialState != null) arc.InitialState = initialState;
-            if (triggerEvent != null) arc.TriggerEvent = triggerEvent;
-            if (changedState != null) arc.ChangedState = changedState;
-            if (stageOrder > 0) arc.StageOrder = stageOrder;
+            if (!string.IsNullOrEmpty(args.StageTitle)) arc.StageTitle = args.StageTitle;
+            if (args.InitialState != null) arc.InitialState = args.InitialState;
+            if (args.TriggerEvent != null) arc.TriggerEvent = args.TriggerEvent;
+            if (args.ChangedState != null) arc.ChangedState = args.ChangedState;
+            if (args.StageOrder > 0) arc.StageOrder = args.StageOrder;
             arc.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
-            return ToolResult.Ok($"角色「{characterName}」成长弧线阶段「{arc.StageTitle}」已更新，序号: {arc.StageOrder}");
+            return ToolResult.Ok($"角色「{args.CharacterName}」成长弧线阶段「{arc.StageTitle}」已更新，序号: {arc.StageOrder}");
         }
 
         if (character == null)
-            return ToolResult.Fail($"未找到角色「{characterName}」", "not_found");
+            return ToolResult.Fail($"未找到角色「{args.CharacterName}」", "not_found");
 
-        if (string.IsNullOrEmpty(stageTitle))
+        if (string.IsNullOrEmpty(args.StageTitle))
             return ToolResult.Fail("创建阶段必须提供 stage_title");
-        if (string.IsNullOrEmpty(initialState))
+        if (string.IsNullOrEmpty(args.InitialState))
             return ToolResult.Fail("创建阶段必须提供 initial_state");
-        if (string.IsNullOrEmpty(triggerEvent))
+        if (string.IsNullOrEmpty(args.TriggerEvent))
             return ToolResult.Fail("创建阶段必须提供 trigger_event");
-        if (string.IsNullOrEmpty(changedState))
+        if (string.IsNullOrEmpty(args.ChangedState))
             return ToolResult.Fail("创建阶段必须提供 changed_state");
 
         var maxOrder = await db.CharacterArcs.AsNoTracking()
-            .Where(a => a.WorkId == workId && a.CharacterId == character.Id)
+            .Where(a => a.WorkId == args.WorkId && a.CharacterId == character.Id)
             .MaxAsync(a => (int?)a.StageOrder, ct) ?? 0;
 
         var entity = new CharacterArcEntity
         {
             Id = idGen.NextIdString(),
-            WorkId = workId,
+            WorkId = args.WorkId,
             CharacterId = character.Id,
-            StageOrder = stageOrder > 0 ? stageOrder : maxOrder + 1,
-            StageTitle = stageTitle,
-            InitialState = initialState,
-            TriggerEvent = triggerEvent,
-            ChangedState = changedState
+            StageOrder = args.StageOrder > 0 ? args.StageOrder : maxOrder + 1,
+            StageTitle = args.StageTitle,
+            InitialState = args.InitialState,
+            TriggerEvent = args.TriggerEvent,
+            ChangedState = args.ChangedState
         };
 
         await db.CharacterArcs.AddAsync(entity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"角色「{character.Name}」成长弧线阶段「{stageTitle}」已创建，序号: {entity.StageOrder}");
+        return ToolResult.Ok($"角色「{character.Name}」成长弧线阶段「{args.StageTitle}」已创建，序号: {entity.StageOrder}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Id { get; init; }
+        public string CharacterName { get; init; }
+        public string StageTitle { get; init; }
+        public string InitialState { get; init; }
+        public string TriggerEvent { get; init; }
+        public string ChangedState { get; init; }
+        public int StageOrder { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(CharacterName))
+                return ToolResult.Fail("缺少必需参数 'character_name'", "argument_parse_error");
+            return null;
+        }
     }
 }

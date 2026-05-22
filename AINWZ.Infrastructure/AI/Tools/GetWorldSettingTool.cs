@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using System.Text.Json.Serialization;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -40,16 +39,17 @@ public sealed class GetWorldSettingTool(IServiceScopeFactory scopeFactory) : ITo
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var section = args.GetString("section");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var ws = await db.WorldSettings.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.WorkId == workId, ct);
+            .FirstOrDefaultAsync(x => x.WorkId == args.WorkId, ct);
         if (ws == null)
             return ToolResult.Fail("未找到世界观设定", "not_found");
 
@@ -65,15 +65,15 @@ public sealed class GetWorldSettingTool(IServiceScopeFactory scopeFactory) : ITo
         var factions = parsed?.Factions ?? string.Empty;
         var history = parsed?.History ?? string.Empty;
 
-        if (!string.IsNullOrEmpty(section))
+        if (!string.IsNullOrEmpty(args.Section))
         {
-            return section switch
+            return args.Section switch
             {
                 "world_rules" => ToolResult.Ok(worldRules),
                 "geography" => ToolResult.Ok(geography),
                 "factions" => ToolResult.Ok(factions),
                 "history" => ToolResult.Ok(history),
-                _ => ToolResult.Fail($"未知分区: {section}，支持: world_rules/geography/factions/history", "invalid_section")
+                _ => ToolResult.Fail($"未知分区: {args.Section}，支持: world_rules/geography/factions/history", "invalid_section")
             };
         }
 
@@ -84,6 +84,19 @@ public sealed class GetWorldSettingTool(IServiceScopeFactory scopeFactory) : ITo
         if (!string.IsNullOrEmpty(history)) sb.AppendLine($"历史：{history}");
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Section { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 
     private class WorldRules

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -42,50 +43,66 @@ public sealed class UpdateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var name = args.GetString("name", required: true);
-        var alias = args.GetString("alias");
-        var gender = args.GetString("gender");
-        var ageDescription = args.GetString("ageDescription");
-        var personality = args.GetString("personality");
-        var appearance = args.GetString("appearance");
-        var motivation = args.GetString("motivation");
-        var backgroundStory = args.GetString("background_story");
-        var coreSeed = args.GetString("coreSeed");
-        var abilityDescription = args.GetString("abilityDescription");
-        var tags = args.GetStringArray("tags");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
-        if (string.IsNullOrEmpty(personality) && string.IsNullOrEmpty(appearance) &&
-            string.IsNullOrEmpty(motivation) && string.IsNullOrEmpty(backgroundStory) &&
-            string.IsNullOrEmpty(coreSeed) && string.IsNullOrEmpty(alias) &&
-            string.IsNullOrEmpty(gender) && string.IsNullOrEmpty(ageDescription) &&
-            string.IsNullOrEmpty(abilityDescription) && tags.Count == 0)
+        if (string.IsNullOrEmpty(args.Personality) && string.IsNullOrEmpty(args.Appearance) &&
+            string.IsNullOrEmpty(args.Motivation) && string.IsNullOrEmpty(args.BackgroundStory) &&
+            string.IsNullOrEmpty(args.CoreSeed) && string.IsNullOrEmpty(args.Alias) &&
+            string.IsNullOrEmpty(args.Gender) && string.IsNullOrEmpty(args.AgeDescription) &&
+            string.IsNullOrEmpty(args.AbilityDescription) && (args.Tags == null || args.Tags.Count == 0))
             return ToolResult.Fail("至少需要提供一个更新字段", "no_fields");
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var character = await db.Characters.FirstOrDefaultAsync(
-            c => c.WorkId == workId && c.Name == name, ct);
+            c => c.WorkId == args.WorkId && c.Name == args.Name, ct);
 
         if (character == null)
-            return ToolResult.Fail($"未找到角色「{name}」，请确认角色名称和作品ID", "not_found");
+            return ToolResult.Fail($"未找到角色「{args.Name}」，请确认角色名称和作品ID", "not_found");
 
-        if (!string.IsNullOrEmpty(alias)) character.Alias = alias;
-        if (!string.IsNullOrEmpty(gender)) character.Gender = gender;
-        if (!string.IsNullOrEmpty(ageDescription)) character.AgeDescription = ageDescription;
-        if (!string.IsNullOrEmpty(personality)) character.Personality = personality;
-        if (!string.IsNullOrEmpty(appearance)) character.Appearance = appearance;
-        if (!string.IsNullOrEmpty(motivation)) character.Motivation = motivation;
-        if (!string.IsNullOrEmpty(backgroundStory)) character.BackgroundStory = backgroundStory;
-        if (!string.IsNullOrEmpty(coreSeed)) character.Identity = coreSeed;
-        if (!string.IsNullOrEmpty(abilityDescription)) character.AbilityDescription = abilityDescription;
-        if (tags.Count > 0) character.Tags = tags;
+        if (!string.IsNullOrEmpty(args.Alias)) character.Alias = args.Alias;
+        if (!string.IsNullOrEmpty(args.Gender)) character.Gender = args.Gender;
+        if (!string.IsNullOrEmpty(args.AgeDescription)) character.AgeDescription = args.AgeDescription;
+        if (!string.IsNullOrEmpty(args.Personality)) character.Personality = args.Personality;
+        if (!string.IsNullOrEmpty(args.Appearance)) character.Appearance = args.Appearance;
+        if (!string.IsNullOrEmpty(args.Motivation)) character.Motivation = args.Motivation;
+        if (!string.IsNullOrEmpty(args.BackgroundStory)) character.BackgroundStory = args.BackgroundStory;
+        if (!string.IsNullOrEmpty(args.CoreSeed)) character.Identity = args.CoreSeed;
+        if (!string.IsNullOrEmpty(args.AbilityDescription)) character.AbilityDescription = args.AbilityDescription;
+        if (args.Tags != null && args.Tags.Count > 0) character.Tags = args.Tags;
 
         character.UpdateAt = DateTime.Now;
         await db.SaveChangesAsync(ct);
-        return ToolResult.Ok($"角色「{name}」已更新");
+        return ToolResult.Ok($"角色「{args.Name}」已更新");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Name { get; init; }
+        public string Alias { get; init; }
+        public string Gender { get; init; }
+        public string AgeDescription { get; init; }
+        public string Personality { get; init; }
+        public string Appearance { get; init; }
+        public string Motivation { get; init; }
+        public string BackgroundStory { get; init; }
+        public string CoreSeed { get; init; }
+        public string AbilityDescription { get; init; }
+        public List<string> Tags { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Name))
+                return ToolResult.Fail("缺少必需参数 'name'", "argument_parse_error");
+            return null;
+        }
     }
 }

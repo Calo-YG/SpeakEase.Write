@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,21 +32,23 @@ public sealed class ListVolumesTool(IServiceScopeFactory scopeFactory, IOptionsS
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var volumes = await db.Volumes.AsNoTracking()
-            .Where(x => x.WorkId == workId)
+            .Where(x => x.WorkId == args.WorkId)
             .OrderBy(x => x.Sequence)
             .Take(20)
             .ToListAsync(ct);
 
         var chapters = await db.Chapters.AsNoTracking()
-            .Where(x => x.WorkId == workId)
+            .Where(x => x.WorkId == args.WorkId)
             .OrderBy(x => x.Sequence)
             .Take(500)
             .ToListAsync(ct);
@@ -63,5 +64,17 @@ public sealed class ListVolumesTool(IServiceScopeFactory scopeFactory, IOptionsS
         });
 
         return ToolResult.Ok(JsonSerializer.Serialize(result, snapshot.Value));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -33,17 +34,19 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var chapterId = args.GetString("chapter_id", required: true);
-        var maxContentChars = args.GetInt32("max_content_chars", defaultValue: 4000, min: 500, max: 20000);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
+
+        var maxContentChars = args.MaxContentChars != 0 ? args.MaxContentChars : 4000;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var chapter = await db.Chapters.AsNoTracking()
-            .Where(c => c.Id == chapterId && c.WorkId == workId)
+            .Where(c => c.Id == args.ChapterId && c.WorkId == args.WorkId)
             .Select(c => new
             {
                 c.Id,
@@ -60,7 +63,7 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
             .FirstOrDefaultAsync(ct);
 
         if (chapter == null)
-            return ToolResult.Fail($"未找到章节 {chapterId}", "not_found");
+            return ToolResult.Fail($"未找到章节 {args.ChapterId}", "not_found");
 
         var content = chapter.Content;
         if (content.Length > maxContentChars)
@@ -76,5 +79,23 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
             content;
 
         return ToolResult.Ok(result);
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string ChapterId { get; init; }
+        public int MaxContentChars { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(ChapterId))
+                return ToolResult.Fail("缺少必需参数 'chapter_id'", "argument_parse_error");
+            if (MaxContentChars != 0 && (MaxContentChars < 500 || MaxContentChars > 20000))
+                return ToolResult.Fail($"参数 'max_content_chars' 值 {MaxContentChars} 超出范围 [500, 20000]", "argument_parse_error");
+            return null;
+        }
     }
 }

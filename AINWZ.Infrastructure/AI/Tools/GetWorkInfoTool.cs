@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,27 +32,29 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var work = await db.Works.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == workId, ct);
+            .FirstOrDefaultAsync(x => x.Id == args.WorkId, ct);
 
         if (work == null)
-            return ToolResult.Fail($"未找到作品 {workId}", "not_found");
+            return ToolResult.Fail($"未找到作品 {args.WorkId}", "not_found");
 
         var chapterCount = await db.Chapters.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
+            .CountAsync(x => x.WorkId == args.WorkId, ct);
 
         var volumeCount = await db.Volumes.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
+            .CountAsync(x => x.WorkId == args.WorkId, ct);
 
         var characterCount = await db.Characters.AsNoTracking()
-            .CountAsync(x => x.WorkId == workId, ct);
+            .CountAsync(x => x.WorkId == args.WorkId, ct);
 
         return ToolResult.Ok(JsonSerializer.Serialize(new
         {
@@ -70,5 +71,17 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
             volumeCount,
             characterCount
         }, snapshot.Value));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

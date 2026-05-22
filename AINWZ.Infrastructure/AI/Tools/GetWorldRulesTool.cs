@@ -1,9 +1,9 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,25 +33,26 @@ public sealed class GetWorldRulesTool(IServiceScopeFactory scopeFactory) : ITool
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var ruleType = args.GetString("rule_type");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
-        var query = db.WorldRules.AsNoTracking().Where(r => r.WorkId == workId);
+        var query = db.WorldRules.AsNoTracking().Where(r => r.WorkId == args.WorkId);
 
-        if (!string.IsNullOrEmpty(ruleType))
-            query = query.Where(r => r.RuleType == ruleType);
+        if (!string.IsNullOrEmpty(args.RuleType))
+            query = query.Where(r => r.RuleType == args.RuleType);
 
         var rules = await query.OrderBy(r => r.RuleName).Take(100).ToListAsync(ct);
 
         if (rules.Count == 0)
-            return ToolResult.Fail(string.IsNullOrEmpty(ruleType)
+            return ToolResult.Fail(string.IsNullOrEmpty(args.RuleType)
                 ? "当前作品暂无法则设定"
-                : $"未找到类型为「{ruleType}」的法则", "not_found");
+                : $"未找到类型为「{args.RuleType}」的法则", "not_found");
 
         var sb = new StringBuilder();
         sb.AppendLine($"## 天道法则（共{rules.Count}条）");
@@ -65,5 +66,18 @@ public sealed class GetWorldRulesTool(IServiceScopeFactory scopeFactory) : ITool
         }
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string RuleType { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            return null;
+        }
     }
 }

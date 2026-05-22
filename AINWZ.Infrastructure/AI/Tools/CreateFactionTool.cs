@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.World;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -38,50 +38,66 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var id = args.GetString("id");
-        var name = args.GetString("name", required: true);
-        var factionType = args.GetString("faction_type");
-        var description = args.GetString("description");
-        var relationshipJson = args.GetString("relationship_json");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
-        var worldSetting = await db.WorldSettings.FirstOrDefaultAsync(w => w.WorkId == workId, ct);
+        var worldSetting = await db.WorldSettings.FirstOrDefaultAsync(w => w.WorkId == args.WorkId, ct);
 
         FactionEntity entity = null;
-        if (!string.IsNullOrEmpty(id))
-            entity = await db.Factions.FirstOrDefaultAsync(f => f.Id == id && f.WorkId == workId, ct);
+        if (!string.IsNullOrEmpty(args.Id))
+            entity = await db.Factions.FirstOrDefaultAsync(f => f.Id == args.Id && f.WorkId == args.WorkId, ct);
         if (entity == null)
-            entity = await db.Factions.FirstOrDefaultAsync(f => f.WorkId == workId && f.Name == name, ct);
+            entity = await db.Factions.FirstOrDefaultAsync(f => f.WorkId == args.WorkId && f.Name == args.Name, ct);
 
         if (entity != null)
         {
-            if (!string.IsNullOrEmpty(factionType)) entity.FactionType = factionType;
-            if (!string.IsNullOrEmpty(description)) entity.Description = description;
-            if (args.Has("relationship_json")) entity.RelationshipJson = relationshipJson ?? string.Empty;
+            if (!string.IsNullOrEmpty(args.FactionType)) entity.FactionType = args.FactionType;
+            if (!string.IsNullOrEmpty(args.Description)) entity.Description = args.Description;
+            if (args.RelationshipJson != null) entity.RelationshipJson = args.RelationshipJson ?? string.Empty;
             await db.SaveChangesAsync(ct);
-            return ToolResult.Ok($"势力「{name}」（{entity.FactionType}）已更新，ID: {entity.Id}");
+            return ToolResult.Ok($"势力「{args.Name}」（{entity.FactionType}）已更新，ID: {entity.Id}");
         }
 
         var newEntity = new FactionEntity
         {
             Id = idGen.NextIdString(),
-            WorkId = workId,
+            WorkId = args.WorkId,
             WorldSettingId = worldSetting?.Id ?? string.Empty,
-            Name = name,
-            FactionType = factionType ?? string.Empty,
-            Description = description ?? string.Empty,
-            RelationshipJson = relationshipJson ?? string.Empty
+            Name = args.Name,
+            FactionType = args.FactionType ?? string.Empty,
+            Description = args.Description ?? string.Empty,
+            RelationshipJson = args.RelationshipJson ?? string.Empty
         };
 
         await db.Factions.AddAsync(newEntity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"势力「{name}」（{newEntity.FactionType}）已创建，ID: {newEntity.Id}");
+        return ToolResult.Ok($"势力「{args.Name}」（{newEntity.FactionType}）已创建，ID: {newEntity.Id}");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Id { get; init; }
+        public string Name { get; init; }
+        public string FactionType { get; init; }
+        public string Description { get; init; }
+        public string? RelationshipJson { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Name))
+                return ToolResult.Fail("缺少必需参数 'name'", "argument_parse_error");
+            return null;
+        }
     }
 }

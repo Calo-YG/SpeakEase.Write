@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,22 +32,23 @@ public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var keyword = args.GetString("keyword", required: true);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var setting = await db.WorldSettings.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.WorkId == workId, ct);
+            .FirstOrDefaultAsync(x => x.WorkId == args.WorkId, ct);
 
         if (setting == null)
             return ToolResult.Fail("当前作品暂无世界观设定", "not_found");
 
         var parts = new List<string>();
-        var keywords = keyword.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var keywords = args.Keyword.ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         if (!string.IsNullOrEmpty(setting.Summary))
         {
@@ -75,8 +75,23 @@ public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : 
         }
 
         if (parts.Count == 0)
-            return ToolResult.Fail($"世界设定中未找到「{keyword}」相关内容", "no_matches");
+            return ToolResult.Fail($"世界设定中未找到「{args.Keyword}」相关内容", "no_matches");
 
         return ToolResult.Ok(string.Join("\n\n", parts));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Keyword { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Keyword))
+                return ToolResult.Fail("缺少必需参数 'keyword'", "argument_parse_error");
+            return null;
+        }
     }
 }

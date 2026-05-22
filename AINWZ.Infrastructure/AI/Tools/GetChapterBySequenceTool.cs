@@ -35,17 +35,19 @@ public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory, 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var sequence = args.GetInt32("sequence", required: true, min: 1);
-        var maxContentChars = args.GetInt32("max_content_chars", defaultValue: 4000, min: 500, max: 20000);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
+
+        var maxContentChars = args.MaxContentChars != 0 ? args.MaxContentChars : 4000;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var chapter = await db.Chapters.AsNoTracking()
-            .Where(x => x.WorkId == workId && x.Sequence == sequence)
+            .Where(x => x.WorkId == args.WorkId && x.Sequence == args.Sequence)
             .Select(x => new
             {
                 x.Id,
@@ -59,7 +61,7 @@ public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory, 
             .FirstOrDefaultAsync(ct);
 
         if (chapter == null)
-            return ToolResult.Fail($"未找到作品 {workId} 的第 {sequence} 章", "not_found");
+            return ToolResult.Fail($"未找到作品 {args.WorkId} 的第 {args.Sequence} 章", "not_found");
 
         var content = chapter.Content;
         if (content != null && content.Length > maxContentChars)
@@ -75,5 +77,25 @@ public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory, 
             chapter.WordCount,
             chapter.Status
         }, snapshot.Value));
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public int Sequence { get; init; }
+        public int MaxContentChars { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (Sequence == 0)
+                return ToolResult.Fail("缺少必需参数 'sequence'", "argument_parse_error");
+            if (Sequence < 1)
+                return ToolResult.Fail($"参数 'sequence' 值 {Sequence} 超出范围 [1, ∞]", "argument_parse_error");
+            if (MaxContentChars != 0 && (MaxContentChars < 500 || MaxContentChars > 20000))
+                return ToolResult.Fail($"参数 'max_content_chars' 值 {MaxContentChars} 超出范围 [500, 20000]", "argument_parse_error");
+            return null;
+        }
     }
 }

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -34,17 +35,17 @@ public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExe
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var volumeSeq = args.GetInt32("volume_seq", min: 0);
-        var keyword = args.GetString("keyword");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var work = await db.Outlines.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.WorkId == workId, ct);
+            .FirstOrDefaultAsync(x => x.WorkId == args.WorkId, ct);
         if (work == null)
             return ToolResult.Fail("未找到大纲", "not_found");
 
@@ -56,20 +57,20 @@ public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExe
         sb.AppendLine($"主大纲：{(work.IsPrimary ? "是" : "否")}");
 
         var volumes = await db.Volumes.AsNoTracking()
-            .Where(x => x.WorkId == workId)
+            .Where(x => x.WorkId == args.WorkId)
             .OrderBy(x => x.Sequence)
             .ToListAsync(ct);
 
-        if (volumeSeq > 0)
+        if (args.VolumeSeq > 0)
         {
-            var vol = volumes.FirstOrDefault(v => v.Sequence == volumeSeq);
+            var vol = volumes.FirstOrDefault(v => v.Sequence == args.VolumeSeq);
             if (vol == null)
-                return ToolResult.Fail($"未找到第{volumeSeq}卷的大纲", "not_found");
+                return ToolResult.Fail($"未找到第{args.VolumeSeq}卷的大纲", "not_found");
 
             sb.AppendLine($"\n第{vol.Sequence}卷「{vol.Title}」：{vol.Summary ?? "无概述"}");
 
             var chapters = await db.Chapters.AsNoTracking()
-                .Where(x => x.WorkId == workId && x.VolumeId == vol.Id)
+                .Where(x => x.WorkId == args.WorkId && x.VolumeId == vol.Id)
                 .OrderBy(x => x.Sequence)
                 .Select(x => new { x.Sequence, x.Title, x.Summary })
                 .ToListAsync(ct);
@@ -83,32 +84,32 @@ public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExe
                 sb.AppendLine($"第{vol.Sequence}卷「{vol.Title}」：{vol.Summary ?? "无概述"}");
         }
 
-        if (!string.IsNullOrEmpty(keyword))
+        if (!string.IsNullOrEmpty(args.Keyword))
         {
             var nodes = await db.OutlineNodes.AsNoTracking()
-                .Where(x => x.WorkId == workId &&
-                    ((x.Title != null && x.Title.Contains(keyword)) ||
-                     (x.Goal != null && x.Goal.Contains(keyword)) ||
-                     (x.KeyEvent != null && x.KeyEvent.Contains(keyword))))
+                .Where(x => x.WorkId == args.WorkId &&
+                    ((x.Title != null && x.Title.Contains(args.Keyword)) ||
+                     (x.Goal != null && x.Goal.Contains(args.Keyword)) ||
+                     (x.KeyEvent != null && x.KeyEvent.Contains(args.Keyword))))
                 .Take(15)
                 .Select(x => new { x.Title, x.Goal, x.KeyEvent, x.Sequence, x.StageType })
                 .ToListAsync(ct);
 
             if (nodes.Count > 0)
             {
-                sb.AppendLine($"\n关键词「{keyword}」匹配的大纲节点：");
+                sb.AppendLine($"\n关键词「{args.Keyword}」匹配的大纲节点：");
                 foreach (var node in nodes)
                     sb.AppendLine($"[{node.StageType ?? "未指定"}] #{node.Sequence} {node.Title} — 目标：{node.Goal ?? "无"}；关键事件：{node.KeyEvent ?? "无"}");
             }
             else
             {
-                sb.AppendLine($"\n关键词「{keyword}」未匹配到大纲节点");
+                sb.AppendLine($"\n关键词「{args.Keyword}」未匹配到大纲节点");
             }
         }
         else
         {
             var allNodes = await db.OutlineNodes.AsNoTracking()
-                .Where(x => x.WorkId == workId)
+                .Where(x => x.WorkId == args.WorkId)
                 .OrderBy(x => x.Sequence)
                 .Take(50)
                 .Select(x => new { x.Title, x.Goal, x.KeyEvent, x.Sequence, x.StageType })
@@ -123,5 +124,21 @@ public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExe
         }
 
         return ToolResult.Ok(sb.ToString());
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public int VolumeSeq { get; init; }
+        public string Keyword { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (VolumeSeq != 0 && VolumeSeq < 1)
+                return ToolResult.Fail($"参数 'volume_seq' 值 {VolumeSeq} 超出范围 [1, ∞]", "argument_parse_error");
+            return null;
+        }
     }
 }

@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
@@ -33,25 +33,43 @@ public sealed class UpdateChapterSummaryTool(IServiceScopeFactory scopeFactory) 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var chapterId = args.GetString("chapter_id", required: true);
-        var summary = args.GetString("summary", required: true);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
 
         var chapter = await db.Chapters.FirstOrDefaultAsync(
-            c => c.Id == chapterId && c.WorkId == workId, ct);
+            c => c.Id == args.ChapterId && c.WorkId == args.WorkId, ct);
 
         if (chapter == null)
-            return ToolResult.Fail($"未找到章节 {chapterId}", "not_found");
+            return ToolResult.Fail($"未找到章节 {args.ChapterId}", "not_found");
 
-        chapter.Summary = summary;
+        chapter.Summary = args.Summary;
         chapter.UpdateAt = DateTime.Now;
         await db.SaveChangesAsync(ct);
 
         return ToolResult.Ok($"章节「{chapter.Title}」摘要已更新");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string ChapterId { get; init; }
+        public string Summary { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(ChapterId))
+                return ToolResult.Fail("缺少必需参数 'chapter_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Summary))
+                return ToolResult.Fail("缺少必需参数 'summary'", "argument_parse_error");
+            return null;
+        }
     }
 }

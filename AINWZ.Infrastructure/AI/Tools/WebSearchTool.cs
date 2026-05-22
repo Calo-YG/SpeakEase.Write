@@ -4,7 +4,6 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -35,17 +34,18 @@ public sealed partial class WebSearchTool(IHttpClientFactory httpClientFactory) 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var query = args.GetString("query", required: true);
-        var limit = args.GetInt32("limit", defaultValue: 5, min: 1, max: 20);
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         var client = _httpClientFactory.CreateClient("DuckDuckGo");
         client.Timeout = TimeSpan.FromSeconds(15);
 
         var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["q"] = query,
+            ["q"] = args.Query,
             ["b"] = ""
         });
 
@@ -75,11 +75,11 @@ public sealed partial class WebSearchTool(IHttpClientFactory httpClientFactory) 
             return ToolResult.Fail("搜索返回空结果", "empty_response");
         }
 
-        var results = ParseSearchResults(html, limit);
+        var results = ParseSearchResults(html, args.Limit);
 
         if (results.Count == 0)
         {
-            return ToolResult.Fail($"未找到与「{query}」相关的搜索结果", "no_results");
+            return ToolResult.Fail($"未找到与「{args.Query}」相关的搜索结果", "no_results");
         }
 
         return ToolResult.Ok(JsonSerializer.Serialize(results));
@@ -170,6 +170,21 @@ public sealed partial class WebSearchTool(IHttpClientFactory httpClientFactory) 
 
     [GeneratedRegex("""<div\s+class="result\s+results_links\s+results_links_deep\s+web-result"[^>]*>[\s\S]*?</div>\s*</div>""", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ResultBlockRegex();
+
+    private sealed record Args
+    {
+        public string Query { get; init; }
+        public int Limit { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(Query))
+                return ToolResult.Fail("缺少必需参数 'query'", "argument_parse_error");
+            if (Limit != 0 && (Limit < 1 || Limit > 20))
+                return ToolResult.Fail($"参数 'limit' 值 {Limit} 超出范围 [1, 20]", "argument_parse_error");
+            return null;
+        }
+    }
 
     private sealed class SearchResult
     {

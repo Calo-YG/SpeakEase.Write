@@ -1,8 +1,8 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
-using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -37,47 +37,63 @@ public sealed class CreateCharacterGraphTool(IServiceScopeFactory scopeFactory) 
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var id = args.GetString("id");
-        var name = args.GetString("name", required: true);
-        var description = args.GetString("description");
-        var layoutJson = args.GetString("layout_json");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         CharacterGraphEntity graph = null;
-        if (!string.IsNullOrEmpty(id))
-            graph = await db.CharacterGraphs.FirstOrDefaultAsync(x => x.Id == id && x.WorkId == workId, ct);
+        if (!string.IsNullOrEmpty(args.Id))
+            graph = await db.CharacterGraphs.FirstOrDefaultAsync(x => x.Id == args.Id && x.WorkId == args.WorkId, ct);
         if (graph == null)
-            graph = await db.CharacterGraphs.FirstOrDefaultAsync(x => x.WorkId == workId && x.Name == name, ct);
+            graph = await db.CharacterGraphs.FirstOrDefaultAsync(x => x.WorkId == args.WorkId && x.Name == args.Name, ct);
 
         if (graph != null)
         {
-            graph.Name = name;
-            if (!string.IsNullOrEmpty(description)) graph.Description = description;
-            if (args.Has("layout_json")) graph.LayoutJson = layoutJson ?? string.Empty;
+            graph.Name = args.Name;
+            if (!string.IsNullOrEmpty(args.Description)) graph.Description = args.Description;
+            if (args.LayoutJson != null) graph.LayoutJson = args.LayoutJson ?? string.Empty;
             await db.SaveChangesAsync(ct);
-            return ToolResult.Ok($"角色关系图谱「{name}」已更新，ID: {graph.Id}");
+            return ToolResult.Ok($"角色关系图谱「{args.Name}」已更新，ID: {graph.Id}");
         }
 
         var newGraph = new CharacterGraphEntity
         {
             Id = idGen.NextIdString(),
-            WorkId = workId,
-            Name = name,
-            Description = description ?? string.Empty,
+            WorkId = args.WorkId,
+            Name = args.Name,
+            Description = args.Description ?? string.Empty,
             Version = 1,
             Status = "draft",
-            LayoutJson = layoutJson ?? string.Empty
+            LayoutJson = args.LayoutJson ?? string.Empty
         };
 
         await db.CharacterGraphs.AddAsync(newGraph, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"角色关系图谱「{name}」已创建，ID: {newGraph.Id}，版本: v1");
+        return ToolResult.Ok($"角色关系图谱「{args.Name}」已创建，ID: {newGraph.Id}，版本: v1");
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Id { get; init; }
+        public string Name { get; init; }
+        public string Description { get; init; }
+        public string? LayoutJson { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Name))
+                return ToolResult.Fail("缺少必需参数 'name'", "argument_parse_error");
+            return null;
+        }
     }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
@@ -73,105 +74,121 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
 
     public async Task<ToolResult> ExecuteAsync(string arguments, CancellationToken ct)
     {
-        var args = ToolArgumentParser.Parse(arguments);
-        var workId = args.GetString("work_id", required: true);
-        var id = args.GetString("id");
-        var title = args.GetString("title", required: true);
-        var goal = args.GetString("goal");
-        var keyEvent = args.GetString("key_event");
-        var stageType = args.GetString("stage_type");
-        var sequence = args.GetInt32("sequence", min: 0);
-        var parentNodeId = args.GetString("parent_node_id");
-        var characterIds = args.GetStringArray("character_ids");
-        if (args.HasErrors) return args.ToErrorResult();
+        Args args;
+        try { args = JsonSerializer.Deserialize<Args>(arguments, ToolArgsHelper.Options); }
+        catch (JsonException ex) { return ToolResult.Fail($"JSON 参数解析错误: {ex.Message}", "argument_parse_error"); }
+        var validationError = args.Validate();
+        if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         OutlineNodeEntity entity = null;
-        if (!string.IsNullOrEmpty(id))
+        if (!string.IsNullOrEmpty(args.Id))
         {
-            entity = await db.OutlineNodes.FirstOrDefaultAsync(x => x.Id == id && x.WorkId == workId, ct);
+            entity = await db.OutlineNodes.FirstOrDefaultAsync(x => x.Id == args.Id && x.WorkId == args.WorkId, ct);
         }
 
         if (entity == null)
         {
-            entity = await db.OutlineNodes.FirstOrDefaultAsync(x => x.WorkId == workId && x.Title == title, ct);
+            entity = await db.OutlineNodes.FirstOrDefaultAsync(x => x.WorkId == args.WorkId && x.Title == args.Title, ct);
         }
 
         if (entity != null)
         {
-            if (!string.IsNullOrEmpty(stageType) && !IsValidStageType(stageType))
+            if (!string.IsNullOrEmpty(args.StageType) && !IsValidStageType(args.StageType))
             {
-                return ToolResult.Fail($"无效的 stage_type: {stageType}，有效值: book/volume/act/climax/resolution");
+                return ToolResult.Fail($"无效的 stage_type: {args.StageType}，有效值: book/volume/act/climax/resolution");
             }
 
-            if (!string.IsNullOrEmpty(stageType) && IsValidStageType(stageType))
+            if (!string.IsNullOrEmpty(args.StageType) && IsValidStageType(args.StageType))
             {
-                entity.StageType = stageType;
+                entity.StageType = args.StageType;
             }
 
-            if (goal != null) entity.Goal = goal;
-            if (keyEvent != null) entity.KeyEvent = keyEvent;
-            if (sequence > 0) entity.Sequence = sequence;
-            if (parentNodeId != null)
+            if (args.Goal != null) entity.Goal = args.Goal;
+            if (args.KeyEvent != null) entity.KeyEvent = args.KeyEvent;
+            if (args.Sequence > 0) entity.Sequence = args.Sequence;
+            if (args.ParentNodeId != null)
             {
-                if (!string.IsNullOrEmpty(parentNodeId))
+                if (!string.IsNullOrEmpty(args.ParentNodeId))
                 {
                     var parent = await db.OutlineNodes.AsNoTracking()
-                        .FirstOrDefaultAsync(x => x.Id == parentNodeId && x.WorkId == workId, ct);
+                        .FirstOrDefaultAsync(x => x.Id == args.ParentNodeId && x.WorkId == args.WorkId, ct);
                     if (parent == null)
                     {
-                        return ToolResult.Fail($"parent_node_id {parentNodeId} 不存在");
+                        return ToolResult.Fail($"parent_node_id {args.ParentNodeId} 不存在");
                     }
                 }
-                entity.ParentNodeId = parentNodeId;
+                entity.ParentNodeId = args.ParentNodeId;
             }
-            if (characterIds.Count > 0) entity.CharacterIds = characterIds;
+            if (args.CharacterIds.Count > 0) entity.CharacterIds = args.CharacterIds;
             entity.UpdateAt = DateTime.Now;
             await db.SaveChangesAsync(ct);
             return ToolResult.Ok($"大纲节点「{entity.Title}」已更新，层级: {entity.StageType}，ID: {entity.Id}");
         }
 
-        if (string.IsNullOrEmpty(stageType))
+        if (string.IsNullOrEmpty(args.StageType))
             return ToolResult.Fail("创建节点必须提供 stage_type");
-        if (!IsValidStageType(stageType))
-            return ToolResult.Fail($"无效的 stage_type: {stageType}，有效值: book/volume/act/climax/resolution");
+        if (!IsValidStageType(args.StageType))
+            return ToolResult.Fail($"无效的 stage_type: {args.StageType}，有效值: book/volume/act/climax/resolution");
 
-        if (!string.IsNullOrEmpty(parentNodeId))
+        if (!string.IsNullOrEmpty(args.ParentNodeId))
         {
             var parent = await db.OutlineNodes.AsNoTracking()
-                .FirstOrDefaultAsync(x => x.Id == parentNodeId && x.WorkId == workId, ct);
+                .FirstOrDefaultAsync(x => x.Id == args.ParentNodeId && x.WorkId == args.WorkId, ct);
             if (parent == null)
-                return ToolResult.Fail($"父节点 {parentNodeId} 不存在");
+                return ToolResult.Fail($"父节点 {args.ParentNodeId} 不存在");
         }
 
         var maxSeq = await db.OutlineNodes.AsNoTracking()
-            .Where(x => x.WorkId == workId)
+            .Where(x => x.WorkId == args.WorkId)
             .MaxAsync(x => (int?)x.Sequence, ct) ?? 0;
 
         var newEntity = new OutlineNodeEntity
         {
             Id = idGen.NextIdString(),
-            WorkId = workId,
-            Title = title,
-            Goal = goal ?? string.Empty,
-            KeyEvent = keyEvent ?? string.Empty,
-            StageType = stageType,
-            Sequence = sequence > 0 ? sequence : maxSeq + 1,
-            ParentNodeId = parentNodeId ?? string.Empty,
-            CharacterIds = characterIds
+            WorkId = args.WorkId,
+            Title = args.Title,
+            Goal = args.Goal ?? string.Empty,
+            KeyEvent = args.KeyEvent ?? string.Empty,
+            StageType = args.StageType,
+            Sequence = args.Sequence > 0 ? args.Sequence : maxSeq + 1,
+            ParentNodeId = args.ParentNodeId ?? string.Empty,
+            CharacterIds = args.CharacterIds
         };
 
         await db.OutlineNodes.AddAsync(newEntity, ct);
         await db.SaveChangesAsync(ct);
 
-        return ToolResult.Ok($"大纲节点「{title}」已创建，层级: {stageType}，ID: {newEntity.Id}，序号: {newEntity.Sequence}");
+        return ToolResult.Ok($"大纲节点「{args.Title}」已创建，层级: {args.StageType}，ID: {newEntity.Id}，序号: {newEntity.Sequence}");
     }
 
     private static bool IsValidStageType(string type)
     {
         return type is "book" or "volume" or "act" or "climax" or "resolution";
+    }
+
+    private sealed record Args
+    {
+        public string WorkId { get; init; }
+        public string Id { get; init; }
+        public string Title { get; init; }
+        public string Goal { get; init; }
+        public string KeyEvent { get; init; }
+        public string StageType { get; init; }
+        public int Sequence { get; init; }
+        public string ParentNodeId { get; init; }
+        public List<string> CharacterIds { get; init; }
+
+        public ToolResult Validate()
+        {
+            if (string.IsNullOrWhiteSpace(WorkId))
+                return ToolResult.Fail("缺少必需参数 'work_id'", "argument_parse_error");
+            if (string.IsNullOrWhiteSpace(Title))
+                return ToolResult.Fail("缺少必需参数 'title'", "argument_parse_error");
+            return null;
+        }
     }
 }

@@ -43,7 +43,8 @@ public sealed class CreationRouter(
                 Goals = intent.Goals.ToList(),
                 NeedsClarification = intent.NeedsClarification,
                 ClarificationQuestion = intent.ClarificationQuestion,
-                Pipeline = intent.ExplicitSequence.ToList()
+                Pipeline = intent.ExplicitSequence.ToList(),
+                PlanSteps = intent.PlanSteps.ToList()
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -71,4 +72,5 @@ public sealed class RouteResult
     public bool NeedsClarification { get; set; }
     public string ClarificationQuestion { get; set; } = string.Empty;
     public List<string> Pipeline { get; set; } = new();
+    public List<AgentPlanCandidateStep> PlanSteps { get; set; } = new();
 }

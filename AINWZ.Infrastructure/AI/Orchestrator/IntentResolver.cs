@@ -42,7 +42,7 @@ public sealed class IntentResolver
 - 信息不足以可靠选择时设置 needsClarification=true，并给出一个简短问题。
 
 只返回 JSON：
-{"agent":"name","confidence":0.0,"goals":["goal"],"reason":"reason","needsClarification":false,"clarificationQuestion":"","sequence":[]}
+{"agent":"name","confidence":0.0,"goals":["goal"],"reason":"reason","needsClarification":false,"clarificationQuestion":"","sequence":[],"steps":[]}
 """;
         var result = await llm.ChatAsync(
             new LLMTurnContext { Model = llmContext.Model, Temperature = 0.1 },
@@ -88,7 +88,8 @@ public sealed class IntentResolver
             NeedsClarification = root.TryGetProperty("needsClarification", out var clarification) &&
                                  clarification.ValueKind == JsonValueKind.True,
             ClarificationQuestion = ReadString(root, "clarificationQuestion"),
-            ExplicitSequence = sequence
+            ExplicitSequence = sequence,
+            PlanSteps = ReadPlanSteps(root)
         };
     }
 
@@ -126,6 +127,22 @@ public sealed class IntentResolver
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .ToList();
     }
+
+    private static List<AgentPlanCandidateStep> ReadPlanSteps(JsonElement root)
+    {
+        if (!root.TryGetProperty("steps", out var value) || value.ValueKind != JsonValueKind.Array)
+            return new List<AgentPlanCandidateStep>();
+
+        return value.EnumerateArray()
+            .Where(x => x.ValueKind == JsonValueKind.Object)
+            .Select(x => new AgentPlanCandidateStep
+            {
+                Id = ReadString(x, "id"),
+                AgentName = ReadString(x, "agent"),
+                DependsOn = ReadStringArray(x, "dependsOn")
+            })
+            .ToList();
+    }
 }
 
 public sealed class IntentResolution
@@ -137,4 +154,5 @@ public sealed class IntentResolution
     public bool NeedsClarification { get; init; }
     public string ClarificationQuestion { get; init; } = string.Empty;
     public IReadOnlyList<string> ExplicitSequence { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<AgentPlanCandidateStep> PlanSteps { get; init; } = Array.Empty<AgentPlanCandidateStep>();
 }

@@ -30,7 +30,7 @@ Runtime 策略不进入 Prompt，包括最大迭代、Tool 权限、Tool 幂等�
 - 新 Agent 只需要声明 Profile，不需要复制 Runtime 流程脚本。
 - Prompt 可以按请求动态注入约束和上下文。
 - 旧 Agent 仍可通过 `BuildPrompt()` 运行，迁移期间存在双入口。
-- 后续需要补充 `PlanCompiler`，将 `IntentResolution` 编译为真正受约束的 DAG。
+- `PlanCompiler` 将 `IntentResolution` 编译为受约束的 DAG；默认仍为单 Agent，只有模型返回显式步骤依赖时才启用多步计划。
 
 ## 验收
 

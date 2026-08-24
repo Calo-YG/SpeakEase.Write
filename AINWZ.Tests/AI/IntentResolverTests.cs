@@ -35,6 +35,22 @@ public sealed class IntentResolverTests
         Assert.DoesNotContain("关键词", llm.SystemPrompt);
     }
 
+    [Fact]
+    public async Task ResolveAsync_ParsesExplicitPlanStepsForCompiler()
+    {
+        var llm = new CapturingIntentLlm(
+            """{"agent":"write","steps":[{"id":"review","agent":"critique","dependsOn":["write"]},{"id":"write","agent":"write","dependsOn":[]}] }""");
+
+        var result = await new IntentResolver().ResolveAsync(
+            "先写再审查",
+            new INovelAgent[] { new IntentAgent("write", "写作"), new IntentAgent("critique", "审查") },
+            new TestOpenAIContext(),
+            llm);
+
+        Assert.Equal(new[] { "review", "write" }, result.PlanSteps.Select(x => x.Id));
+        Assert.Equal(new[] { "write" }, result.PlanSteps[0].DependsOn);
+    }
+
     private sealed class CapturingIntentLlm(string response) : IChatCompatible
     {
         public string SystemPrompt { get; private set; } = string.Empty;

@@ -25,6 +25,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddSingleton<IntentResolver>();
         services.AddSingleton<CreationRouter>();
         services.AddSingleton<PlanResolver>();
+        services.AddSingleton<PlanCompiler>();
         services.AddScoped<ApplicationAgentRunStore, AgentRunStore>();
         services.AddScoped<IMemoryProvider, HybridMemoryProvider>();
         services.AddScoped<ApplicationMemoryProvider>(sp => sp.GetRequiredService<IMemoryProvider>());

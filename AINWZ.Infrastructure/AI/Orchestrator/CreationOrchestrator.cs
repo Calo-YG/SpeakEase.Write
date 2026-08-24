@@ -20,10 +20,11 @@ public sealed class CreationOrchestrator(
     ICreationAgentContext agentContextBuilder,
     IEnumerable<INovelAgent> agents,
     ILogger<CreationOrchestrator> logger,
-    PlanResolver planResolver = null,
-    IAgentRunStore runStore = null) : IAgentOrchestrator
+    IAgentRunStore runStore = null,
+    PlanCompiler planCompiler = null) : IAgentOrchestrator
 {
     private readonly PromptComposer _promptComposer = new();
+    private readonly PlanCompiler _planCompiler = planCompiler ?? new PlanCompiler();
     // 执行完整的 Agent 管线：LLM 意图路由 → 逐个 Agent 执行 → 流式返回 chunk
     public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
@@ -68,8 +69,13 @@ public sealed class CreationOrchestrator(
         string planError = null;
         try
         {
-            plan = (planResolver ?? new PlanResolver()).Resolve(
-                requestedPipeline,
+            plan = _planCompiler.Compile(
+                new IntentResolution
+                {
+                    PrimaryAgent = route.AgentName,
+                    ExplicitSequence = requestedPipeline,
+                    PlanSteps = route.PlanSteps
+                },
                 agentList.Select(x => x.Name).ToArray());
         }
         catch (InvalidOperationException ex)

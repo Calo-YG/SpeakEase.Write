@@ -95,8 +95,14 @@ public sealed class AgentRunStore(
             return;
 
         var now = DateTime.Now;
-        entity.Status = response?.StopReason == "completed" ? "completed" : "failed";
         entity.StopReason = response?.StopReason ?? "failed";
+        entity.Status = entity.StopReason switch
+        {
+            "completed" => "completed",
+            "cancelled" => "cancelled",
+            "timed_out" => "timed_out",
+            _ => "failed"
+        };
         entity.Content = response?.Content ?? string.Empty;
         entity.Model = response?.Model ?? string.Empty;
         entity.ResultJson = JsonSerializer.Serialize(response);

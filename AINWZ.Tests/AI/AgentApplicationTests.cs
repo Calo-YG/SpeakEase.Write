@@ -123,6 +123,66 @@ public sealed class AgentApplicationTests
         Assert.True(toolResult.Success);
     }
 
+    [Fact]
+    public async Task ChatAsync_MarksRunCancelledWhenExecutionIsCancelled()
+    {
+        await using var db = TestDb.Create();
+        var runStore = new SpeakEase.Write.Infrastructure.AI.Runtime.AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        using var cancellation = new CancellationTokenSource();
+        var application = new AgentApplication(
+            new CancellingOrchestrator(cancellation.Cancel),
+            new CapturingSessionManager(),
+            runStore);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => application.ChatAsync(new AgentChatRequestDto
+        {
+            WorkId = "work-1",
+            Messages = new List<AgentChatMessage>
+            {
+                new() { Role = "user", Content = "cancel" }
+            }
+        }, cancellation.Token));
+
+        var run = Assert.Single(db.AgentRuns);
+        Assert.Equal("cancelled", run.Status);
+        Assert.Equal("cancelled", run.StopReason);
+    }
+
+    [Fact]
+    public async Task StreamChatAsync_MarksRunTimedOutWhenRuntimeTimeoutOccurs()
+    {
+        await using var db = TestDb.Create();
+        var runStore = new SpeakEase.Write.Infrastructure.AI.Runtime.AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        var application = new AgentApplication(
+            new CancellingOrchestrator(() => { }),
+            new CapturingSessionManager(),
+            runStore);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var _ in application.StreamChatAsync(new AgentChatRequestDto
+            {
+                WorkId = "work-1",
+                Messages = new List<AgentChatMessage>
+                {
+                    new() { Role = "user", Content = "timeout" }
+                }
+            }))
+            {
+            }
+        });
+
+        var run = Assert.Single(db.AgentRuns);
+        Assert.Equal("timed_out", run.Status);
+        Assert.Equal("timed_out", run.StopReason);
+    }
+
     private sealed class RouteChatCompatible : IChatCompatible
     {
         public Task<LLMTurnResult> ChatAsync(
@@ -329,6 +389,34 @@ public sealed class AgentApplicationTests
                     Content = string.Empty
                 }
             };
+        }
+    }
+
+    private sealed class CancellingOrchestrator(Action cancel) : SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator
+    {
+        public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            SpeakEase.Write.Application.Abstractions.AI.AgentRuntimeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return ExecuteAsync(request.WorkId, request.SessionId, request.UserMessage,
+                request.MaxIterations, request.MaxTokens, request.Temperature, cancellationToken);
+        }
+
+        public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            string workId,
+            string sessionId,
+            string userMessage,
+            int maxIterations = 10,
+            int? requestedMaxTokens = null,
+            double? requestedTemperature = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            cancel();
+            await Task.Yield();
+            throw new OperationCanceledException(cancellationToken);
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
         }
     }
 }

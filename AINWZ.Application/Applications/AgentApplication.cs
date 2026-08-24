@@ -43,38 +43,49 @@ public sealed class AgentApplication(
         long eventSequence = 0;
 
         // 通过AI编排器执行对话，收集返回的内容块
-        await foreach (var chunk in _orchestrator.ExecuteAsync(new AgentRuntimeRequest
+        try
         {
-            RunId = runId.RunId,
-            WorkId = workId,
-            SessionId = sessionId,
-            UserMessage = userMessage,
-            ClientMessageId = request.ClientMessageId,
-            IdempotencyKey = request.IdempotencyKey,
-            SkillName = request.SkillName,
-            MaxIterations = request.MaxIterations,
-            MaxTokens = request.MaxTokens,
-            Temperature = request.Temperature,
-            EnableAutoToolDispatch = request.EnableAutoToolDispatch
-        }, cancellationToken))
-        {
-            await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
-            if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
-                contentParts.Add(chunk.Content);
-
-            if (chunk.Type == "error" && !string.IsNullOrWhiteSpace(chunk.Content))
-                errorMessage = chunk.Content;
-
-            if (chunk.Type == "tool_result" && chunk.ToolResult is { } result)
+            await foreach (var chunk in _orchestrator.ExecuteAsync(new AgentRuntimeRequest
             {
-                var truncated = result.Content?.Length > 500
-                    ? result.Content[..500]
-                    : result.Content ?? string.Empty;
-                toolResults.Add((result.ToolName ?? "tool", result.Success, truncated));
-            }
+                RunId = runId.RunId,
+                WorkId = workId,
+                SessionId = sessionId,
+                UserMessage = userMessage,
+                ClientMessageId = request.ClientMessageId,
+                IdempotencyKey = request.IdempotencyKey,
+                SkillName = request.SkillName,
+                MaxIterations = request.MaxIterations,
+                MaxTokens = request.MaxTokens,
+                Temperature = request.Temperature,
+                EnableAutoToolDispatch = request.EnableAutoToolDispatch
+            }, cancellationToken))
+            {
+                await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
+                if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
+                    contentParts.Add(chunk.Content);
 
-            if (chunk.Type == "done" && chunk.FinalResponse is not null)
-                finalResponse = chunk.FinalResponse;
+                if (chunk.Type == "error" && !string.IsNullOrWhiteSpace(chunk.Content))
+                    errorMessage = chunk.Content;
+
+                if (chunk.Type == "tool_result" && chunk.ToolResult is { } result)
+                {
+                    var truncated = result.Content?.Length > 500
+                        ? result.Content[..500]
+                        : result.Content ?? string.Empty;
+                    toolResults.Add((result.ToolName ?? "tool", result.Success, truncated));
+                }
+
+                if (chunk.Type == "done" && chunk.FinalResponse is not null)
+                    finalResponse = chunk.FinalResponse;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            await CompleteRunAsync(
+                runId.RunId,
+                CreateCancellationResponse(cancellationToken),
+                CancellationToken.None);
+            throw;
         }
 
         // 如果AI编排器返回错误，直接抛出业务异常
@@ -155,42 +166,57 @@ public sealed class AgentApplication(
         long eventSequence = 0;
 
         // 流式执行AI编排器，实时yield内容块给调用方
-        await foreach (var chunk in _orchestrator.ExecuteAsync(new AgentRuntimeRequest
+        var streamCompleted = false;
+        try
         {
-            RunId = runId.RunId,
-            WorkId = workId,
-            SessionId = sessionId,
-            UserMessage = userMessage,
-            ClientMessageId = request.ClientMessageId,
-            IdempotencyKey = request.IdempotencyKey,
-            SkillName = request.SkillName,
-            MaxIterations = request.MaxIterations,
-            MaxTokens = request.MaxTokens,
-            Temperature = request.Temperature,
-            EnableAutoToolDispatch = request.EnableAutoToolDispatch
-        }, cancellationToken))
-        {
-            await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
-            if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
-                accumulatedContent.Append(chunk.Content);
-
-            if (chunk.Type == "error")
-                hadError = true;
-
-            if (chunk.Type == "done" && chunk.FinalResponse is not null)
-                finalResponse = chunk.FinalResponse;
-
-            // 截断过长的工具结果内容（超过500字符），避免存储过大
-            if (chunk.Type == "tool_result" && chunk.ToolResult is { } result)
+            await foreach (var chunk in _orchestrator.ExecuteAsync(new AgentRuntimeRequest
             {
-                var truncated = result.Content?.Length > 500
-                    ? result.Content[..500]
-                    : result.Content ?? string.Empty;
+                RunId = runId.RunId,
+                WorkId = workId,
+                SessionId = sessionId,
+                UserMessage = userMessage,
+                ClientMessageId = request.ClientMessageId,
+                IdempotencyKey = request.IdempotencyKey,
+                SkillName = request.SkillName,
+                MaxIterations = request.MaxIterations,
+                MaxTokens = request.MaxTokens,
+                Temperature = request.Temperature,
+                EnableAutoToolDispatch = request.EnableAutoToolDispatch
+            }, cancellationToken))
+            {
+                await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
+                if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
+                    accumulatedContent.Append(chunk.Content);
 
-                toolResults.Add((result.ToolName ?? "tool", result.Success, truncated));
+                if (chunk.Type == "error")
+                    hadError = true;
+
+                if (chunk.Type == "done" && chunk.FinalResponse is not null)
+                    finalResponse = chunk.FinalResponse;
+
+                // 截断过长的工具结果内容（超过500字符），避免存储过大
+                if (chunk.Type == "tool_result" && chunk.ToolResult is { } result)
+                {
+                    var truncated = result.Content?.Length > 500
+                        ? result.Content[..500]
+                        : result.Content ?? string.Empty;
+
+                    toolResults.Add((result.ToolName ?? "tool", result.Success, truncated));
+                }
+
+                yield return chunk;
             }
-
-            yield return chunk;
+            streamCompleted = true;
+        }
+        finally
+        {
+            if (!streamCompleted)
+            {
+                await CompleteRunAsync(
+                    runId.RunId,
+                    CreateCancellationResponse(cancellationToken),
+                    CancellationToken.None);
+            }
         }
 
         // 如果流式过程中发生错误，不再记录会话历史
@@ -279,6 +305,17 @@ public sealed class AgentApplication(
         };
 
         BusinessThrow.ThrowException(message);
+    }
+
+    private static AgentResponse CreateCancellationResponse(CancellationToken cancellationToken)
+    {
+        var stopReason = cancellationToken.IsCancellationRequested ? "cancelled" : "timed_out";
+        return new AgentResponse
+        {
+            Content = string.Empty,
+            StopReason = stopReason,
+            RunStatus = stopReason
+        };
     }
 
     private static AgentRunResult BuildRunResult(AgentResponse finalResponse, string content)

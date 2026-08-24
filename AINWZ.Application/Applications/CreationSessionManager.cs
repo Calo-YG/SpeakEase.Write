@@ -157,20 +157,32 @@ public class CreationSessionManager(
             return new ApiResult<CreationSessionDto>("会话已被其他请求更新，请重试。", 409);
         }
 
-        if (memoryRefreshQueue is not null)
+        try
         {
-            await memoryRefreshQueue.EnqueueAsync(new MemoryRefreshRequest
+            if (memoryRefreshQueue is not null)
             {
-                UserId = userId,
-                WorkId = session.WorkId,
-                SessionId = sessionId,
-                TurnNumber = session.TurnCount
-            }, CancellationToken.None);
+                await memoryRefreshQueue.EnqueueAsync(new MemoryRefreshRequest
+                {
+                    UserId = userId,
+                    WorkId = session.WorkId,
+                    SessionId = sessionId,
+                    TurnNumber = session.TurnCount
+                }, CancellationToken.None);
+            }
+            else
+            {
+                // 兼容未注册队列的测试/旧宿主；生产 DI 会注入后台队列。
+                await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, session.TurnCount, CancellationToken.None);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            // 兼容未注册队列的测试/旧宿主；生产 DI 会注入后台队列。
-            await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, session.TurnCount, CancellationToken.None);
+            // 消息事务已经提交，记忆刷新失败只能等待后续队列/重试，不能让 Chat 反向失败。
+            logger.LogWarning(
+                ex,
+                "Memory refresh deferred after turn commit: SessionId={SessionId}, Turn={Turn}",
+                sessionId,
+                session.TurnCount);
         }
 
         if (session.TurnCount % MaxTurnsBeforeArchive == 0)

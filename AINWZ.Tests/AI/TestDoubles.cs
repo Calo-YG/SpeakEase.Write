@@ -93,6 +93,7 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
     public List<(string UserId, string WorkId, string SessionId)> Invalidations { get; } = new();
     public SessionMemorySnapshot Snapshot { get; set; } = SessionMemorySnapshot.Empty;
     public IReadOnlyList<MemoryFact> Facts { get; set; } = Array.Empty<MemoryFact>();
+    public bool ThrowOnRefresh { get; set; }
 
     public Task<IReadOnlyList<MemoryFact>> LoadProjectFactsAsync(
         string userId,
@@ -127,6 +128,9 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
         int turnNumber,
         CancellationToken cancellationToken = default)
     {
+        if (ThrowOnRefresh)
+            throw new InvalidOperationException("Simulated memory refresh failure.");
+
         Refreshes.Add((userId, workId, sessionId, turnNumber));
         return Task.CompletedTask;
     }

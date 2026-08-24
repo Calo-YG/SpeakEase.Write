@@ -102,6 +102,31 @@ public sealed class CreationSessionManagerTests
         Assert.Equal(1, request.TurnNumber);
     }
 
+    [Fact]
+    public async Task AppendTurnAsync_DoesNotFailWhenSynchronousMemoryRefreshFails()
+    {
+        await using var db = TestDb.Create();
+        var memory = new FakeMemoryProvider { ThrowOnRefresh = true };
+        var manager = CreateManager(db, memory);
+
+        db.AICreationSessions.Add(new AICreationSessionEntity
+        {
+            Id = "session-1",
+            UserId = "user-1",
+            WorkId = "work-1",
+            Status = "active",
+            TurnCount = 0,
+            AdoptedContentJson = "[]"
+        });
+        await db.SaveChangesAsync();
+
+        var result = await manager.AppendTurnAsync("session-1", "user", "assistant");
+
+        Assert.True(result.Successed);
+        Assert.Equal(1, result.Data.TurnCount);
+        Assert.Equal(2, await db.AICreationMessages.CountAsync());
+    }
+
     private static CreationSessionManager CreateManager(
         SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext db,
         FakeMemoryProvider memory,

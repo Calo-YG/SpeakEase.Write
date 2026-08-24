@@ -3,6 +3,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Runtime;
+using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace AINWZ.Tests.AI;
 
@@ -65,5 +66,49 @@ public sealed class AgentRunStoreTests
         Assert.False(replayLease.ShouldExecute);
         Assert.Equal("saved", replayLease.ReplayResult.Content);
         Assert.Equal(1, await db.AgentToolCalls.CountAsync());
+    }
+
+    [Fact]
+    public async Task ToolJournal_ConvertsSaveRaceIntoInProgressLease()
+    {
+        var options = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new RacingDbContext(options);
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        var run = await store.StartAsync("work-1", "session-1", "idem-race", "client-race");
+        var call = new ToolCall
+        {
+            Id = "call-race",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{}" }
+        };
+
+        var lease = await store.BeginAsync(run.RunId, "step-1", call);
+
+        Assert.False(lease.ShouldExecute);
+        Assert.Equal("tool_call_in_progress", lease.ReplayResult.ErrorCode);
+        Assert.Equal(1, await db.AgentToolCalls.CountAsync());
+    }
+
+    private sealed class RacingDbContext(DbContextOptions<SpeakEaseDbContext> options) : SpeakEaseDbContext(options)
+    {
+        private bool _simulateRace = true;
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            var hasToolInsert = ChangeTracker.Entries<SpeakEase.Write.Domain.Entities.AI.AgentToolCallEntity>()
+                .Any(x => x.State == EntityState.Added);
+            var affected = await base.SaveChangesAsync(cancellationToken);
+            if (_simulateRace && hasToolInsert)
+            {
+                _simulateRace = false;
+                throw new DbUpdateException("Simulated unique-key race.");
+            }
+
+            return affected;
+        }
     }
 }

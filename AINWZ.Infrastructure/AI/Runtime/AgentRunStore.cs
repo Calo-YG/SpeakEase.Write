@@ -235,7 +235,7 @@ public sealed class AgentRunStore(
         }
 
         var now = DateTime.Now;
-        db.AgentToolCalls.Add(new AgentToolCallEntity
+        var entity = new AgentToolCallEntity
         {
             Id = idGenerator.NextIdString(),
             UserId = userId,
@@ -250,9 +250,26 @@ public sealed class AgentRunStore(
             CreateAt = now,
             UpdateBy = userId,
             UpdateAt = now
-        });
-        await db.SaveChangesAsync(cancellationToken);
-        return ToolExecutionLease.Execute();
+        };
+        db.AgentToolCalls.Add(entity);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            return ToolExecutionLease.Execute();
+        }
+        catch (DbUpdateException)
+        {
+            db.Entry(entity).State = EntityState.Detached;
+            var concurrent = await db.AgentToolCalls.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.UserId == userId && x.RunId == runId && x.ToolCallId == (toolCall.Id ?? string.Empty),
+                cancellationToken);
+            if (concurrent is null)
+                throw;
+
+            return ToolExecutionLease.Replay(ToolResult.Fail(
+                "This tool call is already executing or has no replayable result.",
+                "tool_call_in_progress"));
+        }
     }
 
     public async Task CompleteAsync(

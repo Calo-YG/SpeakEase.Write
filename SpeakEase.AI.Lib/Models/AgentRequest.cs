@@ -1,6 +1,7 @@
 namespace SpeakEase.AI.Lib.Models;
 
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 
 /// <summary>
 /// Agent 执行请求：包含模型配置、提示词、对话历史、生成参数等。
@@ -59,4 +60,5 @@ public sealed class AgentRequest
     /// 是否允许本次运行自动执行模型返回的工具调用。
     /// </summary>
     public bool EnableAutoToolDispatch { get; set; } = true;
+    public IToolExecutionJournal Journal { get; set; }
 }

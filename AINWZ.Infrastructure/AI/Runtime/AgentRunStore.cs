@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Application.Abstractions.Identity;
 using SpeakEase.Write.Application.Abstractions.Ids;
@@ -193,6 +194,78 @@ public sealed class AgentRunStore(
         };
         if (entity.Id is not null && db.Entry(entity).State == EntityState.Detached)
             db.AgentToolCalls.Add(entity);
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<ToolExecutionLease> BeginAsync(
+        string runId,
+        string stepId,
+        ToolCall toolCall,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = userContext.UserId;
+        var existing = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
+            x.UserId == userId && x.RunId == runId && x.ToolCallId == (toolCall.Id ?? string.Empty),
+            cancellationToken);
+
+        if (existing is not null)
+        {
+            if (existing.Status == "completed" && !string.IsNullOrWhiteSpace(existing.ResultJson))
+            {
+                try
+                {
+                    var replay = JsonSerializer.Deserialize<ToolResult>(existing.ResultJson);
+                    if (replay is not null)
+                        return ToolExecutionLease.Replay(replay);
+                }
+                catch (JsonException)
+                {
+                }
+            }
+
+            return ToolExecutionLease.Replay(ToolResult.Fail(
+                "This tool call is already executing or has no replayable result.",
+                "tool_call_in_progress"));
+        }
+
+        var now = DateTime.Now;
+        db.AgentToolCalls.Add(new AgentToolCallEntity
+        {
+            Id = idGenerator.NextIdString(),
+            UserId = userId,
+            RunId = runId,
+            StepId = stepId ?? string.Empty,
+            ToolCallId = toolCall.Id ?? string.Empty,
+            ToolName = toolCall.Function?.Name ?? string.Empty,
+            ArgumentsHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(toolCall.Function?.Arguments ?? string.Empty))),
+            Status = "running",
+            CreateBy = userId,
+            CreateAt = now,
+            UpdateBy = userId,
+            UpdateAt = now
+        });
+        await db.SaveChangesAsync(cancellationToken);
+        return ToolExecutionLease.Execute();
+    }
+
+    public async Task CompleteAsync(
+        string runId,
+        string stepId,
+        ToolCall toolCall,
+        ToolResult result,
+        CancellationToken cancellationToken = default)
+    {
+        var entity = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
+            x.UserId == userContext.UserId && x.RunId == runId && x.ToolCallId == (toolCall.Id ?? string.Empty),
+            cancellationToken);
+        if (entity is null)
+            return;
+
+        entity.Status = result?.Success == true ? "completed" : "failed";
+        entity.ResultJson = JsonSerializer.Serialize(result);
+        entity.UpdateBy = userContext.UserId;
+        entity.UpdateAt = DateTime.Now;
         await db.SaveChangesAsync(cancellationToken);
     }
 

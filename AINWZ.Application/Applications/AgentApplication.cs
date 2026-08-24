@@ -59,12 +59,6 @@ public sealed class AgentApplication(
         }, cancellationToken))
         {
             await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
-            if (_runStore is not null && chunk.Type == "tool_call" && chunk.ToolCall is not null)
-                await _runStore.RecordToolCallAsync(
-                    runId.RunId,
-                    chunk.StepId ?? string.Empty,
-                    chunk.ToolCall,
-                    CancellationToken.None);
             if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                 contentParts.Add(chunk.Content);
 
@@ -177,12 +171,6 @@ public sealed class AgentApplication(
         }, cancellationToken))
         {
             await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
-            if (_runStore is not null && chunk.Type == "tool_call" && chunk.ToolCall is not null)
-                await _runStore.RecordToolCallAsync(
-                    runId.RunId,
-                    chunk.StepId ?? string.Empty,
-                    chunk.ToolCall,
-                    CancellationToken.None);
             if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                 accumulatedContent.Append(chunk.Content);
 

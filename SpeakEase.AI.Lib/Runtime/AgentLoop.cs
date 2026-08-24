@@ -153,15 +153,40 @@ public sealed class AgentLoop : IAgentLoop
                     }
 
                     ToolResult toolResult;
-                    try
+                    var lease = loopRequest.Journal is null
+                        ? ToolExecutionLease.Execute()
+                        : await loopRequest.Journal.BeginAsync(
+                            request.RunId,
+                            request.StepId,
+                            toolCall,
+                            runtimeToken);
+
+                    if (!lease.ShouldExecute && lease.ReplayResult is not null)
                     {
-                        toolResult = await loopRequest.Tools.ExecuteAsync(toolCall, runtimeToken);
+                        toolResult = lease.ReplayResult;
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    else
                     {
-                        toolResult = ToolResult.Fail("Tool execution failed.", "tool_execution_error");
-                        toolResult.ToolCallId = toolCall.Id;
-                        toolResult.ToolName = toolCall.Function?.Name;
+                        try
+                        {
+                            toolResult = await loopRequest.Tools.ExecuteAsync(toolCall, runtimeToken);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            toolResult = ToolResult.Fail("Tool execution failed.", "tool_execution_error");
+                            toolResult.ToolCallId = toolCall.Id;
+                            toolResult.ToolName = toolCall.Function?.Name;
+                        }
+
+                        if (loopRequest.Journal is not null)
+                        {
+                            await loopRequest.Journal.CompleteAsync(
+                                request.RunId,
+                                request.StepId,
+                                toolCall,
+                                toolResult,
+                                runtimeToken);
+                        }
                     }
 
                     toolResults.Add(toolResult);

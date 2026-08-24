@@ -16,4 +16,5 @@ public sealed class AgentLoopRequest
     public IToolCapable Tools { get; init; }
     public AgentLoopOptions Options { get; init; } = new();
     public ISkillResolver SkillResolver { get; init; }
+    public IToolExecutionJournal Journal { get; init; }
 }

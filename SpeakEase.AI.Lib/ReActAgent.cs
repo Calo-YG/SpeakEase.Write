@@ -105,7 +105,8 @@ public sealed class ReActAgent(
             SkillName = request.SkillName,
             WorkId = request.WorkId,
             UserId = request.UserId,
-            EnableAutoToolDispatch = request.EnableAutoToolDispatch
+            EnableAutoToolDispatch = request.EnableAutoToolDispatch,
+            Journal = request.Journal
         };
 
         await foreach (var chunk in _agentLoop.RunAsync(new AgentLoopRequest
@@ -114,6 +115,7 @@ public sealed class ReActAgent(
             Llm = llmStrategy,
             Tools = toolCapable,
             SkillResolver = _skillResolver,
+            Journal = loopRequest.Journal,
             Request = loopRequest
         }, cancellationToken))
         {

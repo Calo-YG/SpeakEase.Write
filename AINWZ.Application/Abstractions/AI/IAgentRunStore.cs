@@ -1,8 +1,9 @@
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.Runtime;
 
 namespace SpeakEase.Write.Application.Abstractions.AI;
 
-public interface IAgentRunStore
+public interface IAgentRunStore : IToolExecutionJournal
 {
     Task<AgentRunStartResult> StartAsync(
         string workId,

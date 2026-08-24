@@ -210,7 +210,8 @@ public sealed class CreationOrchestrator(
                 WorkId = workId,
                 UserId = sharedContext.UserId,
                 SkillName = runtimeRequest.SkillName,
-                EnableAutoToolDispatch = runtimeRequest.EnableAutoToolDispatch
+                EnableAutoToolDispatch = runtimeRequest.EnableAutoToolDispatch,
+                Journal = runStore
             };
 
             // 通过流式枚举器逐块输出 Agent 执行结果

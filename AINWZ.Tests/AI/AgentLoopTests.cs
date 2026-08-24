@@ -158,6 +158,40 @@ public sealed class AgentLoopTests
         Assert.Equal("max_tool_calls_reached", chunks.Single(x => x.Type == "done").FinalResponse.StopReason);
     }
 
+    [Fact]
+    public async Task RunAsync_ReplaysCompletedToolCallWithoutExecutingToolAgain()
+    {
+        var toolCall = new ToolCall
+        {
+            Id = "call-replay",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":1}" }
+        };
+        var tools = new RecordingToolCapable();
+        var journal = new ReplayToolExecutionJournal(new ToolResult
+        {
+            Success = true,
+            Content = "already saved",
+            ToolCallId = toolCall.Id,
+            ToolName = toolCall.Function.Name
+        });
+        var loop = new AgentLoop();
+
+        var chunks = await CollectAsync(loop.RunAsync(new AgentLoopRequest
+        {
+            Llm = new ScriptedChatCompatible(
+                _ => new LLMTurnResult { Success = true, ToolCalls = new List<ToolCall> { toolCall } },
+                _ => new LLMTurnResult { Success = true, Content = "completed" }),
+            Tools = tools,
+            Journal = journal,
+            Request = new AgentRequest { UserMessage = "retry", MaxIterations = 3 }
+        }));
+
+        Assert.Equal("completed", chunks.Single(x => x.Type == "done").FinalResponse.StopReason);
+        Assert.Empty(tools.Calls);
+        Assert.Equal(1, journal.BeginCount);
+        Assert.Equal(0, journal.CompleteCount);
+    }
+
     private static async Task<List<AgentStreamChunk>> CollectAsync(IAsyncEnumerable<AgentStreamChunk> stream)
     {
         var chunks = new List<AgentStreamChunk>();
@@ -209,6 +243,33 @@ public sealed class AgentLoopTests
         {
             Calls.Add(toolCall);
             return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class ReplayToolExecutionJournal(ToolResult replay) : IToolExecutionJournal
+    {
+        public int BeginCount { get; private set; }
+        public int CompleteCount { get; private set; }
+
+        public Task<ToolExecutionLease> BeginAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            CancellationToken cancellationToken = default)
+        {
+            BeginCount++;
+            return Task.FromResult(ToolExecutionLease.Replay(replay));
+        }
+
+        public Task CompleteAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            ToolResult result,
+            CancellationToken cancellationToken = default)
+        {
+            CompleteCount++;
+            return Task.CompletedTask;
         }
     }
 }

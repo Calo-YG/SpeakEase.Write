@@ -82,6 +82,7 @@ public abstract class AgentBase(
             AgentName = Name,
             Llm = Llm,
             Tools = Tools,
+            Journal = request.Journal,
             Request = request
         }, cancellationToken))
         {

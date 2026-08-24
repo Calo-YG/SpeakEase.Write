@@ -340,38 +340,77 @@ public class CreationSessionManager(
         adopted.RemoveAll(a => a.TurnNumber > targetTurn);
         session.AdoptedContentJson = JsonHelper.Serialize(adopted);
 
-        await db.AICreationMessages
-            .Where(m => m.SessionId == sessionId && m.TurnNumber > targetTurn)
-            .ExecuteDeleteAsync();
+        await DeleteMessagesAfterTurnAsync(sessionId, targetTurn);
 
         session.TurnCount = targetTurn;
         session.LastActivityAt = DateTime.Now;
         session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
         await db.SaveChangesAsync();
-        // 回滚允许版本下降，先删除旧快照/缓存，再根据剩余消息重建。
-        await db.MemorySnapshots
-            .Where(x => x.UserId == userId &&
-                        x.WorkId == session.WorkId &&
-                        x.SessionId == sessionId &&
-                        x.SnapshotType == "session-turn-summary")
-            .ExecuteDeleteAsync();
-        await memory.InvalidateSessionAsync(userId, session.WorkId, sessionId);
-        if (memoryRefreshQueue is not null)
+        try
         {
-            await memoryRefreshQueue.EnqueueAsync(new MemoryRefreshRequest
+            // 回滚允许版本下降，先删除旧快照/缓存，再根据剩余消息重建。
+            await DeleteSessionMemorySnapshotsAsync(userId, session.WorkId, sessionId);
+            await memory.InvalidateSessionAsync(userId, session.WorkId, sessionId);
+            if (memoryRefreshQueue is not null)
             {
-                UserId = userId,
-                WorkId = session.WorkId,
-                SessionId = sessionId,
-                TurnNumber = targetTurn
-            });
+                await memoryRefreshQueue.EnqueueAsync(new MemoryRefreshRequest
+                {
+                    UserId = userId,
+                    WorkId = session.WorkId,
+                    SessionId = sessionId,
+                    TurnNumber = targetTurn
+                });
+            }
+            else
+            {
+                await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, targetTurn);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, targetTurn);
+            logger.LogWarning(
+                ex,
+                "Memory refresh deferred after rollback: SessionId={SessionId}, TargetTurn={TargetTurn}",
+                sessionId,
+                targetTurn);
         }
 
         return new ApiResult(true);
+    }
+
+    private async Task DeleteMessagesAfterTurnAsync(string sessionId, int targetTurn)
+    {
+        var query = db.AICreationMessages
+            .Where(m => m.SessionId == sessionId && m.TurnNumber > targetTurn);
+        try
+        {
+            await query.ExecuteDeleteAsync();
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("ExecuteDelete", StringComparison.Ordinal))
+        {
+            var messages = await query.ToListAsync();
+            db.AICreationMessages.RemoveRange(messages);
+            await db.SaveChangesAsync();
+        }
+    }
+
+    private async Task DeleteSessionMemorySnapshotsAsync(string userId, string workId, string sessionId)
+    {
+        var query = db.MemorySnapshots
+            .Where(x => x.UserId == userId &&
+                        x.WorkId == workId &&
+                        x.SessionId == sessionId &&
+                        x.SnapshotType == "session-turn-summary");
+        try
+        {
+            await query.ExecuteDeleteAsync();
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("ExecuteDelete", StringComparison.Ordinal))
+        {
+            var snapshots = await query.ToListAsync();
+            db.MemorySnapshots.RemoveRange(snapshots);
+            await db.SaveChangesAsync();
+        }
     }
 
     // 获取作品当前活跃会话（status = active 且最近活跃的）

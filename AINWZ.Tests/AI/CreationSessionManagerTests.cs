@@ -127,6 +127,34 @@ public sealed class CreationSessionManagerTests
         Assert.Equal(2, await db.AICreationMessages.CountAsync());
     }
 
+    [Fact]
+    public async Task RollbackToTurnAsync_DoesNotFailWhenMemoryCleanupFails()
+    {
+        await using var db = TestDb.Create();
+        var memory = new FakeMemoryProvider { ThrowOnRefresh = true };
+        var manager = CreateManager(db, memory);
+
+        db.AICreationSessions.Add(new AICreationSessionEntity
+        {
+            Id = "session-1",
+            UserId = "user-1",
+            WorkId = "work-1",
+            Status = "active",
+            TurnCount = 2,
+            AdoptedContentJson = "[]"
+        });
+        db.AICreationMessages.AddRange(
+            new AICreationMessageEntity { Id = "turn-1", SessionId = "session-1", TurnNumber = 1, Role = "user", Content = "one" },
+            new AICreationMessageEntity { Id = "turn-2", SessionId = "session-1", TurnNumber = 2, Role = "user", Content = "two" });
+        await db.SaveChangesAsync();
+
+        var result = await manager.RollbackToTurnAsync("session-1", 1);
+
+        Assert.True(result.Successed);
+        Assert.Equal(1, await db.AICreationSessions.Select(x => x.TurnCount).SingleAsync());
+        Assert.Single(await db.AICreationMessages.ToListAsync());
+    }
+
     private static CreationSessionManager CreateManager(
         SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext db,
         FakeMemoryProvider memory,

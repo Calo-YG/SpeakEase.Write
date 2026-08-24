@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 
@@ -23,6 +24,14 @@ public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogg
     };
 
     public override string RouteDescription => "检查文风AI味/让文字更自然更像人写";
+
+    public override PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = "你是文学编辑，擅长识别文本中不自然、模板化或缺乏人物感的表达。",
+        Objective = "根据用户关注点审查文本，并给出有证据、可执行的修改方向。",
+        QualityCriteria = new[] { "引用具体片段说明问题", "区分风格选择与真正的表达缺陷", "建议应服务于文本原有意图" },
+        OutputContract = "输出问题清单、严重度和修改建议，不输出内部推理过程。"
+    };
 
     // 构建文风审查Agent的系统提示词：包含角色定义、五轮审查流程（用词→心理→对话→环境→句式）、
     // 五大维度汇总参考、结构化输出格式

@@ -1,8 +1,11 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
+using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.Shared;
@@ -13,25 +16,84 @@ namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 public sealed class CreationOrchestrator(
     CreationRouter router,
     IOpenAIContext llmContext,
+    IChatCompatible llm,
     ICreationAgentContext agentContextBuilder,
     IEnumerable<INovelAgent> agents,
-    ILogger<CreationOrchestrator> logger)
+    ILogger<CreationOrchestrator> logger,
+    PlanResolver planResolver = null,
+    IAgentRunStore runStore = null) : IAgentOrchestrator
 {
+    private readonly PromptComposer _promptComposer = new();
     // 执行完整的 Agent 管线：LLM 意图路由 → 逐个 Agent 执行 → 流式返回 chunk
-    public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+    public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
         string sessionId,
         string userMessage,
         int maxIterations = 10,
         int? requestedMaxTokens = null,
         double? requestedTemperature = null,
+        CancellationToken cancellationToken = default)
+    {
+        return ExecuteAsync(new AgentRuntimeRequest
+        {
+            WorkId = workId,
+            SessionId = sessionId,
+            UserMessage = userMessage,
+            MaxIterations = maxIterations,
+            MaxTokens = requestedMaxTokens,
+            Temperature = requestedTemperature,
+            EnableAutoToolDispatch = true
+        }, cancellationToken);
+    }
+
+    public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+        AgentRuntimeRequest runtimeRequest,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(runtimeRequest);
+
+        var workId = runtimeRequest.WorkId;
+        var sessionId = runtimeRequest.SessionId;
+        var userMessage = runtimeRequest.UserMessage;
+        var maxIterations = runtimeRequest.MaxIterations;
+        var requestedMaxTokens = runtimeRequest.MaxTokens;
+        var requestedTemperature = runtimeRequest.Temperature;
+
         // 步骤1：通过 LLM 进行意图路由，确定管线（pipeline）
         var pipelineStopwatch = Stopwatch.StartNew();
         var agentList = agents.ToList();
-        var route = await router.DecideWithLLMAsync(userMessage, agentList, cancellationToken);
-        var pipeline = route.Pipeline.Count > 0 ? route.Pipeline : new List<string> { route.AgentName };
+        var route = await router.DecideWithLLMAsync(userMessage, agentList, llmContext, llm, cancellationToken);
+        var requestedPipeline = route.Pipeline.Count > 0 ? route.Pipeline : new List<string> { route.AgentName };
+        AgentPlan plan = null;
+        string planError = null;
+        try
+        {
+            plan = (planResolver ?? new PlanResolver()).Resolve(
+                requestedPipeline,
+                agentList.Select(x => x.Name).ToArray());
+        }
+        catch (InvalidOperationException ex)
+        {
+            logger.LogWarning(ex, "Resolved Agent plan is invalid: {Pipeline}", string.Join(" -> ", requestedPipeline));
+            planError = ex.Message;
+        }
+
+        if (planError is not null)
+        {
+            yield return new AgentStreamChunk
+            {
+                Type = "error",
+                Content = "AI 执行计划无效。"
+            };
+            yield return new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = new AgentResponse { StopReason = "invalid_request", Content = string.Empty }
+            };
+            yield break;
+        }
+
+        var pipeline = plan.Steps.Select(x => x.AgentName).ToList();
 
         logger.LogInformation(
             "Route decision: agent={Agent}, contentType={ContentType}, pipeline={Pipeline}",
@@ -55,24 +117,38 @@ public sealed class CreationOrchestrator(
         // 步骤2：解析 LLM 配置（ApiKey / Model / MaxTokens 等）
         await llmContext.ResolveAsync(cancellationToken);
 
-        // 步骤3：按管线顺序逐个执行 Agent，前一个 Agent 的输出作为后续 Agent 的上下文
-        var previousResult = string.Empty;
+
+        // 步骤2.5：根据管线 Agent 元数据确定包容性参数，构建一次共享上下文，避免每个 Agent 重复查询数据库
+        var pipelineMeta = pipeline
+            .Select(name => agentList.FirstOrDefault(a => a.Name == name))
+            .Where(a => a is not null)
+            .Select(a => a.Metadata)
+            .ToList();
+
+        var includeMemory = pipelineMeta.Any(m => m.NeedsProjectMemory);
+        var filterHistory = pipelineMeta.All(m => m.ShouldFilterHistory);
+
+        var sharedContext = await agentContextBuilder.BuildContextAsync(
+            workId,
+            sessionId,
+            string.Join("->", pipeline),
+            llmContext.Model,
+            includeMemory,
+            filterHistory,
+            llmContext.ContextWindow,
+            cancellationToken);
+
+        // 步骤4：按管线顺序逐个执行 Agent，前一个 Agent 的输出作为后续 Agent 的上下文
+        AgentArtifact previousArtifact = null;
+        var executedAgentCount = 0;
         for (var i = 0; i < pipeline.Count; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var agentName = pipeline[i];
+            var planStep = plan.Steps[i];
+            var agentName = planStep.AgentName;
             var agent = agentList.FirstOrDefault(a => a.Name == agentName);
-            if (agent is null)
-            {
-                logger.LogWarning("Pipeline step {Step}/{Total}: agent [{Agent}] not found", i + 1, pipeline.Count, agentName);
-                yield return new AgentStreamChunk
-                {
-                    Type = "meta",
-                    Content = JsonHelper.Serialize(new { stage = "pipeline_skip", agent = agentName, error = "agent_not_found" })
-                };
-                continue;
-            }
+            executedAgentCount++;
 
             var meta = agent.Metadata;
             yield return new AgentStreamChunk
@@ -87,16 +163,8 @@ public sealed class CreationOrchestrator(
                 })
             };
 
-            // 构建 Agent 专属上下文（历史消息 + 项目记忆 + token 预算裁剪）
-            var sessionContext = await agentContextBuilder.BuildContextAsync(
-                workId,
-                sessionId,
-                agentName,
-                llmContext.Model,
-                meta.NeedsProjectMemory,
-                meta.ShouldFilterHistory,
-                llmContext.ContextWindow,
-                cancellationToken);
+            // 从共享上下文派生 Agent 专属会话历史
+            var agentHistory = DeriveAgentConversationHistory(sharedContext.ConversationHistory, meta);
 
             yield return new AgentStreamChunk
             {
@@ -105,21 +173,26 @@ public sealed class CreationOrchestrator(
                 {
                     stage = "context_loaded",
                     agent = agentName,
-                    snapshotId = string.IsNullOrWhiteSpace(sessionContext.SnapshotId) ? null : sessionContext.SnapshotId,
-                    inputTokens = sessionContext.InputTokenCount,
-                    trimmed = sessionContext.WasTrimmed
+                    snapshotId = string.IsNullOrWhiteSpace(sharedContext.SnapshotId) ? null : sharedContext.SnapshotId,
+                    inputTokens = sharedContext.InputTokenCount,
+                    trimmed = sharedContext.WasTrimmed || meta.ShouldFilterHistory
                 })
             };
 
             // 管线模式下，将前一个 Agent 的结果附带到消息中
-            var chainMessage = i > 0 && !string.IsNullOrEmpty(previousResult)
-                ? $"{userMessage}\n\n[Previous agent result]\n{previousResult}"
+            var previousContent = previousArtifact?.Content ?? string.Empty;
+            if (previousContent.Length > 12_000)
+                previousContent = previousContent[..12_000];
+            var chainMessage = previousArtifact is not null && !string.IsNullOrWhiteSpace(previousContent)
+                ? $"{userMessage}\n\n[Previous agent result]\n{previousContent}"
                 : userMessage;
 
             var request = new AgentRequest
             {
+                RunId = runtimeRequest.RunId,
+                StepId = planStep.Id,
                 UserMessage = chainMessage,
-                SystemPrompt = agent.BuildPrompt(),
+                SystemPrompt = _promptComposer.Compose(agent.BuildPromptProfile()),
                 Model = llmContext.Model,
                 MaxIterations = ResolveMaxIterations(maxIterations),
                 Temperature = requestedTemperature ?? meta.DefaultParameters.Temperature,
@@ -127,20 +200,33 @@ public sealed class CreationOrchestrator(
                 FrequencyPenalty = meta.DefaultParameters.FrequencyPenalty,
                 PresencePenalty = meta.DefaultParameters.PresencePenalty,
                 MaxTokens = ResolveMaxTokens(meta.DefaultParameters.MaxTokens, requestedMaxTokens, llmContext.MaxOutputTokens),
-                ConversationHistory = sessionContext.ConversationHistory,
+                ConversationHistory = agentHistory,
                 WorkId = workId,
-                UserId = sessionContext.UserId
+                UserId = sharedContext.UserId,
+                SkillName = runtimeRequest.SkillName,
+                EnableAutoToolDispatch = runtimeRequest.EnableAutoToolDispatch
             };
 
             // 通过流式枚举器逐块输出 Agent 执行结果
             var stepStopwatch = Stopwatch.StartNew();
-            previousResult = string.Empty;
+            var currentResult = new System.Text.StringBuilder();
+            AgentResponse finalResponse = null;
             var hadError = false;
 
             await foreach (var chunk in StreamAgentChunks(agent, request, cancellationToken))
             {
-                if (chunk.Type == "content")
-                    previousResult += chunk.Content;
+                if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
+                {
+                    const int maxChainedResultChars = 12_000;
+                    if (currentResult.Length < maxChainedResultChars)
+                    {
+                        var remaining = maxChainedResultChars - currentResult.Length;
+                        currentResult.Append(chunk.Content.AsSpan(0, Math.Min(remaining, chunk.Content.Length)));
+                    }
+                }
+
+                if (chunk.Type == "done" && chunk.FinalResponse is not null)
+                    finalResponse = chunk.FinalResponse;
 
                 if (chunk.Type == "error")
                     hadError = true;
@@ -168,6 +254,50 @@ public sealed class CreationOrchestrator(
                     agentName,
                     stepStopwatch.ElapsedMilliseconds);
             }
+
+            var artifactContent = !string.IsNullOrWhiteSpace(finalResponse?.Content)
+                ? finalResponse.Content
+                : currentResult.ToString();
+            previousArtifact = new AgentArtifact
+            {
+                Id = $"{runtimeRequest.RunId}:{planStep.Id}",
+                RunId = runtimeRequest.RunId,
+                StepId = planStep.Id,
+                ContentType = meta.ContentType ?? "plain",
+                Summary = artifactContent.Length > 240 ? artifactContent[..240] : artifactContent,
+                Content = artifactContent,
+                EstimatedTokens = Math.Max(1, artifactContent.Length / 4)
+            };
+            if (runStore is not null && !string.IsNullOrWhiteSpace(runtimeRequest.RunId))
+            {
+                await runStore.SaveArtifactAsync(
+                    runtimeRequest.RunId,
+                    planStep.Id,
+                    previousArtifact.ContentType,
+                    previousArtifact.Summary,
+                    previousArtifact.Content,
+                    previousArtifact.EstimatedTokens,
+                    CancellationToken.None);
+            }
+        }
+
+        if (executedAgentCount == 0)
+        {
+            yield return new AgentStreamChunk
+            {
+                Type = "error",
+                Content = "No executable agent was found for the resolved pipeline."
+            };
+            yield return new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = new AgentResponse
+                {
+                    Content = string.Empty,
+                    StopReason = "invalid_request"
+                }
+            };
+            yield break;
         }
 
         logger.LogInformation("Pipeline completed, totalElapsed={Elapsed}ms", pipelineStopwatch.ElapsedMilliseconds);
@@ -208,7 +338,7 @@ public sealed class CreationOrchestrator(
                     yield return new AgentStreamChunk
                     {
                         Type = "error",
-                        Content = moveNextException.Message
+                        Content = "AI 服务暂时不可用，请稍后重试。"
                     };
                     yield break;
                 }
@@ -246,5 +376,31 @@ public sealed class CreationOrchestrator(
             candidates.Add(configuredMaxTokens);
 
         return candidates.Count == 0 ? 2048 : candidates.Min();
+    }
+    // 从共享管线上下文派生 Agent 专属会话历史：
+    // - 不需要项目记忆的 Agent 移除 [Session Memory] 系统消息
+    // - 需要过滤历史的 Agent 仅保留最近 8 条非系统消息
+    private static List<ChatMessage> DeriveAgentConversationHistory(
+        List<ChatMessage> sharedHistory,
+        AgentMetadata meta)
+    {
+        var history = new List<ChatMessage>(sharedHistory);
+
+        if (!meta.NeedsProjectMemory)
+        {
+            history.RemoveAll(m =>
+                m is SystemMessage sm &&
+                sm.Content?.StartsWith("[Session Memory]", StringComparison.Ordinal) == true);
+        }
+
+        if (meta.ShouldFilterHistory)
+        {
+            var systemMessages = history.Where(m => m is SystemMessage).ToList();
+            var nonSystem = history.Where(m => m is not SystemMessage).ToList();
+            nonSystem = nonSystem.Count > 8 ? nonSystem.TakeLast(8).ToList() : nonSystem;
+            history = systemMessages.Concat(nonSystem).ToList();
+        }
+
+        return history;
     }
 }

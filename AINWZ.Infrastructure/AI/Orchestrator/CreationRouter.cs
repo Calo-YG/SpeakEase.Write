@@ -1,160 +1,74 @@
-using System.Text.Json;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+
 using SpeakEase.AI.Lib.Contract;
-using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 
 namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
 
-// 意图路由器：通过 LLM 将用户输入分类到对应的创作 Agent，支持单 Agent 和管线（pipeline）多 Agent 链式路由
-public sealed class CreationRouter(IServiceScopeFactory scopeFactory, ILogger<CreationRouter> logger)
+/// <summary>
+/// 兼容路由入口。意图理解委托 IntentResolver，Plan 由下游编译和校验。
+/// </summary>
+public sealed class CreationRouter(
+    ILogger<CreationRouter> logger,
+    IntentResolver intentResolver = null)
 {
-    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
-    private readonly ILogger<CreationRouter> _logger = logger;
+    private readonly IntentResolver _intentResolver = intentResolver ?? new IntentResolver();
 
-    // 使用 LLM 进行意图分类，返回路由结果（包含 Agent 名称、管线、分类原因）
-    public async Task<RouteResult> DecideWithLLMAsync(string userMessage, IEnumerable<INovelAgent> agents, CancellationToken ct = default)
+    public async Task<RouteResult> DecideWithLLMAsync(
+        string userMessage,
+        IEnumerable<INovelAgent> agents,
+        IOpenAIContext llmContext,
+        IChatCompatible llm,
+        CancellationToken cancellationToken = default)
     {
-        var agentsList = agents.ToList();
-
+        var agentList = agents.ToList();
         try
         {
-            using var scope = _scopeFactory.CreateScope();
-            var llmContext = scope.ServiceProvider.GetRequiredService<IOpenAIContext>();
-            await llmContext.ResolveAsync(ct);
+            var intent = await _intentResolver.ResolveAsync(
+                userMessage,
+                agentList,
+                llmContext,
+                llm,
+                cancellationToken);
+            var selected = agentList.FirstOrDefault(x =>
+                x.Name.Equals(intent.PrimaryAgent, StringComparison.OrdinalIgnoreCase));
 
-            var llm = scope.ServiceProvider.GetRequiredService<IChatCompatible>();
-            var turnContext = new LLMTurnContext { Model = llmContext.Model, Temperature = 0.1 };
-            // 构建意图分类的 system prompt，描述各 Agent 的职责和分类规则
-            var systemPrompt = $$"""
-你是一个意图分类器，负责将用户输入精准分类到以下 Agent。根据用户的真实意图和工作性质做出判断：
-
-## Agent 职责说明
-
-- **general**：通用问答助手。处理非写作类问题：闲聊、知识问答、实时信息查询（有网络搜索能力）。当用户的问题不属于以下任何写作范畴时，默认归入此 Agent。
-  典型场景：问我今天天气/XX新闻/XX知识/帮我查资料/这个怎么做/闲聊
-
-- **write**：小说正文写作 Agent。负责章节正文的写作、续写、润色、扩写和重写。管理伏笔埋设与回收、时间线维护、角色关系更新、写作规则读取。
-  典型场景：帮我写第X章/续写一下/润色这段/扩写/重写/改写/写一节
-
-- **world**：世界观架构 Agent。负责设计和管理世界观六维架构：世界规则、力量体系（修仙/武道/魔法等）、天道法则、地理与文明、势力格局（宗门/国家/组织）、世界历史。管理所有世界观要素的创建、查询和维护。
-  典型场景：设计世界观/创建势力/添加地理/设定力量体系/这个世界有什么法则/加个宗门
-
-- **outline**：故事大纲 Agent。负责全书总纲规划、卷结构设计、章节骨架创建、情节节点管理、高潮转折点布局。遵循自上而下（总纲→卷→章）的规划原则。
-  典型场景：规划大纲/设计情节/规划第X卷/创建章节大纲/安排高潮/设计转折
-
-- **creation**：角色设计 Agent。负责角色创建、角色信息更新、人物关系建立、角色成长线（角色弧）规划。也负责创意灵感生成。
-  典型场景：创建角色/设计一个人物/给XX加个关系/规划角色成长/你的名字/角色有什么用/这个角色怎么出场
-
-- **critique**：文风审查 Agent。专门检查已写文本的"AI味"，逐段审查用词、句式、心理描写、对话、环境描写是否符合真人写作风格，给出具体的修改方向。
-  典型场景：检查一下文风/去AI味/看看这段像不像人写的/审查这篇文章/帮我检查一下
-
-## 分类规则
-1. 优先匹配最符合用户核心意图的 Agent（不是关键词匹配，而是意图匹配）
-2. 如果用户同时提出多个意图（如"帮我写完这章然后检查一致性"），用 pipeline 按执行顺序排列
-3. "文风"/"去AI味"/"审查"/"检查AI" → critique；"写"/"续写"/"润色"/"扩写" → write，两者同时出现 → pipeline: ["write", "critique"]
-4. 不确定或超出上述所有范畴的 → general
-
-返回 JSON 对象，格式：
-单一意图：{"agent": "<agent_name>", "reason": "<简短原因>"}
-多意图链式：{"pipeline": ["<agent1>", "<agent2>"], "reason": "<简短原因>"}
-不要返回任何其他内容。
-""";
-
-            var messages = new List<ChatMessage>
-            {
-                ChatMessage.System(systemPrompt),
-                ChatMessage.User(userMessage)
-            };
-
-            // 调用 LLM 获取分类结果（JSON 格式）
-            var result = await llm.ChatAsync(turnContext, messages, null, ct);
-            var content = result?.Content ?? "";
-
-            using var doc = JsonDocument.Parse(content);
-            var root = doc.RootElement;
-
-            // 解析 pipeline 模式：多 Agent 链式执行
-            if (root.TryGetProperty("pipeline", out var pipelineProp) && pipelineProp.ValueKind == JsonValueKind.Array)
-            {
-                var names = pipelineProp.EnumerateArray()
-                    .Select(x => x.GetString() ?? "")
-                    .Where(x => !string.IsNullOrEmpty(x))
-                    .Select(x => x.ToLower())
-                    .ToList();
-
-                // 验证管线中的 Agent 名称是否有效，去除重复
-                var pipeline = new List<string>();
-                foreach (var n in names)
-                {
-                    var matched = agentsList.FirstOrDefault(a => a.Name == n);
-                    if (matched != null && !pipeline.Contains(matched.Name))
-                        pipeline.Add(matched.Name);
-                }
-
-                if (pipeline.Count > 1)
-                {
-                    var reason = root.TryGetProperty("reason", out var r) ? r.GetString() ?? "" : "";
-                    var firstAgent = pipeline[0];
-                    var contentType = agentsList.FirstOrDefault(a => a.Name == firstAgent)?.Metadata.ContentType ?? "plain";
-                    return new RouteResult
-                    {
-                        AgentName = firstAgent,
-                        ContentType = contentType,
-                        Reason = $"LLM意图分类(链式): {reason}",
-                        Pipeline = pipeline
-                    };
-                }
-            }
-
-            // 解析单一 Agent 模式
-            if (root.TryGetProperty("agent", out var a))
-            {
-                var agentRaw = (a.GetString() ?? "general").ToLower();
-                var reason = root.TryGetProperty("reason", out var r) ? r.GetString() ?? "" : "";
-                var matched = agentsList.FirstOrDefault(x => x.Name == agentRaw);
-
-                if (matched != null)
-                {
-                    return new RouteResult
-                    {
-                        AgentName = matched.Name,
-                        ContentType = matched.Metadata.ContentType,
-                        Reason = $"LLM意图分类: {reason}"
-                    };
-                }
-            }
-
-            // LLM 分类失败时默认回退到 general Agent
             return new RouteResult
             {
-                AgentName = "general",
-                ContentType = agentsList.FirstOrDefault(x => x.Name == "general")?.Metadata.ContentType ?? "plain",
-                Reason = "LLM分类未命中，默认general"
+                AgentName = selected?.Name ?? "general",
+                ContentType = selected?.Metadata.ContentType ?? "plain",
+                Reason = intent.Reason,
+                Confidence = intent.Confidence,
+                Goals = intent.Goals.ToList(),
+                NeedsClarification = intent.NeedsClarification,
+                ClarificationQuestion = intent.ClarificationQuestion,
+                Pipeline = intent.ExplicitSequence.ToList()
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "LLM意图分类失败，回退到关键词路由");
-
-            // 异常兜底：默认路由到 general Agent
+            logger.LogWarning(ex, "Intent resolution failed; falling back to general Agent.");
+            var fallback = agentList.FirstOrDefault(x => x.Name == "general") ?? agentList.FirstOrDefault();
             return new RouteResult
             {
-                AgentName = "general",
-                ContentType = agentsList.FirstOrDefault(x => x.Name == "general")?.Metadata.ContentType ?? "plain",
-                Reason = "LLM分类未命中，默认general"
+                AgentName = fallback?.Name ?? "general",
+                ContentType = fallback?.Metadata.ContentType ?? "plain",
+                Reason = "Intent resolution failed.",
+                Confidence = 0
             };
         }
     }
 }
 
-// 路由结果：包含目标 Agent 名称、内容类型、分类原因、管线列表
 public sealed class RouteResult
 {
     public string AgentName { get; set; } = string.Empty;
     public string ContentType { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
+    public double Confidence { get; set; }
+    public List<string> Goals { get; set; } = new();
+    public bool NeedsClarification { get; set; }
+    public string ClarificationQuestion { get; set; } = string.Empty;
     public List<string> Pipeline { get; set; } = new();
 }

@@ -6,8 +6,13 @@ using SpeakEase.Write.Infrastructure.AI.Analysis;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Memory;
+using SpeakEase.Write.Infrastructure.AI.Runtime;
+using ApplicationMemoryProvider = SpeakEase.Write.Application.Abstractions.AI.IMemoryProvider;
+using ApplicationAgentOrchestrator = SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 using SpeakEase.Write.Infrastructure.AI.Tools;
+using ApplicationAgentRunStore = SpeakEase.Write.Application.Abstractions.AI.IAgentRunStore;
+using ApplicationMemoryRefreshQueue = SpeakEase.Write.Application.Abstractions.AI.IMemoryRefreshQueue;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -17,12 +22,22 @@ public static class NovelAIServiceCollectionExtensions
     public static IServiceCollection AddNovelAI(this IServiceCollection services)
     {
         // 核心编排组件
+        services.AddSingleton<IntentResolver>();
         services.AddSingleton<CreationRouter>();
+        services.AddSingleton<PlanResolver>();
+        services.AddScoped<ApplicationAgentRunStore, AgentRunStore>();
         services.AddScoped<IMemoryProvider, HybridMemoryProvider>();
+        services.AddScoped<ApplicationMemoryProvider>(sp => sp.GetRequiredService<IMemoryProvider>());
+        services.AddSingleton<MemoryRefreshQueue>();
+        services.AddSingleton<ApplicationMemoryRefreshQueue>(sp => sp.GetRequiredService<MemoryRefreshQueue>());
+        services.AddHostedService(sp => sp.GetRequiredService<MemoryRefreshQueue>());
+        services.AddScoped<IToolExecutionGuard, WorkToolExecutionGuard>();
         services.AddScoped<IChatCompatible, LoggingChatCompatible>();
 
         // 上下文管理与伏笔分析
         services.AddScoped<CreationOrchestrator>();
+        services.AddScoped<CreationRuntimeFacade>();
+        services.AddScoped<ApplicationAgentOrchestrator>(sp => sp.GetRequiredService<CreationRuntimeFacade>());
         services.AddScoped<ICreationAgentContext, CreationAgentContext>();
         services.AddScoped<IContextCompressor, ContextCompressor>();
         services.AddScoped<IForeshadowAnalysisService, ForeshadowAnalysisService>();

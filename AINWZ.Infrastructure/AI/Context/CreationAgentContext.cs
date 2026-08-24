@@ -2,7 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Domain.Entities.Memory;
-using SpeakEase.Write.Infrastructure.AI.Memory;
+using ApplicationMemoryProvider = SpeakEase.Write.Application.Abstractions.AI.IMemoryProvider;
+using SessionMemorySnapshot = SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.Infrastructure.Shared;
@@ -11,13 +12,13 @@ namespace SpeakEase.Write.Infrastructure.AI.Context;
 
 // Agent 上下文构建器：拼接项目记忆 + 历史对话 + token 预算裁剪，生成 LLM 可用的完整上下文
 public sealed class CreationAgentContext(
-    IMemoryProvider memory,
+    ApplicationMemoryProvider memory,
     IUserContext user,
     SpeakEaseDbContext dbContext,
     ISnowflakeIdGenerator idGenerator) : ICreationAgentContext
 {
-    private const int FilteredHistoryMessages = 8;     // 筛选模式：仅保留最近 8 轮对话
-    private const int FullHistoryMessages = 20;         // 全历史模式：保留最近 20 轮对话
+    private const int FilteredHistoryTurns = 8;     // 筛选模式：仅保留最近 8 个完整轮次
+    private const int FullHistoryTurns = 20;         // 全历史模式：保留最近 20 个完整轮次
     private const int ReservedOutputTokens = 8_000;     // 为 LLM 输出预留的 token 配额
     private const int DefaultContextWindowTokens = 32_000; // 默认上下文窗口大小
 
@@ -56,8 +57,15 @@ public sealed class CreationAgentContext(
         var memorySnapshot = includeMemory
             ? await memory.LoadSessionMemoryAsync(user.UserId, workId, sessionId, cancellationToken)
             : SessionMemorySnapshot.Empty;
+        var projectFacts = includeMemory
+            ? await memory.LoadProjectFactsAsync(user.UserId, workId, cancellationToken)
+            : Array.Empty<SpeakEase.Write.Application.Abstractions.AI.MemoryFact>();
 
-        var recentMessages = await LoadRecentMessagesAsync(sessionId, filterHistory, cancellationToken);
+        var recentMessages = await LoadRecentMessagesAsync(
+            sessionId,
+            filterHistory,
+            memorySnapshot.CoveredToTurn,
+            cancellationToken);
         var messages = new List<ChatMessage>();
 
         // 注入项目记忆为系统消息（第一个消息）
@@ -66,6 +74,14 @@ public sealed class CreationAgentContext(
             ctx.ProjectMemory = memorySnapshot.Summary;
             ctx.SnapshotId = memorySnapshot.SnapshotId;
             messages.Add(ChatMessage.System($"[Session Memory]\n{memorySnapshot.Summary}"));
+        }
+
+        if (projectFacts.Count > 0)
+        {
+            var factText = string.Join(
+                "\n",
+                projectFacts.Take(64).Select(x => $"- [{x.Category}] {x.Key}: {x.Value}"));
+            messages.Insert(0, ChatMessage.System($"[Project Facts]\n{factText}"));
         }
 
         messages.AddRange(recentMessages);
@@ -82,6 +98,14 @@ public sealed class CreationAgentContext(
         {
             var removeIndex = messages[0] is SystemMessage ? 1 : 0;
             messages.RemoveAt(removeIndex);
+            totalTokens = EstimateTokens(messages);
+            wasTrimmed = true;
+        }
+
+        // 只有一条超长系统/记忆消息时也必须裁剪，不能因为消息数为 1 而绕过预算。
+        if (totalTokens > budget && messages.Count == 1 && messages[0] is SystemMessage systemMessage)
+        {
+            systemMessage.Content = TruncateToBudget(systemMessage.Content, budget);
             totalTokens = EstimateTokens(messages);
             wasTrimmed = true;
         }
@@ -109,23 +133,35 @@ public sealed class CreationAgentContext(
     private async Task<List<ChatMessage>> LoadRecentMessagesAsync(
         string sessionId,
         bool filterHistory,
+        int coveredToTurn,
         CancellationToken cancellationToken)
     {
-        var take = filterHistory ? FilteredHistoryMessages : FullHistoryMessages;
+        var take = filterHistory ? FilteredHistoryTurns : FullHistoryTurns;
 
-        // 按轮次+创建时间倒序取最近 N 条，用于填充上下文
-        var rows = await dbContext.AICreationMessages
+        var turnNumbers = await dbContext.AICreationMessages
             .AsNoTracking()
-            .Where(m => m.SessionId == sessionId && m.Role != "tool")
-            .OrderByDescending(m => m.TurnNumber)
-            .ThenByDescending(m => m.CreatedAt)
+            .Where(m => m.SessionId == sessionId && m.Role != "tool" && m.TurnNumber > coveredToTurn)
+            .Select(m => m.TurnNumber)
+            .Distinct()
+            .OrderByDescending(turn => turn)
             .Take(take)
             .ToListAsync(cancellationToken);
 
-        // 重新按时间正序排列，保证消息顺序
-        return rows
+        if (turnNumbers.Count == 0)
+            return new List<ChatMessage>();
+
+        // 先选轮次，再加载这些轮次的完整消息，避免 Take(messageCount) 拆开一轮对话。
+        var rows = await dbContext.AICreationMessages
+            .AsNoTracking()
+            .Where(m => m.SessionId == sessionId &&
+                        m.TurnNumber > coveredToTurn &&
+                        m.Role != "tool" &&
+                        turnNumbers.Contains(m.TurnNumber))
             .OrderBy(m => m.TurnNumber)
             .ThenBy(m => m.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return rows
             .Select(ToChatMessage)
             .Where(m => m != null)
             .ToList();
@@ -184,7 +220,8 @@ public sealed class CreationAgentContext(
     private static int ResolveInputBudget(int contextWindowTokens)
     {
         var window = contextWindowTokens > 0 ? contextWindowTokens : DefaultContextWindowTokens;
-        return Math.Max(4_000, window - ReservedOutputTokens);
+        var reservedOutput = Math.Min(ReservedOutputTokens, Math.Max(1_000, window / 4));
+        return Math.Max(1, window - reservedOutput);
     }
 
     // 估算消息列表的总 token 数（基于字符数近似：中文×1.5，英文×0.25）
@@ -245,5 +282,39 @@ public sealed class CreationAgentContext(
                     .Select(p => p.Text)),
             _ => message.Content?.ToString() ?? string.Empty
         };
+    }
+
+    private static string TruncateText(string value, int maxCharacters)
+    {
+        if (string.IsNullOrEmpty(value) || value.Length <= maxCharacters)
+            return value ?? string.Empty;
+
+        return value[..maxCharacters] + "\n[context truncated]";
+    }
+
+    private static string TruncateToBudget(string value, int budget)
+    {
+        if (string.IsNullOrEmpty(value) || budget <= 0)
+            return string.Empty;
+
+        var low = 0;
+        var high = value.Length;
+        var best = string.Empty;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            var candidate = TruncateText(value, middle);
+            if (EstimateTokens(candidate) <= budget)
+            {
+                best = candidate;
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+
+        return best;
     }
 }

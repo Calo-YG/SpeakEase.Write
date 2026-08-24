@@ -106,6 +106,60 @@ public sealed class SessionMemoryProviderTests
         Assert.Contains("memory:session:user-1:work-1:session-1", cache.RefreshedKeys);
     }
 
+    [Fact]
+    public async Task RefreshAfterTurnAsync_DoesNotLetOlderTurnOverwriteNewerSnapshot()
+    {
+        await using var db = TestDb.Create();
+        var cache = new FakeMultiCacheService();
+        var provider = CreateProvider(db, cache);
+
+        db.AICreationMessages.AddRange(
+            new AICreationMessageEntity
+            {
+                Id = "msg-1",
+                SessionId = "session-1",
+                Role = "user",
+                Content = "turn one",
+                TurnNumber = 1,
+                CreatedAt = DateTime.Now
+            },
+            new AICreationMessageEntity
+            {
+                Id = "msg-2",
+                SessionId = "session-1",
+                Role = "assistant",
+                Content = "turn one answer",
+                TurnNumber = 1,
+                CreatedAt = DateTime.Now.AddSeconds(1)
+            },
+            new AICreationMessageEntity
+            {
+                Id = "msg-3",
+                SessionId = "session-1",
+                Role = "user",
+                Content = "turn two",
+                TurnNumber = 2,
+                CreatedAt = DateTime.Now.AddSeconds(2)
+            },
+            new AICreationMessageEntity
+            {
+                Id = "msg-4",
+                SessionId = "session-1",
+                Role = "assistant",
+                Content = "turn two answer",
+                TurnNumber = 2,
+                CreatedAt = DateTime.Now.AddSeconds(3)
+            });
+        await db.SaveChangesAsync();
+
+        await provider.RefreshAfterTurnAsync("user-1", "work-1", "session-1", 2);
+        await provider.RefreshAfterTurnAsync("user-1", "work-1", "session-1", 1);
+
+        var loaded = await provider.LoadSessionMemoryAsync("user-1", "work-1", "session-1");
+        Assert.Equal(2, loaded.TurnNumber);
+        Assert.Equal(1, db.MemorySnapshots.Count());
+    }
+
     private static HybridMemoryProvider CreateProvider(
         SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext db,
         FakeMultiCacheService cache = null)

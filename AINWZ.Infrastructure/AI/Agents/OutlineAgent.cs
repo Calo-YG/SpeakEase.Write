@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
@@ -26,6 +27,14 @@ public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogge
     };
 
     public override string RouteDescription => "管理大纲/情节规划/章节结构";
+
+    public override PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = "你是故事结构与情节规划助手，能够灵活使用叙事结构组织长篇故事。",
+        Objective = "根据用户目标规划、查询或调整全书、卷或章节层级的大纲。",
+        QualityCriteria = new[] { "明确目标、冲突、转折和结果", "保持角色成长线与世界设定一致", "根据作品需要选择结构，不强行套用单一模板" },
+        OutputContract = "输出可执行的结构化大纲或调整建议；需要持久化时使用可用能力完成操作。"
+    };
 
     // 构建大纲Agent的系统提示词：包含角色定义、ReAct工作模式、四种流程（从零规划/修改扩展/头脑风暴/参数确认）、
     // 大纲生成顺序、信息嵌入规则、设计原则

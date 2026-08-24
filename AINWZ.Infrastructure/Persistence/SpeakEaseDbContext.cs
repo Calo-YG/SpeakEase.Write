@@ -6,6 +6,7 @@ using SpeakEase.Write.Domain.Entities.Tags;
 using SpeakEase.Write.Domain.Entities.Users;
 using SpeakEase.Write.Domain.Entities.Works;
 using SpeakEase.Write.Domain.Entities.World;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 using Microsoft.EntityFrameworkCore;
 
 namespace SpeakEase.Write.Infrastructure.Persistence;
@@ -13,7 +14,7 @@ namespace SpeakEase.Write.Infrastructure.Persistence;
 /// <summary>
 /// SpeakEase.Write 应用数据库上下文。
 /// </summary>
-public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : DbContext(options)
+public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : DbContext(options), IWriteDbContext
 {
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
@@ -47,7 +48,12 @@ public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : 
     public DbSet<AICreationSessionEntity> AICreationSessions => Set<AICreationSessionEntity>();
     public DbSet<AICreationMessageEntity> AICreationMessages => Set<AICreationMessageEntity>();
     public DbSet<MemorySnapshotEntity> MemorySnapshots => Set<MemorySnapshotEntity>();
+    public DbSet<MemoryFactEntity> MemoryFacts => Set<MemoryFactEntity>();
     public DbSet<ContextAssemblyLogEntity> ContextAssemblyLogs => Set<ContextAssemblyLogEntity>();
+    public DbSet<AgentRunEntity> AgentRuns => Set<AgentRunEntity>();
+    public DbSet<AgentRunEventEntity> AgentRunEvents => Set<AgentRunEventEntity>();
+    public DbSet<AgentToolCallEntity> AgentToolCalls => Set<AgentToolCallEntity>();
+    public DbSet<AgentArtifactEntity> AgentArtifacts => Set<AgentArtifactEntity>();
     public DbSet<ReferenceWorkEntity> ReferenceWorks => Set<ReferenceWorkEntity>();
     public DbSet<ReferencePassageEntity> ReferencePassages => Set<ReferencePassageEntity>();
     public DbSet<InspirationRecordEntity> InspirationRecords => Set<InspirationRecordEntity>();

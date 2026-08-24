@@ -1,5 +1,6 @@
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.Runtime;
 
 namespace SpeakEase.Write.Infrastructure.AI.Contract;
 
@@ -14,7 +15,13 @@ public interface INovelAgent
 
     string DisplayName { get; } // Agent显示名称
 
-    string BuildPrompt(); // 构建系统提示词
+    string BuildPrompt(); // 构建 legacy 系统提示词
+
+    // 迁移期默认将旧 Prompt 作为身份文本；新 Agent 应提供分层 Profile。
+    PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = BuildPrompt()
+    };
 
     void RegisterTools(IToolCapable toolCapable); // 注册Agent所需的工具
 

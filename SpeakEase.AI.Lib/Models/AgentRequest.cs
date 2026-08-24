@@ -7,6 +7,8 @@ using SpeakEase.AI.Lib.OpenAIModel;
 /// </summary>
 public sealed class AgentRequest
 {
+    public string RunId { get; set; } = string.Empty;
+    public string StepId { get; set; } = string.Empty;
     /// <summary>
     /// 指定使用的 LLM 模型名称，为空时使用默认模型
     /// </summary>
@@ -52,4 +54,9 @@ public sealed class AgentRequest
     /// 发起请求的用户标识
     /// </summary>
     public string UserId { get; set; }
+
+    /// <summary>
+    /// 是否允许本次运行自动执行模型返回的工具调用。
+    /// </summary>
+    public bool EnableAutoToolDispatch { get; set; } = true;
 }

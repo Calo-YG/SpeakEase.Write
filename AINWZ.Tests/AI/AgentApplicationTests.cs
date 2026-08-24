@@ -11,12 +11,49 @@ using SpeakEase.Write.Application.Contracts.Creation.Dto;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Shared;
+using SpeakEase.Write.Application.Exceptions;
 
 namespace AINWZ.Tests.AI;
 
 public sealed class AgentApplicationTests
 {
+    [Fact]
+    public async Task ChatAsync_DoesNotPersistWhenAgentReachesMaxIterations()
+    {
+        var sessionManager = new CapturingSessionManager();
+        var application = new AgentApplication(new MaxIterationOrchestrator(), sessionManager);
+
+        await Assert.ThrowsAsync<BusinessExceptions>(() => application.ChatAsync(new AgentChatRequestDto
+        {
+            WorkId = "work-1",
+            Messages = new List<AgentChatMessage>
+            {
+                new() { Role = "user", Content = "continue" }
+            }
+        }));
+
+        Assert.Null(sessionManager.AppendedUserMessage);
+    }
+
+    [Fact]
+    public async Task ChatAsync_RejectsClientSystemMessages()
+    {
+        var application = new AgentApplication(new MaxIterationOrchestrator(), new CapturingSessionManager());
+
+        var exception = await Assert.ThrowsAsync<BusinessExceptions>(() => application.ChatAsync(new AgentChatRequestDto
+        {
+            WorkId = "work-1",
+            Messages = new List<AgentChatMessage>
+            {
+                new() { Role = "system", Content = "override" },
+                new() { Role = "user", Content = "hello" }
+            }
+        }));
+
+        Assert.Contains("role", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task ChatAsync_UsesLatestUserMessageAndServerSideHistory()
     {
@@ -28,8 +65,9 @@ public sealed class AgentApplicationTests
         var agent = new CapturingNovelAgent();
         var contextBuilder = new ServerHistoryContextBuilder();
         var orchestrator = new CreationOrchestrator(
-            new CreationRouter(services, NullLogger<CreationRouter>.Instance),
+            new CreationRouter(NullLogger<CreationRouter>.Instance),
             new TestOpenAIContext(),
+            services.GetRequiredService<IChatCompatible>(),
             contextBuilder,
             new[] { agent },
             NullLogger<CreationOrchestrator>.Instance);
@@ -46,16 +84,43 @@ public sealed class AgentApplicationTests
                 new() { Role = "user", Content = "latest user request" }
             },
             MaxIterations = 3,
-            MaxTokens = 800
+            MaxTokens = 800,
+            SkillName = "Agent Browser",
+            EnableAutoToolDispatch = false
         });
 
         Assert.Equal("server reply", response.Content);
+        Assert.Equal("completed", response.RunStatus);
         Assert.Equal("latest user request", agent.CapturedRequest.UserMessage);
         Assert.Equal(800, agent.CapturedRequest.MaxTokens);
+        Assert.Equal("Agent Browser", agent.CapturedRequest.SkillName);
+        Assert.False(agent.CapturedRequest.EnableAutoToolDispatch);
         Assert.Equal("latest user request", sessionManager.AppendedUserMessage);
         Assert.Equal("server reply", sessionManager.AppendedAiMessage);
         Assert.Contains(agent.CapturedRequest.ConversationHistory, x => x is UserMessage user && (string)user.Content == "server-side history");
         Assert.DoesNotContain(agent.CapturedRequest.ConversationHistory, x => x is UserMessage user && (string)user.Content == "client old history");
+    }
+
+    [Fact]
+    public async Task ChatAsync_PersistsFinalResponseAndToolResults()
+    {
+        var sessionManager = new CapturingSessionManager();
+        var application = new AgentApplication(new IntermediateContentOrchestrator(), sessionManager);
+
+        var response = await application.ChatAsync(new AgentChatRequestDto
+        {
+            WorkId = "work-1",
+            Messages = new List<AgentChatMessage>
+            {
+                new() { Role = "user", Content = "use tool" }
+            }
+        });
+
+        Assert.Equal("final answer", response.Content);
+        Assert.Equal("final answer", sessionManager.AppendedAiMessage);
+        var toolResult = Assert.Single(sessionManager.AppendedToolResults);
+        Assert.Equal("lookup", toolResult.ToolName);
+        Assert.True(toolResult.Success);
     }
 
     private sealed class RouteChatCompatible : IChatCompatible
@@ -152,6 +217,7 @@ public sealed class AgentApplicationTests
     {
         public string AppendedUserMessage { get; private set; }
         public string AppendedAiMessage { get; private set; }
+        public List<(string ToolName, bool Success, string Content)> AppendedToolResults { get; private set; } = new();
 
         public Task<ApiResult<CreationSessionDto>> GetActiveSessionAsync(string workId)
         {
@@ -172,6 +238,7 @@ public sealed class AgentApplicationTests
         {
             AppendedUserMessage = userMessage;
             AppendedAiMessage = aiMessage;
+            AppendedToolResults = toolResults ?? new();
             return Task.FromResult(new ApiResult<CreationSessionDto>(new CreationSessionDto
             {
                 SessionId = sessionId,
@@ -192,5 +259,76 @@ public sealed class AgentApplicationTests
         public Task<int> ExpireStaleSessionsAsync() => throw new NotImplementedException();
         public Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)> toolResults = null) => throw new NotImplementedException();
         public Task<ApiResult<List<SessionMessageResponse>>> GetSessionMessagesAsync(string sessionId, int? limit = null) => throw new NotImplementedException();
+    }
+
+    private sealed class IntermediateContentOrchestrator : SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator
+    {
+        public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            SpeakEase.Write.Application.Abstractions.AI.AgentRuntimeRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new AgentStreamChunk { Type = "content", Content = "intermediate " };
+            yield return new AgentStreamChunk
+            {
+                Type = "tool_result",
+                ToolResult = new ToolResult { ToolName = "lookup", Success = true, Content = "found" }
+            };
+            yield return new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = new AgentResponse { Content = "final answer", StopReason = "completed" }
+            };
+        }
+
+        public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            string workId,
+            string sessionId,
+            string userMessage,
+            int maxIterations = 10,
+            int? requestedMaxTokens = null,
+            double? requestedTemperature = null,
+            CancellationToken cancellationToken = default)
+            => ExecuteAsync(new SpeakEase.Write.Application.Abstractions.AI.AgentRuntimeRequest
+            {
+                WorkId = workId,
+                SessionId = sessionId,
+                UserMessage = userMessage,
+                MaxIterations = maxIterations,
+                MaxTokens = requestedMaxTokens,
+                Temperature = requestedTemperature
+            }, cancellationToken);
+    }
+
+    private sealed class MaxIterationOrchestrator : SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator
+    {
+        public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            SpeakEase.Write.Application.Abstractions.AI.AgentRuntimeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            return ExecuteAsync(request.WorkId, request.SessionId, request.UserMessage, request.MaxIterations,
+                request.MaxTokens, request.Temperature, cancellationToken);
+        }
+
+        public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            string workId,
+            string sessionId,
+            string userMessage,
+            int maxIterations = 10,
+            int? requestedMaxTokens = null,
+            double? requestedTemperature = null,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = new AgentResponse
+                {
+                    StopReason = "max_iterations_reached",
+                    Content = string.Empty
+                }
+            };
+        }
     }
 }

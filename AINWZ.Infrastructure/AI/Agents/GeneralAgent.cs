@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
@@ -26,6 +27,14 @@ public sealed class GeneralAgent(IChatCompatible llm, IToolCapable tools, ILogge
     };
 
     public override string RouteDescription => "通用问答/闲聊/非写作类问题";
+
+    public override PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = "你是一个友好的通用 AI 助手，能够回答知识问题并在需要时使用外部信息。",
+        Objective = "理解用户当前问题，直接给出准确、自然且可执行的回答。",
+        QualityCriteria = new[] { "区分已知信息与需要查询的信息", "保持回答清晰、简洁、诚实" },
+        OutputContract = "用自然语言回答，不输出内部推理过程。"
+    };
 
     // 构建通用助手Agent的系统提示词：包含角色定义、ReAct工作模式、行为准则
     public override string BuildPrompt()

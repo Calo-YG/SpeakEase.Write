@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SpeakEase.AI.Lib.Contract;
+using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Authorization.Authorization;
-using SpeakEase.Write.Infrastructure.AI.Memory;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.MutilCache;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -92,6 +92,24 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
     public List<(string UserId, string WorkId, string SessionId, int TurnNumber)> Refreshes { get; } = new();
     public List<(string UserId, string WorkId, string SessionId)> Invalidations { get; } = new();
     public SessionMemorySnapshot Snapshot { get; set; } = SessionMemorySnapshot.Empty;
+    public IReadOnlyList<MemoryFact> Facts { get; set; } = Array.Empty<MemoryFact>();
+
+    public Task<IReadOnlyList<MemoryFact>> LoadProjectFactsAsync(
+        string userId,
+        string workId,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Facts);
+    }
+
+    public Task UpsertProjectFactAsync(
+        string userId,
+        string workId,
+        MemoryFact fact,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
 
     public Task<SessionMemorySnapshot> LoadSessionMemoryAsync(
         string userId,

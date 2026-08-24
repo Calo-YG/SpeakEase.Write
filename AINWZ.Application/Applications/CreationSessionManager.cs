@@ -1,13 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Abstractions.Identity;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Creation.Dto;
 using SpeakEase.Write.Domain.Entities.AI;
-using SpeakEase.Write.Infrastructure.AI.Memory;
-using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.AI;
+using SpeakEase.Write.Application.Abstractions.Ids;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
@@ -17,7 +18,8 @@ public class CreationSessionManager(
     ILogger<CreationSessionManager> logger,
     IUserContext userContext,
     IMemoryProvider memory,
-    ISnowflakeIdGenerator snowflakeIdGenerator) : ICreationSessionManager
+    ISnowflakeIdGenerator snowflakeIdGenerator,
+    IMemoryRefreshQueue memoryRefreshQueue = null) : ICreationSessionManager
 {
     // 每 N 轮对话触发一次归档检查
     private const int MaxTurnsBeforeArchive = 10;
@@ -38,24 +40,36 @@ public class CreationSessionManager(
         if (!await OwnsWorkAsync(workId, userId))
             return new ApiResult<CreationSessionDto>("作品不存在或无权访问。", 404);
 
-        await CloseActiveSessionForWorkAsync(workId, userId, "cancelled", "new_session_started");
-
-        var entity = new AICreationSessionEntity
+        await using var transaction = await db.Database.BeginTransactionAsync();
+        try
         {
-            Id = snowflakeIdGenerator.NextIdString(),
-            WorkId = workId,
-            UserId = userId,
-            Status = "active",
-            TurnCount = 0,
-            AdoptedContentJson = "[]",
-            StartedAt = DateTime.Now,
-            LastActivityAt = DateTime.Now,
-            ExpiresAt = DateTime.Now.Add(SessionExpiration),
-        };
+            // 关闭旧会话和创建新会话必须在同一事务内，避免并发启动留下多个 active 会话。
+            await CloseActiveSessionForWorkAsync(workId, userId, "cancelled", "new_session_started");
 
-        db.AICreationSessions.Add(entity);
-        await db.SaveChangesAsync();
-        return MapToResult(entity);
+            var entity = new AICreationSessionEntity
+            {
+                Id = snowflakeIdGenerator.NextIdString(),
+                WorkId = workId,
+                UserId = userId,
+                Status = "active",
+                TurnCount = 0,
+                AdoptedContentJson = "[]",
+                StartedAt = DateTime.Now,
+                LastActivityAt = DateTime.Now,
+                ExpiresAt = DateTime.Now.Add(SessionExpiration),
+            };
+
+            db.AICreationSessions.Add(entity);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return MapToResult(entity);
+        }
+        catch (DbUpdateException ex)
+        {
+            await transaction.RollbackAsync();
+            logger.LogWarning(ex, "并发启动作品 {WorkId} 的创作会话失败", workId);
+            return new ApiResult<CreationSessionDto>("该作品已有活跃会话，请稍后重试。", 409);
+        }
     }
 
     // 记录一轮对话（轮次+1），达到归档阈值时自动归档并返回新会话
@@ -73,7 +87,15 @@ public class CreationSessionManager(
         session.LastActivityAt = DateTime.Now;
         session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
 
-        await db.SaveChangesAsync();
+        try
+        {
+            await db.SaveChangesAsync();
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            logger.LogWarning(ex, "并发更新创作会话 {SessionId} 轮次失败", sessionId);
+            return new ApiResult<CreationSessionDto>("会话已被其他请求更新，请重试。", 409);
+        }
 
         if (session.TurnCount % MaxTurnsBeforeArchive == 0)
         {
@@ -123,10 +145,33 @@ public class CreationSessionManager(
             aiMessage,
             toolResults));
 
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException ex)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            logger.LogWarning(ex, "并发追加创作会话 {SessionId} 轮次失败", sessionId);
+            return new ApiResult<CreationSessionDto>("会话已被其他请求更新，请重试。", 409);
+        }
 
-        await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, session.TurnCount, cancellationToken);
+        if (memoryRefreshQueue is not null)
+        {
+            await memoryRefreshQueue.EnqueueAsync(new MemoryRefreshRequest
+            {
+                UserId = userId,
+                WorkId = session.WorkId,
+                SessionId = sessionId,
+                TurnNumber = session.TurnCount
+            }, CancellationToken.None);
+        }
+        else
+        {
+            // 兼容未注册队列的测试/旧宿主；生产 DI 会注入后台队列。
+            await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, session.TurnCount, CancellationToken.None);
+        }
 
         if (session.TurnCount % MaxTurnsBeforeArchive == 0)
         {
@@ -291,7 +336,28 @@ public class CreationSessionManager(
         session.LastActivityAt = DateTime.Now;
         session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
         await db.SaveChangesAsync();
-        await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, targetTurn);
+        // 回滚允许版本下降，先删除旧快照/缓存，再根据剩余消息重建。
+        await db.MemorySnapshots
+            .Where(x => x.UserId == userId &&
+                        x.WorkId == session.WorkId &&
+                        x.SessionId == sessionId &&
+                        x.SnapshotType == "session-turn-summary")
+            .ExecuteDeleteAsync();
+        await memory.InvalidateSessionAsync(userId, session.WorkId, sessionId);
+        if (memoryRefreshQueue is not null)
+        {
+            await memoryRefreshQueue.EnqueueAsync(new MemoryRefreshRequest
+            {
+                UserId = userId,
+                WorkId = session.WorkId,
+                SessionId = sessionId,
+                TurnNumber = targetTurn
+            });
+        }
+        else
+        {
+            await memory.RefreshAfterTurnAsync(userId, session.WorkId, sessionId, targetTurn);
+        }
 
         return new ApiResult(true);
     }

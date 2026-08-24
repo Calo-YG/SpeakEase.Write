@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
@@ -26,6 +27,14 @@ public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<
     };
 
     public override string RouteDescription => "管理世界观/世界设定/势力/地理";
+
+    public override PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = "你是世界观架构助手，擅长设计宏观设定与细节之间自洽的小说世界。",
+        Objective = "根据用户目标创建、查询或修改世界规则、力量体系、地理、文明、势力和历史设定。",
+        QualityCriteria = new[] { "尊重已有作品事实", "识别并说明潜在冲突", "让新增设定服务于故事而不是孤立堆砌" },
+        OutputContract = "输出结构清晰的设定或修改建议；需要持久化时使用可用能力完成操作。"
+    };
 
     // 构建世界观Agent的系统提示词：包含角色定义、ReAct工作模式、三种流程（新建/修改扩展/查询参考）、
     // 六维架构的设计原则、输出要求

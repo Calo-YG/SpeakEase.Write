@@ -8,6 +8,9 @@ namespace SpeakEase.AI.Lib.Models;
 /// </summary>
 public sealed class AgentStreamChunk
 {
+    public string RunId { get; set; }
+    public string StepId { get; set; }
+    public long Sequence { get; set; }
     /// <summary>
     /// 片段类型：meta | content | tool_call | tool_result | done
     /// </summary>
@@ -21,6 +24,7 @@ public sealed class AgentStreamChunk
 
     public string Content { get; set; }
     public ToolCallDelta ToolCallDelta { get; set; }
+    public ToolCall ToolCall { get; set; }
     public ToolResult ToolResult { get; set; }
     public AgentResponse FinalResponse { get; set; }
 }

@@ -492,12 +492,13 @@ SSE 断开只代表投影连接关闭，不自动判定 Run 成功。Runtime 必
 - `PlanResolver` 线性 Plan 校验，以及多 Agent 之间的结构化 Artifact 传递；
 - `MemoryFact`、会话摘要覆盖范围、版本化 Snapshot 和项目事实读取/Upsert；
 - Tool/Skill 兼容入口、`LegacySkillResolverAdapter`、取消/超时/最大 Tool 次数处理；
-- Chat 重试的 `IdempotencyKey`/`ClientMessageId` 去重和最终响应持久化。
+- Chat 重试的 `IdempotencyKey`/`ClientMessageId` 去重和最终响应持久化；
+- `IToolExecutionJournal`、ToolCall 执行租约、完成结果 Replay 和并发唯一键竞争处理；
+- 记忆刷新后台队列按会话合并最新请求，回滚时同步裁剪未来轮次事实；
+- SSE Chunk 统一携带 RunId、StepId 和运行级单调 Sequence，断流取消和超时会持久化 Run 终态。
 
 仍需后续阶段完成的事项：
 
 - 将 `CreationOrchestrator` 进一步收敛为 `CreationRuntimeFacade`，把路由和上下文组装拆到独立组件；
-- 将 ToolCall 审计从 AgentLoop 的能力调用处完整接入 `AgentToolCall` 表，并支持有副作用 Tool 恢复时跳过已完成调用；
 - 将事实提取从当前显式 `[[fact:category:key=value]]` 兼容标记升级为受约束的事实提取器；
-- 为 SSE `meta` 统一补充 RunId、StepId、Sequence，并处理断流后的后台运行状态；
-- 增加运行恢复、取消、幂等冲突和数据库并发场景的集成测试。
+- 增加未完成 Step 的运行恢复，以及取消、幂等冲突和数据库并发场景的集成测试。

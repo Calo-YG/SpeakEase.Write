@@ -159,6 +159,7 @@ public sealed class CreationOrchestrator(
             var meta = agent.Metadata;
             yield return new AgentStreamChunk
             {
+                StepId = planStep.Id,
                 Type = "meta",
                 Content = JsonHelper.Serialize(new
                 {
@@ -174,6 +175,7 @@ public sealed class CreationOrchestrator(
 
             yield return new AgentStreamChunk
             {
+                StepId = planStep.Id,
                 Type = "meta",
                 Content = JsonHelper.Serialize(new
                 {

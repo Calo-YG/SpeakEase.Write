@@ -1,5 +1,7 @@
 using System.Runtime.CompilerServices;
+
 using SpeakEase.AI.Lib.Models;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 
@@ -11,11 +13,27 @@ namespace SpeakEase.Write.Infrastructure.AI.Runtime;
 /// </summary>
 public sealed class CreationRuntimeFacade(CreationOrchestrator orchestrator) : IAgentOrchestrator
 {
-    public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+    private readonly AgentEventProjector _eventProjector = new();
+
+    public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         AgentRuntimeRequest request,
-        CancellationToken cancellationToken = default)
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        return orchestrator.ExecuteAsync(request, cancellationToken);
+        ArgumentNullException.ThrowIfNull(request);
+
+        long sequence = 0;
+        await foreach (var chunk in orchestrator.ExecuteAsync(request, cancellationToken))
+        {
+            var runtimeEvent = new AgentEvent
+            {
+                RunId = request.RunId,
+                StepId = string.IsNullOrWhiteSpace(chunk.StepId) ? "runtime" : chunk.StepId,
+                Sequence = ++sequence,
+                Type = chunk.Type ?? string.Empty,
+                Payload = chunk
+            };
+            yield return _eventProjector.ProjectToSse(runtimeEvent);
+        }
     }
 
     public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
@@ -27,13 +45,15 @@ public sealed class CreationRuntimeFacade(CreationOrchestrator orchestrator) : I
         double? requestedTemperature = null,
         CancellationToken cancellationToken = default)
     {
-        return orchestrator.ExecuteAsync(
-            workId,
-            sessionId,
-            userMessage,
-            maxIterations,
-            requestedMaxTokens,
-            requestedTemperature,
-            cancellationToken);
+        return ExecuteAsync(new AgentRuntimeRequest
+        {
+            WorkId = workId,
+            SessionId = sessionId,
+            UserMessage = userMessage,
+            MaxIterations = maxIterations,
+            MaxTokens = requestedMaxTokens,
+            Temperature = requestedTemperature,
+            EnableAutoToolDispatch = true
+        }, cancellationToken);
     }
 }

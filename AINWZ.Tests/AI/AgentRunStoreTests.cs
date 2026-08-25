@@ -1,7 +1,9 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.AI.Lib.Runtime;
+using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Infrastructure.AI.Runtime;
 using SpeakEase.Write.Infrastructure.Persistence;
 
@@ -35,6 +37,125 @@ public sealed class AgentRunStoreTests
         Assert.True(replay.IsReplay);
         Assert.Equal("answer", replay.ExistingResponse.Content);
         Assert.Equal(1, await db.AgentRuns.CountAsync());
+    }
+
+    [Fact]
+    public async Task StartAsync_DetachesFailedInsertAfterUniqueKeyRace()
+    {
+        var options = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new AgentRunRacingDbContext(options);
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+
+        var result = await store.StartAsync("work-race", "session-race", "idem-race", "client-race");
+
+        Assert.Equal("concurrent-run", result.RunId);
+        Assert.True(result.IsInProgress);
+        Assert.Single(await db.AgentRuns.AsNoTracking().ToListAsync());
+        Assert.Empty(db.ChangeTracker.Entries<AgentRunEntity>());
+    }
+
+    [Fact]
+    public async Task StartAsync_RethrowsInsertFailureWhenConcurrentRunIsMissing()
+    {
+        var options = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new FailingAgentRunDbContext(options);
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() =>
+            store.StartAsync("work-missing", "session-missing", "idem-missing", "client-missing"));
+
+        Assert.Same(db.InsertFailure, exception);
+        Assert.Empty(db.ChangeTracker.Entries<AgentRunEntity>());
+    }
+
+    [Theory]
+    [InlineData("failed")]
+    [InlineData("cancelled")]
+    [InlineData("timed_out")]
+    public async Task StartAsync_ReacquiresFailedRunBeforeRetry(string stopReason)
+    {
+        await using var db = TestDb.Create();
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        var first = await store.StartAsync("work-retry", "session-retry", "idem-retry", "client-retry");
+        await store.CompleteAsync(first.RunId, new AgentResponse
+        {
+            Content = "partial answer",
+            StopReason = stopReason,
+            Model = "test-model"
+        });
+        var terminal = await db.AgentRuns.SingleAsync();
+        terminal.UpdateBy = "previous-user";
+        terminal.UpdateAt = DateTime.Now.AddMinutes(-5);
+        await db.SaveChangesAsync();
+        var failed = await db.AgentRuns.AsNoTracking().SingleAsync();
+
+        var reacquired = await store.StartAsync("work-retry", "session-retry", "idem-retry", "client-retry");
+        var inProgress = await store.StartAsync("work-retry", "session-retry", "idem-retry", "client-retry");
+
+        Assert.Equal(first.RunId, reacquired.RunId);
+        Assert.False(reacquired.IsReplay);
+        Assert.False(reacquired.IsInProgress);
+        Assert.Equal(first.RunId, inProgress.RunId);
+        Assert.True(inProgress.IsInProgress);
+
+        var recovered = await db.AgentRuns.AsNoTracking().SingleAsync();
+        Assert.Equal("running", recovered.Status);
+        Assert.Equal(string.Empty, recovered.StopReason);
+        Assert.Equal(string.Empty, recovered.Content);
+        Assert.Equal(string.Empty, recovered.ResultJson);
+        Assert.Equal(string.Empty, recovered.Model);
+        Assert.Null(recovered.CompletedAt);
+        Assert.True(recovered.UpdateAt > failed.UpdateAt);
+        Assert.Equal("user-1", recovered.UpdateBy);
+    }
+
+    [Fact]
+    public async Task StartAsync_ReacquiresFailedRunWithRelationalConditionalUpdate()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        await using var db = new SpeakEaseDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        Assert.True(db.Database.IsRelational());
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        var first = await store.StartAsync("work-sqlite", "session-sqlite", "idem-sqlite", "client-sqlite");
+        await store.CompleteAsync(first.RunId, new AgentResponse
+        {
+            Content = "partial answer",
+            StopReason = "failed",
+            Model = "test-model"
+        });
+
+        var reacquired = await store.StartAsync("work-sqlite", "session-sqlite", "idem-sqlite", "client-sqlite");
+        var inProgress = await store.StartAsync("work-sqlite", "session-sqlite", "idem-sqlite", "client-sqlite");
+
+        Assert.Equal(first.RunId, reacquired.RunId);
+        Assert.False(reacquired.IsReplay);
+        Assert.False(reacquired.IsInProgress);
+        Assert.Equal(first.RunId, inProgress.RunId);
+        Assert.True(inProgress.IsInProgress);
+        var recovered = await db.AgentRuns.AsNoTracking().SingleAsync();
+        Assert.Equal("running", recovered.Status);
+        Assert.Null(recovered.CompletedAt);
     }
 
     [Fact]
@@ -109,6 +230,62 @@ public sealed class AgentRunStoreTests
             }
 
             return affected;
+        }
+    }
+
+    private sealed class AgentRunRacingDbContext : SpeakEaseDbContext
+    {
+        private readonly DbContextOptions<SpeakEaseDbContext> _options;
+        private bool _simulateRace = true;
+
+        public AgentRunRacingDbContext(DbContextOptions<SpeakEaseDbContext> options)
+            : base(options)
+        {
+            _options = options;
+        }
+
+        public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            var pending = ChangeTracker.Entries<AgentRunEntity>()
+                .SingleOrDefault(x => x.State == EntityState.Added)?.Entity;
+            if (_simulateRace && pending is not null)
+            {
+                _simulateRace = false;
+                await using var concurrentDb = new SpeakEaseDbContext(_options);
+                concurrentDb.AgentRuns.Add(new AgentRunEntity
+                {
+                    Id = "concurrent-run",
+                    UserId = pending.UserId,
+                    WorkId = pending.WorkId,
+                    SessionId = pending.SessionId,
+                    DeduplicationKey = pending.DeduplicationKey,
+                    ClientMessageId = pending.ClientMessageId,
+                    Status = "running",
+                    StartedAt = pending.StartedAt,
+                    CreateBy = pending.CreateBy,
+                    CreateAt = pending.CreateAt,
+                    UpdateBy = pending.UpdateBy,
+                    UpdateAt = pending.UpdateAt
+                });
+                await concurrentDb.SaveChangesAsync(cancellationToken);
+                throw new DbUpdateException("Simulated unique-key race.");
+            }
+
+            return await base.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private sealed class FailingAgentRunDbContext(DbContextOptions<SpeakEaseDbContext> options)
+        : SpeakEaseDbContext(options)
+    {
+        public DbUpdateException InsertFailure { get; } = new("Simulated insert failure.");
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            if (ChangeTracker.Entries<AgentRunEntity>().Any(x => x.State == EntityState.Added))
+                throw InsertFailure;
+
+            return base.SaveChangesAsync(cancellationToken);
         }
     }
 }

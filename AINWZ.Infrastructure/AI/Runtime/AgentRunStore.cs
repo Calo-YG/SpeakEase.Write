@@ -25,64 +25,113 @@ public sealed class AgentRunStore(
     {
         var userId = userContext.UserId;
         var existing = await db.AgentRuns
+            .AsNoTracking()
             .FirstOrDefaultAsync(x => x.UserId == userId &&
                                       x.WorkId == workId &&
                                       x.SessionId == sessionId &&
                                       x.DeduplicationKey == deduplicationKey,
                 cancellationToken);
 
-        if (existing is not null)
+        if (existing is null)
         {
-            return new AgentRunStartResult
+            var now = DateTime.Now;
+            var entity = new AgentRunEntity
             {
-                RunId = existing.Id,
-                IsReplay = existing.Status == "completed",
-                IsInProgress = existing.Status == "running",
-                ExistingResponse = existing.Status == "completed"
-                    ? DeserializeResponse(existing.ResultJson, existing.Content, existing.StopReason)
-                    : null
+                Id = idGenerator.NextIdString(),
+                UserId = userId,
+                WorkId = workId,
+                SessionId = sessionId,
+                DeduplicationKey = deduplicationKey,
+                ClientMessageId = clientMessageId ?? string.Empty,
+                Status = "running",
+                StartedAt = now,
+                CreateBy = userId,
+                CreateAt = now,
+                UpdateBy = userId,
+                UpdateAt = now
             };
+
+            db.AgentRuns.Add(entity);
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+                return new AgentRunStartResult { RunId = entity.Id };
+            }
+            catch (DbUpdateException)
+            {
+                db.Entry(entity).State = EntityState.Detached;
+                existing = await db.AgentRuns.AsNoTracking().FirstOrDefaultAsync(x =>
+                    x.UserId == userId && x.WorkId == workId && x.SessionId == sessionId &&
+                    x.DeduplicationKey == deduplicationKey, cancellationToken);
+                if (existing is null)
+                    throw;
+            }
         }
 
-        var now = DateTime.Now;
-        var entity = new AgentRunEntity
+        if (existing.Status is "failed" or "cancelled" or "timed_out")
         {
-            Id = idGenerator.NextIdString(),
-            UserId = userId,
-            WorkId = workId,
-            SessionId = sessionId,
-            DeduplicationKey = deduplicationKey,
-            ClientMessageId = clientMessageId ?? string.Empty,
-            Status = "running",
-            StartedAt = now,
-            CreateBy = userId,
-            CreateAt = now,
-            UpdateBy = userId,
-            UpdateAt = now
+            var now = DateTime.Now;
+            int recovered;
+            if (db.Database.IsRelational())
+            {
+                recovered = await db.AgentRuns
+                    .Where(x => x.Id == existing.Id &&
+                                (x.Status == "failed" ||
+                                 x.Status == "cancelled" ||
+                                 x.Status == "timed_out"))
+                    .ExecuteUpdateAsync(setters => setters
+                            .SetProperty(x => x.Status, "running")
+                            .SetProperty(x => x.StopReason, string.Empty)
+                            .SetProperty(x => x.Content, string.Empty)
+                            .SetProperty(x => x.ResultJson, string.Empty)
+                            .SetProperty(x => x.Model, string.Empty)
+                            .SetProperty(x => x.CompletedAt, (DateTime?)null)
+                            .SetProperty(x => x.UpdateBy, userId)
+                            .SetProperty(x => x.UpdateAt, now),
+                        cancellationToken);
+            }
+            else
+            {
+                var retry = await db.AgentRuns.FirstOrDefaultAsync(x =>
+                    x.Id == existing.Id &&
+                    (x.Status == "failed" ||
+                     x.Status == "cancelled" ||
+                     x.Status == "timed_out"), cancellationToken);
+                if (retry is null)
+                {
+                    recovered = 0;
+                }
+                else
+                {
+                    retry.Status = "running";
+                    retry.StopReason = string.Empty;
+                    retry.Content = string.Empty;
+                    retry.ResultJson = string.Empty;
+                    retry.Model = string.Empty;
+                    retry.CompletedAt = null;
+                    retry.UpdateBy = userId;
+                    retry.UpdateAt = now;
+                    await db.SaveChangesAsync(cancellationToken);
+                    recovered = 1;
+                }
+            }
+
+            if (recovered == 1)
+                return new AgentRunStartResult { RunId = existing.Id };
+
+            existing = await db.AgentRuns.AsNoTracking()
+                .FirstAsync(x => x.Id == existing.Id, cancellationToken);
+        }
+
+        return new AgentRunStartResult
+        {
+            RunId = existing.Id,
+            IsReplay = existing.Status == "completed",
+            IsInProgress = existing.Status == "running",
+            ExistingResponse = existing.Status == "completed"
+                ? DeserializeResponse(existing.ResultJson, existing.Content, existing.StopReason)
+                : null
         };
-
-        db.AgentRuns.Add(entity);
-        try
-        {
-            await db.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            var concurrent = await db.AgentRuns.AsNoTracking().FirstAsync(x =>
-                x.UserId == userId && x.WorkId == workId && x.SessionId == sessionId &&
-                x.DeduplicationKey == deduplicationKey, cancellationToken);
-            return new AgentRunStartResult
-            {
-                RunId = concurrent.Id,
-                IsReplay = concurrent.Status == "completed",
-                IsInProgress = concurrent.Status == "running",
-                ExistingResponse = concurrent.Status == "completed"
-                    ? DeserializeResponse(concurrent.ResultJson, concurrent.Content, concurrent.StopReason)
-                    : null
-            };
-        }
-
-        return new AgentRunStartResult { RunId = entity.Id };
     }
 
     public async Task CompleteAsync(

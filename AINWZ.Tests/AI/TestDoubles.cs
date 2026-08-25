@@ -95,6 +95,12 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
     public SessionMemorySnapshot Snapshot { get; set; } = SessionMemorySnapshot.Empty;
     public IReadOnlyList<MemoryFact> Facts { get; set; } = Array.Empty<MemoryFact>();
     public bool ThrowOnRefresh { get; set; }
+    public bool BlockFirstRefresh { get; set; }
+    public TaskCompletionSource RefreshStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource RefreshRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _refreshCount;
+
+    public void ReleaseFirstRefresh() => RefreshRelease.TrySetResult();
 
     public Task<IReadOnlyList<MemoryFact>> LoadProjectFactsAsync(
         string userId,
@@ -122,7 +128,7 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
         return Task.FromResult(Snapshot);
     }
 
-    public Task RefreshAfterTurnAsync(
+    public async Task RefreshAfterTurnAsync(
         string userId,
         string workId,
         string sessionId,
@@ -132,8 +138,13 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
         if (ThrowOnRefresh)
             throw new InvalidOperationException("Simulated memory refresh failure.");
 
+        if (BlockFirstRefresh && Interlocked.Increment(ref _refreshCount) == 1)
+        {
+            RefreshStarted.TrySetResult();
+            await RefreshRelease.Task;
+        }
+
         Refreshes.Add((userId, workId, sessionId, turnNumber));
-        return Task.CompletedTask;
     }
 
     public Task InvalidateSessionAsync(

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,10 +15,11 @@ public sealed class MemoryRefreshQueue(
     IServiceScopeFactory scopeFactory,
     ILogger<MemoryRefreshQueue> logger) : BackgroundService, IMemoryRefreshQueue
 {
-    private readonly Channel<MemoryRefreshRequest> _channel = Channel.CreateBounded<MemoryRefreshRequest>(
-        new BoundedChannelOptions(512)
+    private readonly object _queueGate = new();
+    private readonly ConcurrentDictionary<MemoryRefreshKey, MemoryRefreshRequest> _pending = new();
+    private readonly Channel<MemoryRefreshKey> _signals = Channel.CreateUnbounded<MemoryRefreshKey>(
+        new UnboundedChannelOptions
         {
-            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = true,
             SingleWriter = false
         });
@@ -29,14 +31,23 @@ public sealed class MemoryRefreshQueue(
         ArgumentNullException.ThrowIfNull(request);
 
         // 记忆刷新发生在消息事务提交之后，不应受客户端请求取消影响，也不应阻塞 Chat。
-        if (!_channel.Writer.TryWrite(request))
+        // 同一会话只保留最新请求，避免高并发下重复刷新；回滚请求也会覆盖较高轮次的请求。
+        var key = new MemoryRefreshKey(request.UserId, request.WorkId, request.SessionId);
+        lock (_queueGate)
         {
-            logger.LogWarning(
-                "Memory refresh queue is full or stopped; refresh deferred/lost: WorkId={WorkId}, SessionId={SessionId}, Turn={Turn}, RunId={RunId}",
-                request.WorkId,
-                request.SessionId,
-                request.TurnNumber,
-                request.RunId);
+            var shouldSignal = !_pending.ContainsKey(key);
+            _pending[key] = request;
+
+            if (shouldSignal && !_signals.Writer.TryWrite(key))
+            {
+                _pending.TryRemove(key, out _);
+                logger.LogWarning(
+                    "Memory refresh signal queue is stopped; refresh deferred/lost: WorkId={WorkId}, SessionId={SessionId}, Turn={Turn}, RunId={RunId}",
+                    request.WorkId,
+                    request.SessionId,
+                    request.TurnNumber,
+                    request.RunId);
+            }
         }
 
         return ValueTask.CompletedTask;
@@ -44,8 +55,11 @@ public sealed class MemoryRefreshQueue(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        await foreach (var request in _channel.Reader.ReadAllAsync(stoppingToken))
+        await foreach (var key in _signals.Reader.ReadAllAsync(stoppingToken))
         {
+            if (!_pending.TryRemove(key, out var request))
+                continue;
+
             for (var attempt = 1; attempt <= 3; attempt++)
             {
                 try
@@ -92,7 +106,16 @@ public sealed class MemoryRefreshQueue(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        _channel.Writer.TryComplete();
+        lock (_queueGate)
+        {
+            _signals.Writer.TryComplete();
+        }
+
         await base.StopAsync(cancellationToken);
     }
+
+    private readonly record struct MemoryRefreshKey(
+        string UserId,
+        string WorkId,
+        string SessionId);
 }

@@ -91,6 +91,7 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
 {
     public List<(string UserId, string WorkId, string SessionId, int TurnNumber)> Refreshes { get; } = new();
     public List<(string UserId, string WorkId, string SessionId)> Invalidations { get; } = new();
+    public List<(string UserId, string WorkId, string SessionId, int TargetTurn)> Prunes { get; } = new();
     public SessionMemorySnapshot Snapshot { get; set; } = SessionMemorySnapshot.Empty;
     public IReadOnlyList<MemoryFact> Facts { get; set; } = Array.Empty<MemoryFact>();
     public bool ThrowOnRefresh { get; set; }
@@ -142,6 +143,17 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
         CancellationToken cancellationToken = default)
     {
         Invalidations.Add((userId, workId, sessionId));
+        return Task.CompletedTask;
+    }
+
+    public Task PruneSessionFactsAfterTurnAsync(
+        string userId,
+        string workId,
+        string sessionId,
+        int targetTurn,
+        CancellationToken cancellationToken = default)
+    {
+        Prunes.Add((userId, workId, sessionId, targetTurn));
         return Task.CompletedTask;
     }
 

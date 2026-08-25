@@ -153,6 +153,7 @@ public sealed class CreationSessionManagerTests
         Assert.True(result.Successed);
         Assert.Equal(1, await db.AICreationSessions.Select(x => x.TurnCount).SingleAsync());
         Assert.Single(await db.AICreationMessages.ToListAsync());
+        Assert.Equal(("user-1", "work-1", "session-1", 1), Assert.Single(memory.Prunes));
     }
 
     private static CreationSessionManager CreateManager(

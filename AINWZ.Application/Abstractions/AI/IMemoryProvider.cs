@@ -32,6 +32,13 @@ public interface IMemoryProvider
         string sessionId,
         CancellationToken cancellationToken = default);
 
+    Task PruneSessionFactsAfterTurnAsync(
+        string userId,
+        string workId,
+        string sessionId,
+        int targetTurn,
+        CancellationToken cancellationToken = default);
+
     Task LoadAsync(string userId, string workId, CancellationToken cancellationToken = default);
     Task SaveSnapshotAsync(string userId, string workId, CancellationToken cancellationToken = default);
     Task InvalidateAsync(string userId, string workId, CancellationToken cancellationToken = default);

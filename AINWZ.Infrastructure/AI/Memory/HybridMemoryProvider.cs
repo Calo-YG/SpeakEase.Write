@@ -254,6 +254,33 @@ public sealed class HybridMemoryProvider(
         await cache.RemoveAsync(CacheKey(userId, workId, sessionId));
     }
 
+    public async Task PruneSessionFactsAfterTurnAsync(
+        string userId,
+        string workId,
+        string sessionId,
+        int targetTurn,
+        CancellationToken cancellationToken = default)
+    {
+        var query = db.MemoryFacts.Where(x =>
+            x.UserId == userId &&
+            x.WorkId == workId &&
+            x.SessionId == sessionId &&
+            x.SourceTurn > targetTurn);
+
+        try
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("ExecuteDelete", StringComparison.Ordinal))
+        {
+            var facts = await query.ToListAsync(cancellationToken);
+            db.MemoryFacts.RemoveRange(facts);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        await cache.RemoveAsync($"memory:project:{userId}:{workId}");
+    }
+
     public Task LoadAsync(string userId, string workId, CancellationToken cancellationToken = default)
     {
         return cache.GetOrSetAsync(

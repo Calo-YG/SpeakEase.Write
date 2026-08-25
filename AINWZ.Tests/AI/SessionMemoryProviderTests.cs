@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.EntityFrameworkCore;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Memory;
 using SpeakEase.Write.Infrastructure.AI.Memory;
@@ -158,6 +159,37 @@ public sealed class SessionMemoryProviderTests
         var loaded = await provider.LoadSessionMemoryAsync("user-1", "work-1", "session-1");
         Assert.Equal(2, loaded.TurnNumber);
         Assert.Equal(1, db.MemorySnapshots.Count());
+    }
+
+    [Fact]
+    public async Task PruneSessionFactsAfterTurnAsync_RemovesOnlyFactsFromRolledBackTurns()
+    {
+        await using var db = TestDb.Create();
+        var cache = new FakeMultiCacheService();
+        var provider = CreateProvider(db, cache);
+        db.MemoryFacts.AddRange(
+            new MemoryFactEntity
+            {
+                Id = "fact-1", UserId = "user-1", WorkId = "work-1", SessionId = "session-1",
+                Category = "character", Key = "name", Value = "valid", SourceTurn = 1, VersionTurn = 2
+            },
+            new MemoryFactEntity
+            {
+                Id = "fact-2", UserId = "user-1", WorkId = "work-1", SessionId = "session-1",
+                Category = "plot", Key = "twist", Value = "stale", SourceTurn = 2, VersionTurn = 2
+            },
+            new MemoryFactEntity
+            {
+                Id = "fact-other", UserId = "user-1", WorkId = "work-1", SessionId = "session-2",
+                Category = "plot", Key = "twist", Value = "other", SourceTurn = 3, VersionTurn = 3
+            });
+        await db.SaveChangesAsync();
+
+        await provider.PruneSessionFactsAfterTurnAsync("user-1", "work-1", "session-1", 1);
+
+        var remaining = await db.MemoryFacts.AsNoTracking().OrderBy(x => x.Id).ToListAsync();
+        Assert.Equal(new[] { "fact-1", "fact-other" }, remaining.Select(x => x.Id));
+        Assert.Contains("memory:project:user-1:work-1", cache.RemovedKeys);
     }
 
     private static HybridMemoryProvider CreateProvider(

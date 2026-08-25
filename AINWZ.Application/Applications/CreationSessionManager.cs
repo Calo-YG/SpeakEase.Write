@@ -350,6 +350,7 @@ public class CreationSessionManager(
         {
             // 回滚允许版本下降，先删除旧快照/缓存，再根据剩余消息重建。
             await DeleteSessionMemorySnapshotsAsync(userId, session.WorkId, sessionId);
+            await memory.PruneSessionFactsAfterTurnAsync(userId, session.WorkId, sessionId, targetTurn);
             await memory.InvalidateSessionAsync(userId, session.WorkId, sessionId);
             if (memoryRefreshQueue is not null)
             {

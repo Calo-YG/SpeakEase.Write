@@ -192,6 +192,46 @@ public sealed class AgentLoopTests
         Assert.Equal(0, journal.CompleteCount);
     }
 
+    [Fact]
+    public async Task RunAsync_CompletesToolJournalBeforePropagatingCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var events = new List<string>();
+        var toolCall = new ToolCall
+        {
+            Id = "call-save",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":1}" }
+        };
+        var tools = new RecordingToolCapable
+        {
+            OnExecuted = () =>
+            {
+                events.Add("tool_completed");
+                cancellation.Cancel();
+            }
+        };
+        var journal = new RecordingToolExecutionJournal(events);
+        var loop = new AgentLoop();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CollectAsync(loop.RunAsync(
+            new AgentLoopRequest
+            {
+                Llm = new ScriptedChatCompatible(_ => new LLMTurnResult
+                {
+                    Success = true,
+                    ToolCalls = new List<ToolCall> { toolCall }
+                }),
+                Tools = tools,
+                Journal = journal,
+                Request = new AgentRequest { UserMessage = "save", MaxIterations = 2 }
+            },
+            cancellation.Token)));
+
+        Assert.Equal(new[] { "tool_completed", "journal_completed" }, events);
+        Assert.Equal(1, journal.CompleteCount);
+        Assert.False(journal.CompleteTokenWasCanceled);
+    }
+
     private static async Task<List<AgentStreamChunk>> CollectAsync(IAsyncEnumerable<AgentStreamChunk> stream)
     {
         var chunks = new List<AgentStreamChunk>();
@@ -234,6 +274,7 @@ public sealed class AgentLoopTests
         public IReadOnlyList<ToolDefinition> Tools { get; } = new List<ToolDefinition>();
         public List<ToolCall> Calls { get; } = new();
         public ToolResult Result { get; set; } = new() { Success = true, Content = "ok" };
+        public Action OnExecuted { get; set; }
 
         public void RegisterTool(ToolDefinition tool)
         {
@@ -242,7 +283,37 @@ public sealed class AgentLoopTests
         public Task<ToolResult> ExecuteAsync(ToolCall toolCall, CancellationToken cancellationToken)
         {
             Calls.Add(toolCall);
+            OnExecuted?.Invoke();
             return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class RecordingToolExecutionJournal(List<string> events) : IToolExecutionJournal
+    {
+        public int CompleteCount { get; private set; }
+        public bool CompleteTokenWasCanceled { get; private set; }
+
+        public Task<ToolExecutionLease> BeginAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ToolExecutionLease.Execute());
+        }
+
+        public Task CompleteAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            ToolResult result,
+            CancellationToken cancellationToken = default)
+        {
+            CompleteCount++;
+            CompleteTokenWasCanceled = cancellationToken.IsCancellationRequested;
+            events.Add("journal_completed");
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
         }
     }
 

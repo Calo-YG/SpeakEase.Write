@@ -185,7 +185,7 @@ public sealed class AgentLoop : IAgentLoop
                                 request.StepId,
                                 toolCall,
                                 toolResult,
-                                runtimeToken);
+                                CancellationToken.None);
                         }
                     }
 

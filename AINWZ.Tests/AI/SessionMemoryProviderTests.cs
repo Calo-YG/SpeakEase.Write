@@ -1,8 +1,12 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using System.Data.Common;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Memory;
 using SpeakEase.Write.Infrastructure.AI.Memory;
+using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace AINWZ.Tests.AI;
 
@@ -162,6 +166,124 @@ public sealed class SessionMemoryProviderTests
     }
 
     [Fact]
+    public async Task RefreshAfterTurnAsync_DoesNotOverwriteNewerSnapshotWhenWritesRace()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-{Guid.NewGuid():N}.db");
+        try
+        {
+            {
+            var saveInterceptor = new PauseFirstSaveChangesInterceptor();
+            await using var oldConnection = new SqliteConnection($"Data Source={databasePath}");
+            await oldConnection.OpenAsync();
+            var oldOptions = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+                .UseSqlite(oldConnection)
+                .AddInterceptors(saveInterceptor)
+                .Options;
+            await using var oldDb = new SpeakEaseDbContext(oldOptions);
+            await oldDb.Database.EnsureCreatedAsync();
+            oldDb.AICreationMessages.AddRange(
+                new AICreationMessageEntity
+                {
+                    Id = "race-msg-1",
+                    SessionId = "race-session",
+                    Role = "user",
+                    Content = "turn one",
+                    TurnNumber = 1,
+                    CreatedAt = DateTime.Now
+                },
+                new AICreationMessageEntity
+                {
+                    Id = "race-msg-2",
+                    SessionId = "race-session",
+                    Role = "assistant",
+                    Content = "turn one answer",
+                    TurnNumber = 1,
+                    CreatedAt = DateTime.Now.AddSeconds(1)
+                });
+            oldDb.MemorySnapshots.Add(new MemorySnapshotEntity
+            {
+                Id = "race-snapshot",
+                UserId = "user-1",
+                WorkId = "work-1",
+                SessionId = "race-session",
+                SnapshotType = "session-turn-summary",
+                Summary = "initial",
+                VersionId = "0",
+                CreateAt = DateTime.Now
+            });
+            await oldDb.SaveChangesAsync();
+
+            var cache = new FakeMultiCacheService();
+            var oldProvider = CreateProvider(oldDb, cache);
+            saveInterceptor.Arm();
+            var oldRefresh = oldProvider.RefreshAfterTurnAsync(
+                "user-1", "work-1", "race-session", 1);
+            await saveInterceptor.SaveStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await using var newConnection = new SqliteConnection($"Data Source={databasePath}");
+            await newConnection.OpenAsync();
+            var newOptions = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+                .UseSqlite(newConnection)
+                .Options;
+            await using var newDb = new SpeakEaseDbContext(newOptions);
+            newDb.AICreationMessages.AddRange(
+                new AICreationMessageEntity
+                {
+                    Id = "race-msg-3",
+                    SessionId = "race-session",
+                    Role = "user",
+                    Content = "turn two",
+                    TurnNumber = 2,
+                    CreatedAt = DateTime.Now.AddSeconds(2)
+                },
+                new AICreationMessageEntity
+                {
+                    Id = "race-msg-4",
+                    SessionId = "race-session",
+                    Role = "assistant",
+                    Content = "turn two answer",
+                    TurnNumber = 2,
+                    CreatedAt = DateTime.Now.AddSeconds(3)
+                });
+            await newDb.SaveChangesAsync();
+
+            var newProvider = CreateProvider(newDb, cache);
+            await newProvider.RefreshAfterTurnAsync("user-1", "work-1", "race-session", 2);
+            saveInterceptor.Release();
+
+            await oldRefresh;
+
+            await using var verificationConnection = new SqliteConnection($"Data Source={databasePath}");
+            await verificationConnection.OpenAsync();
+            var verificationOptions = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+                .UseSqlite(verificationConnection)
+                .Options;
+            await using var verificationDb = new SpeakEaseDbContext(verificationOptions);
+            var snapshot = await verificationDb.MemorySnapshots
+                .AsNoTracking()
+                .SingleAsync(x => x.SessionId == "race-session");
+            Assert.Equal("2", snapshot.VersionId);
+            Assert.Equal(2, (await newProvider.LoadSessionMemoryAsync(
+                "user-1", "work-1", "race-session")).TurnNumber);
+            }
+        }
+        finally
+        {
+            if (File.Exists(databasePath))
+            {
+                try
+                {
+                    File.Delete(databasePath);
+                }
+                catch (IOException)
+                {
+                    // SQLite may release the native handle after the async disposals complete.
+                }
+            }
+        }
+    }
+
+    [Fact]
     public async Task PruneSessionFactsAfterTurnAsync_RemovesOnlyFactsFromRolledBackTurns()
     {
         await using var db = TestDb.Create();
@@ -201,5 +323,29 @@ public sealed class SessionMemoryProviderTests
             cache ?? new FakeMultiCacheService(),
             new SequentialIdGenerator(),
             NullLogger<HybridMemoryProvider>.Instance);
+    }
+
+    private sealed class PauseFirstSaveChangesInterceptor : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _armed;
+
+        public TaskCompletionSource SaveStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Arm() => Interlocked.Exchange(ref _armed, 1);
+
+        public void Release() => _release.TrySetResult();
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (Volatile.Read(ref _armed) == 1 && SaveStarted.TrySetResult())
+                await _release.Task;
+
+            return result;
+        }
     }
 }

@@ -182,6 +182,7 @@ public sealed class HybridMemoryProvider(
         });
 
         var entity = await db.MemorySnapshots
+            .AsNoTracking()
             .Where(x => x.UserId == userId &&
                         x.WorkId == workId &&
                         x.SessionId == sessionId &&
@@ -206,6 +207,7 @@ public sealed class HybridMemoryProvider(
             return;
         }
 
+        var versionId = effectiveTurnNumber.ToString(CultureInfo.InvariantCulture);
         if (entity is null)
         {
             entity = new MemorySnapshotEntity
@@ -218,18 +220,50 @@ public sealed class HybridMemoryProvider(
                 CreateBy = userId,
                 CreateAt = now
             };
+            ApplySnapshot(entity, summary, snapshotJson, versionId, coveredFromTurn, coveredToTurn, userId, now);
             db.MemorySnapshots.Add(entity);
-        }
+            try
+            {
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                // Another worker may have inserted the unique session row while this
+                // refresh was building its summary. Detach the failed insert before
+                // re-reading so the context cannot replay stale state on the next save.
+                db.Entry(entity).State = EntityState.Detached;
+                entity = await LoadLatestSnapshotEntityAsync(userId, workId, sessionId, cancellationToken);
+                if (entity is null || GetSnapshotTurn(entity) >= effectiveTurnNumber)
+                    return;
 
-        entity.Summary = summary;
-        entity.SnapshotJson = snapshotJson;
-        entity.VersionId = effectiveTurnNumber.ToString(CultureInfo.InvariantCulture);
-        entity.CoveredFromTurn = coveredFromTurn;
-        entity.CoveredToTurn = coveredToTurn;
-        entity.MemoryStatus = "fresh";
-        entity.UpdateBy = userId;
-        entity.UpdateAt = now;
-        await db.SaveChangesAsync(cancellationToken);
+                if (!await TryUpdateSnapshotAsync(
+                        entity,
+                        summary,
+                        snapshotJson,
+                        versionId,
+                        coveredFromTurn,
+                        coveredToTurn,
+                        userId,
+                        now,
+                        cancellationToken))
+                    return;
+            }
+        }
+        else if (!await TryUpdateSnapshotAsync(
+                     entity,
+                     summary,
+                     snapshotJson,
+                     versionId,
+                     coveredFromTurn,
+                     coveredToTurn,
+                     userId,
+                     now,
+                     cancellationToken))
+        {
+            // The observed version changed after the read. The newer writer owns
+            // the snapshot and its cache entry, so this refresh is intentionally a no-op.
+            return;
+        }
 
         await cache.RefreshAsync(
             CacheKey(userId, workId, sessionId),
@@ -302,6 +336,101 @@ public sealed class HybridMemoryProvider(
     public async Task InvalidateAsync(string userId, string workId, CancellationToken cancellationToken = default)
     {
         await cache.RemoveAsync(LegacyCacheKey(userId, workId));
+    }
+
+    private async Task<bool> TryUpdateSnapshotAsync(
+        MemorySnapshotEntity existing,
+        string summary,
+        string snapshotJson,
+        string versionId,
+        int coveredFromTurn,
+        int coveredToTurn,
+        string userId,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var expectedVersionId = existing.VersionId;
+        try
+        {
+            var affected = await db.MemorySnapshots
+                .Where(x => x.Id == existing.Id &&
+                            x.UserId == existing.UserId &&
+                            x.WorkId == existing.WorkId &&
+                            x.SessionId == existing.SessionId &&
+                            x.SnapshotType == existing.SnapshotType &&
+                            x.VersionId == expectedVersionId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Summary, summary)
+                    .SetProperty(x => x.SnapshotJson, snapshotJson)
+                    .SetProperty(x => x.VersionId, versionId)
+                    .SetProperty(x => x.CoveredFromTurn, coveredFromTurn)
+                    .SetProperty(x => x.CoveredToTurn, coveredToTurn)
+                    .SetProperty(x => x.MemoryStatus, "fresh")
+                    .SetProperty(x => x.UpdateBy, userId)
+                    .SetProperty(x => x.UpdateAt, now), cancellationToken);
+
+            if (affected == 0)
+                return false;
+        }
+        catch (InvalidOperationException ex) when (
+            ex.Message.Contains("ExecuteUpdate", StringComparison.OrdinalIgnoreCase))
+        {
+            // EF Core's in-memory provider does not translate ExecuteUpdate. Keep
+            // the fallback for local tests and non-relational development stores;
+            // relational providers use the atomic conditional update above.
+            var tracked = await db.MemorySnapshots
+                .FirstOrDefaultAsync(x => x.Id == existing.Id && x.VersionId == expectedVersionId, cancellationToken);
+            if (tracked is null)
+                return false;
+
+            ApplySnapshot(tracked, summary, snapshotJson, versionId, coveredFromTurn, coveredToTurn, userId, now);
+            await db.SaveChangesAsync(cancellationToken);
+        }
+
+        ApplySnapshot(existing, summary, snapshotJson, versionId, coveredFromTurn, coveredToTurn, userId, now);
+        return true;
+    }
+
+    private async Task<MemorySnapshotEntity> LoadLatestSnapshotEntityAsync(
+        string userId,
+        string workId,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        return await db.MemorySnapshots
+            .AsNoTracking()
+            .Where(x => x.UserId == userId &&
+                        x.WorkId == workId &&
+                        x.SessionId == sessionId &&
+                        x.SnapshotType == SnapshotType)
+            .OrderByDescending(x => x.CreateAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private static int GetSnapshotTurn(MemorySnapshotEntity entity)
+    {
+        return int.TryParse(entity.VersionId, out var turn) ? turn : 0;
+    }
+
+    private static void ApplySnapshot(
+        MemorySnapshotEntity entity,
+        string summary,
+        string snapshotJson,
+        string versionId,
+        int coveredFromTurn,
+        int coveredToTurn,
+        string userId,
+        DateTime now)
+    {
+        entity.Summary = summary;
+        entity.SnapshotJson = snapshotJson;
+        entity.VersionId = versionId;
+        entity.CoveredFromTurn = coveredFromTurn;
+        entity.CoveredToTurn = coveredToTurn;
+        entity.MemoryStatus = "fresh";
+        entity.UpdateBy = userId;
+        entity.UpdateAt = now;
     }
 
     private async Task<SessionMemorySnapshot> LoadLatestSnapshotAsync(

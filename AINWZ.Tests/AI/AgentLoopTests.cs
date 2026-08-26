@@ -324,6 +324,44 @@ public sealed class AgentLoopTests
         Assert.IsAssignableFrom<OperationCanceledException>(exception);
     }
 
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-1L)]
+    [InlineData(-2L)]
+    [InlineData(4_294_967_295L)]
+    public async Task RunAsync_RejectsInvalidToolJournalCompletionTimeoutBeforeExecution(long timeoutMilliseconds)
+    {
+        var toolCall = new ToolCall
+        {
+            Id = "call-invalid-timeout",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{}" }
+        };
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult
+        {
+            Success = true,
+            ToolCalls = new List<ToolCall> { toolCall }
+        });
+        var tools = new RecordingToolCapable();
+        var loop = new AgentLoop();
+
+        var exception = await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => CollectAsync(loop.RunAsync(
+            new AgentLoopRequest
+            {
+                Llm = llm,
+                Tools = tools,
+                Journal = new RecordingToolExecutionJournal(new List<string>()),
+                Options = new AgentLoopOptions
+                {
+                    ToolJournalCompletionTimeout = TimeSpan.FromMilliseconds(timeoutMilliseconds)
+                },
+                Request = new AgentRequest { UserMessage = "save" }
+            })));
+
+        Assert.Equal(nameof(AgentLoopOptions.ToolJournalCompletionTimeout), exception.ParamName);
+        Assert.Empty(llm.Requests);
+        Assert.Empty(tools.Calls);
+    }
+
     private static async Task<List<AgentStreamChunk>> CollectAsync(IAsyncEnumerable<AgentStreamChunk> stream)
     {
         var chunks = new List<AgentStreamChunk>();

@@ -11,6 +11,9 @@ namespace SpeakEase.AI.Lib.Runtime;
 /// </summary>
 public sealed class AgentLoop : IAgentLoop
 {
+    private static readonly TimeSpan MaximumToolJournalCompletionTimeout =
+        TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
+
     public async IAsyncEnumerable<AgentStreamChunk> RunAsync(
         AgentLoopRequest loopRequest,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
@@ -22,6 +25,15 @@ public sealed class AgentLoop : IAgentLoop
 
         var request = loopRequest.Request;
         var options = loopRequest.Options ?? new AgentLoopOptions();
+        if (loopRequest.Journal is not null &&
+            (options.ToolJournalCompletionTimeout <= TimeSpan.Zero ||
+             options.ToolJournalCompletionTimeout > MaximumToolJournalCompletionTimeout))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(AgentLoopOptions.ToolJournalCompletionTimeout),
+                options.ToolJournalCompletionTimeout,
+                $"Tool journal completion timeout must be greater than zero and no greater than {MaximumToolJournalCompletionTimeout}.");
+        }
         var maxIterations = Math.Clamp(
             request.MaxIterations > 0 ? request.MaxIterations : options.MaxIterations,
             1,

@@ -105,6 +105,8 @@ public sealed class CreationOrchestratorPerformanceTests
         }
 
         Assert.NotNull(third.CapturedRequest);
+        Assert.Equal(1_024, third.CapturedRequest.MaxTokens);
+        Assert.Equal(64, third.CapturedRequest.ContextWindowTokens);
         Assert.True(
             third.CapturedRequest.UserMessage.Length <= 320,
             $"Tiny-window dependency context exceeded budget: {third.CapturedRequest.UserMessage.Length} chars.");

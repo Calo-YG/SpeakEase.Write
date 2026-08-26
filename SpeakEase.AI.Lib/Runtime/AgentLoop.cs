@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
@@ -47,11 +48,22 @@ public sealed class AgentLoop : IAgentLoop
             : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
         var runtimeToken = linkedCts?.Token ?? cancellationToken;
         var messages = BuildMessages(request);
+        var primarySystemMessage = !string.IsNullOrWhiteSpace(request.SystemPrompt)
+            ? messages.OfType<SystemMessage>().FirstOrDefault()
+            : null;
+        var currentUserMessage = !string.IsNullOrWhiteSpace(request.UserMessage)
+            ? messages.LastOrDefault() as UserMessage
+            : null;
+        var historyGroups = BuildHistoryGroups(request.ConversationHistory);
+        SystemMessage resolvedSkillMessage = null;
         if (loopRequest.SkillResolver is not null && !string.IsNullOrWhiteSpace(request.SkillName))
         {
             var skill = await loopRequest.SkillResolver.ResolveAsync(request.SkillName, runtimeToken);
             if (!string.IsNullOrWhiteSpace(skill.Content))
-                messages.Insert(0, ChatMessage.System($"[Resolved Skill: {skill.SkillName}]\n{skill.Content}"));
+            {
+                resolvedSkillMessage = ChatMessage.System($"[Resolved Skill: {skill.SkillName}]\n{skill.Content}");
+                messages.Insert(0, resolvedSkillMessage);
+            }
         }
         var llmContext = new LLMTurnContext
         {
@@ -73,6 +85,43 @@ public sealed class AgentLoop : IAgentLoop
 
             LLMTurnResult turnResult = null;
             var exposedTools = request.EnableAutoToolDispatch ? loopRequest.Tools.Tools : Array.Empty<ToolDefinition>();
+            var contextWindowTokens = request.ContextWindowTokens > 0
+                ? request.ContextWindowTokens
+                : options.ContextWindowTokens;
+            var reservedOutputTokens = request.MaxTokens is > 0
+                ? request.MaxTokens.Value
+                : options.MaxOutputTokens;
+            if (!TryFitRequestToBudget(
+                    messages,
+                    exposedTools,
+                    contextWindowTokens,
+                    reservedOutputTokens,
+                    historyGroups,
+                    primarySystemMessage,
+                    currentUserMessage,
+                    ref resolvedSkillMessage))
+            {
+                yield return Mark(request, ref sequence, new AgentStreamChunk
+                {
+                    Type = "error",
+                    Content = "The complete agent request exceeds the model context budget."
+                });
+                yield return Mark(request, ref sequence, new AgentStreamChunk
+                {
+                    Type = "done",
+                    FinalResponse = new AgentResponse
+                    {
+                        Content = string.Empty,
+                        Model = request.Model,
+                        Iterations = iteration,
+                        StopReason = "context_budget_exceeded",
+                        ConversationHistory = new List<ChatMessage>(messages),
+                        ToolResults = new List<ToolResult>(toolResults),
+                        TotalUsage = totalUsage
+                    }
+                });
+                yield break;
+            }
 
             await foreach (var turnChunk in loopRequest.Llm.StreamAsync(
                 llmContext,
@@ -309,6 +358,135 @@ public sealed class AgentLoop : IAgentLoop
             messages.Add(ChatMessage.User(request.UserMessage));
 
         return messages;
+    }
+
+    private static List<List<ChatMessage>> BuildHistoryGroups(IReadOnlyList<ChatMessage> history)
+    {
+        var groups = new List<List<ChatMessage>>();
+        if (history is null)
+            return groups;
+
+        List<ChatMessage> current = null;
+        foreach (var message in history)
+        {
+            if (message is UserMessage || current is null)
+            {
+                current = new List<ChatMessage>();
+                groups.Add(current);
+            }
+
+            current.Add(message);
+        }
+
+        return groups;
+    }
+
+    private static bool TryFitRequestToBudget(
+        List<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools,
+        int contextWindowTokens,
+        int reservedOutputTokens,
+        List<List<ChatMessage>> historyGroups,
+        SystemMessage primarySystemMessage,
+        UserMessage currentUserMessage,
+        ref SystemMessage resolvedSkillMessage)
+    {
+        if (contextWindowTokens <= 0 || reservedOutputTokens < 0 || reservedOutputTokens >= contextWindowTokens)
+            return false;
+
+        var inputBudget = contextWindowTokens - reservedOutputTokens;
+        while (EstimateRequestTokens(messages, tools) > inputBudget && historyGroups.Count > 0)
+        {
+            var oldestTurn = historyGroups[0];
+            historyGroups.RemoveAt(0);
+            foreach (var message in oldestTurn)
+                messages.Remove(message);
+        }
+
+        if (EstimateRequestTokens(messages, tools) > inputBudget && resolvedSkillMessage is not null)
+        {
+            messages.Remove(resolvedSkillMessage);
+            resolvedSkillMessage = null;
+        }
+
+        if (EstimateRequestTokens(messages, tools) > inputBudget)
+        {
+            TruncateMessageToBudget(primarySystemMessage, messages, tools, inputBudget);
+            TruncateMessageToBudget(currentUserMessage, messages, tools, inputBudget);
+        }
+
+        return EstimateRequestTokens(messages, tools) <= inputBudget;
+    }
+
+    private static void TruncateMessageToBudget(
+        ChatMessage message,
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools,
+        int inputBudget)
+    {
+        const int minimumTextCharacters = 32;
+        var text = ExtractMessageText(message);
+        if (message is null || text.Length <= minimumTextCharacters)
+            return;
+
+        var excessTokens = EstimateRequestTokens(messages, tools) - inputBudget;
+        if (excessTokens <= 0)
+            return;
+
+        var charactersToRemove = (int)Math.Ceiling(excessTokens / 1.5);
+        var targetLength = Math.Max(minimumTextCharacters, text.Length - charactersToRemove);
+        SetMessageText(message, text[..targetLength]);
+    }
+
+    private static int EstimateRequestTokens(
+        IReadOnlyList<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools)
+    {
+        var total = messages.Sum(EstimateMessageTokens);
+        if (tools is { Count: > 0 })
+            total += 4 + EstimateTextTokens(JsonSerializer.Serialize(tools));
+        return total;
+    }
+
+    private static int EstimateMessageTokens(ChatMessage message)
+    {
+        const int messageFramingTokens = 4;
+        var total = messageFramingTokens + EstimateTextTokens(ExtractMessageText(message));
+        if (message is AssistantMessage { ToolCalls.Count: > 0 } assistant)
+            total += EstimateTextTokens(JsonSerializer.Serialize(assistant.ToolCalls));
+        return total;
+    }
+
+    private static int EstimateTextTokens(string text)
+    {
+        return (int)Math.Ceiling((text?.Length ?? 0) * 1.5);
+    }
+
+    private static string ExtractMessageText(ChatMessage message)
+    {
+        return message switch
+        {
+            SystemMessage system => system.Content ?? string.Empty,
+            UserMessage { Content: string text } => text,
+            UserMessage { Content: IEnumerable<ContentPart> parts } => string.Concat(parts.Select(part =>
+                (part.Text ?? string.Empty) + (part.ImageUrl?.Url ?? string.Empty))),
+            AssistantMessage assistant => (assistant.Content ?? string.Empty) + (assistant.ReasoningContent ?? string.Empty),
+            ToolMessage tool => tool.Content ?? string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    private static void SetMessageText(ChatMessage message, string text)
+    {
+        switch (message)
+        {
+            case SystemMessage system:
+                system.Content = text;
+                break;
+            case UserMessage user:
+                user.Content = text;
+                break;
+        }
     }
 
     private static AgentStreamChunk Mark(AgentRequest request, ref long sequence, AgentStreamChunk chunk)

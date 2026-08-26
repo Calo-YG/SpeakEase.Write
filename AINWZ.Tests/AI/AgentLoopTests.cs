@@ -362,6 +362,139 @@ public sealed class AgentLoopTests
         Assert.Empty(tools.Calls);
     }
 
+    [Fact]
+    public async Task RunAsync_RejectsRequestWhenMinimumContextCannotFit()
+    {
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "unexpected" });
+        var chunks = await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = new RecordingToolCapable(),
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 100,
+                MaxTokens = 20,
+                SystemPrompt = new string('系', 200),
+                UserMessage = new string('用', 200)
+            }
+        }));
+
+        Assert.Empty(llm.Requests);
+        Assert.Contains(chunks, x => x.Type == "error");
+        Assert.Equal("context_budget_exceeded", chunks.Single(x => x.Type == "done").FinalResponse.StopReason);
+    }
+
+    [Fact]
+    public async Task RunAsync_CountsResolvedSkillAndToolSchemaInBudget()
+    {
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "unexpected" });
+        var tools = new RecordingToolCapable(new[]
+        {
+            new ToolDefinition
+            {
+                Function = new FunctionDefinition
+                {
+                    Name = "lookup",
+                    Description = new string('工', 300),
+                    Parameters = new FunctionParameters { Properties = new Dictionary<string, ParameterSchema>() }
+                }
+            }
+        });
+        var chunks = await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = tools,
+            SkillResolver = new StaticSkillResolver(new string('技', 300)),
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 300,
+                MaxTokens = 50,
+                SystemPrompt = "system",
+                UserMessage = "request",
+                SkillName = "large-skill"
+            }
+        }));
+
+        Assert.Empty(llm.Requests);
+        Assert.Equal("context_budget_exceeded", chunks.Single(x => x.Type == "done").FinalResponse.StopReason);
+    }
+
+    [Fact]
+    public async Task RunAsync_TrimsOldestCompleteHistoryTurnBeforeLlmCall()
+    {
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "done" });
+        await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = new RecordingToolCapable(),
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 260,
+                MaxTokens = 40,
+                SystemPrompt = "system",
+                UserMessage = "current",
+                ConversationHistory = new List<ChatMessage>
+                {
+                    ChatMessage.User("old-user-" + new string('旧', 120)),
+                    ChatMessage.Assistant("old-assistant-" + new string('旧', 120)),
+                    ChatMessage.User("recent-user"),
+                    ChatMessage.Assistant("recent-assistant")
+                }
+            }
+        }));
+
+        var sent = Assert.Single(llm.Requests);
+        Assert.DoesNotContain(sent, x => GetMessageText(x).Contains("old-user-"));
+        Assert.DoesNotContain(sent, x => GetMessageText(x).Contains("old-assistant-"));
+        Assert.Contains(sent, x => GetMessageText(x) == "recent-user");
+        Assert.Contains(sent, x => GetMessageText(x) == "recent-assistant");
+    }
+
+    [Fact]
+    public async Task RunAsync_CountsContentPartTextWhenTrimmingHistory()
+    {
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "done" });
+        await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = new RecordingToolCapable(),
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 220,
+                MaxTokens = 40,
+                SystemPrompt = "system",
+                UserMessage = "current",
+                ConversationHistory = new List<ChatMessage>
+                {
+                    new UserMessage
+                    {
+                        Content = new List<ContentPart>
+                        {
+                            new() { Type = "text", Text = "multipart-" + new string('图', 200) }
+                        }
+                    },
+                    ChatMessage.Assistant("old answer"),
+                    ChatMessage.User("recent-user"),
+                    ChatMessage.Assistant("recent-assistant")
+                }
+            }
+        }));
+
+        var sent = Assert.Single(llm.Requests);
+        Assert.DoesNotContain(sent, x => GetMessageText(x).Contains("multipart-"));
+        Assert.Contains(sent, x => GetMessageText(x) == "recent-user");
+    }
+
+    private static string GetMessageText(ChatMessage message) => message switch
+    {
+        SystemMessage system => system.Content ?? string.Empty,
+        UserMessage user when user.Content is string text => text,
+        UserMessage user when user.Content is IEnumerable<ContentPart> parts => string.Join("", parts.Select(x => x.Text)),
+        AssistantMessage assistant => assistant.Content ?? string.Empty,
+        ToolMessage tool => tool.Content ?? string.Empty,
+        _ => string.Empty
+    };
+
     private static async Task<List<AgentStreamChunk>> CollectAsync(IAsyncEnumerable<AgentStreamChunk> stream)
     {
         var chunks = new List<AgentStreamChunk>();
@@ -399,9 +532,9 @@ public sealed class AgentLoopTests
         }
     }
 
-    private sealed class RecordingToolCapable : IToolCapable
+    private sealed class RecordingToolCapable(IReadOnlyList<ToolDefinition> definitions = null) : IToolCapable
     {
-        public IReadOnlyList<ToolDefinition> Tools { get; } = new List<ToolDefinition>();
+        public IReadOnlyList<ToolDefinition> Tools { get; } = definitions ?? new List<ToolDefinition>();
         public List<ToolCall> Calls { get; } = new();
         public ToolResult Result { get; set; } = new() { Success = true, Content = "ok" };
         public Action OnExecuted { get; set; }
@@ -415,6 +548,14 @@ public sealed class AgentLoopTests
             Calls.Add(toolCall);
             OnExecuted?.Invoke();
             return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class StaticSkillResolver(string content) : ISkillResolver
+    {
+        public Task<SkillContent> ResolveAsync(string skillName, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new SkillContent { SkillName = skillName, Content = content });
         }
     }
 

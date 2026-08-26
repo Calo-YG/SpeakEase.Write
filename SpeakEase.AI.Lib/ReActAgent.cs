@@ -98,6 +98,7 @@ public sealed class ReActAgent(
                 : new List<ChatMessage>(request.ConversationHistory),
             Temperature = request.Temperature,
             MaxTokens = request.MaxTokens,
+            ContextWindowTokens = request.ContextWindowTokens,
             TopP = request.TopP,
             FrequencyPenalty = request.FrequencyPenalty,
             PresencePenalty = request.PresencePenalty,

@@ -34,6 +34,10 @@ public sealed class AgentRequest
     /// 单次响应最大 Token 数
     /// </summary>
     public int? MaxTokens { get; set; }
+    /// <summary>
+    /// 模型上下文窗口大小。0 表示使用 AgentLoopOptions 的默认值。
+    /// </summary>
+    public int ContextWindowTokens { get; set; }
     public double? TopP { get; set; }
     public double? FrequencyPenalty { get; set; }
     public double? PresencePenalty { get; set; }

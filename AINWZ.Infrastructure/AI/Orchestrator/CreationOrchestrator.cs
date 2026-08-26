@@ -193,12 +193,10 @@ public sealed class CreationOrchestrator(
                 .Where(artifact => artifact is not null)
                 .ToList();
             var systemPrompt = _promptComposer.Compose(agent.BuildPromptProfile());
-            var resolvedMaxTokens = Math.Min(
-                ResolveMaxTokens(
-                    meta.DefaultParameters.MaxTokens,
-                    requestedMaxTokens,
-                    llmContext.MaxOutputTokens),
-                Math.Max(1, llmContext.ContextWindow / 4));
+            var resolvedMaxTokens = ResolveMaxTokens(
+                meta.DefaultParameters.MaxTokens,
+                requestedMaxTokens,
+                llmContext.MaxOutputTokens);
             var fixedRequestTokens = EstimateConservativeTokens(agentHistory)
                 + EstimateConservativeTokens(systemPrompt)
                 + EstimateConservativeTokens(userMessage);
@@ -223,6 +221,7 @@ public sealed class CreationOrchestrator(
                 FrequencyPenalty = meta.DefaultParameters.FrequencyPenalty,
                 PresencePenalty = meta.DefaultParameters.PresencePenalty,
                 MaxTokens = resolvedMaxTokens,
+                ContextWindowTokens = llmContext.ContextWindow,
                 ConversationHistory = agentHistory,
                 WorkId = workId,
                 UserId = sharedContext.UserId,

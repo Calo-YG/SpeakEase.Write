@@ -1,5 +1,10 @@
+using System.Data.Common;
+
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
+
 using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Application.Applications;
 using SpeakEase.Write.Domain.Entities.AI;
@@ -128,6 +133,77 @@ public sealed class CreationSessionManagerTests
     }
 
     [Fact]
+    public async Task RollbackToTurnAsync_RollsBackDatabaseChangesWhenSessionUpdateFails()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var interceptor = new FailSessionUpdateInterceptor();
+        var options = new DbContextOptionsBuilder<SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var db = new SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var manager = CreateManager(db, new FakeMemoryProvider());
+        const string originalAdoptedContent =
+            "[{\"turnNumber\":1,\"content\":\"keep\",\"summary\":\"first\",\"adoptedAt\":\"2026-08-25T10:00:00\"}," +
+            "{\"turnNumber\":2,\"content\":\"remove\",\"summary\":\"second\",\"adoptedAt\":\"2026-08-25T11:00:00\"}]";
+
+        var now = new DateTime(2026, 8, 25, 12, 0, 0);
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "ai_creation_sessions"
+                ("Id", "CreateBy", "CreateAt", "UpdateBy", "UpdateAt", "UserId", "WorkId", "Status",
+                 "TurnCount", "AdoptedContentJson", "StartedAt", "LastActivityAt", "ExpiresAt", "CloseReason", "xmin")
+            VALUES
+                ({"session-rollback"}, {string.Empty}, {now}, {string.Empty}, {now}, {"user-1"}, {"work-rollback"}, {"active"},
+                 {2}, {originalAdoptedContent}, {now}, {now}, {now.AddHours(24)}, {string.Empty}, {1u})
+            """);
+        db.AICreationMessages.AddRange(
+            new AICreationMessageEntity
+            {
+                Id = "rollback-turn-1",
+                SessionId = "session-rollback",
+                TurnNumber = 1,
+                Role = "user",
+                Content = "one"
+            },
+            new AICreationMessageEntity
+            {
+                Id = "rollback-turn-2",
+                SessionId = "session-rollback",
+                TurnNumber = 2,
+                Role = "user",
+                Content = "two"
+            });
+        await db.SaveChangesAsync();
+        interceptor.Arm();
+
+        var exception = await Assert.ThrowsAsync<DbUpdateException>(() =>
+            manager.RollbackToTurnAsync("session-rollback", 1));
+
+        Assert.Same(interceptor.UpdateFailure, exception.InnerException);
+        Assert.True(
+            interceptor.MessageDeleteIntercepted,
+            $"Observed commands:{Environment.NewLine}{string.Join(Environment.NewLine, interceptor.ObservedCommands)}");
+        Assert.True(interceptor.SessionUpdateIntercepted);
+        Assert.True(interceptor.MessageDeleteObservedBeforeSessionUpdate);
+        db.ChangeTracker.Clear();
+        await using var verificationDb = new SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext(options);
+        var persistedSession = await verificationDb.AICreationSessions
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == "session-rollback");
+        var persistedMessages = await verificationDb.AICreationMessages
+            .AsNoTracking()
+            .Where(x => x.SessionId == "session-rollback")
+            .OrderBy(x => x.TurnNumber)
+            .ToListAsync();
+
+        Assert.Equal(2, persistedSession.TurnCount);
+        Assert.Equal(originalAdoptedContent, persistedSession.AdoptedContentJson);
+        Assert.Equal(new[] { 1, 2 }, persistedMessages.Select(x => x.TurnNumber));
+    }
+
+    [Fact]
     public async Task RollbackToTurnAsync_DoesNotFailWhenMemoryCleanupFails()
     {
         await using var db = TestDb.Create();
@@ -178,6 +254,70 @@ public sealed class CreationSessionManagerTests
         {
             Requests.Add(request);
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FailSessionUpdateInterceptor : DbCommandInterceptor
+    {
+        private bool _armed;
+
+        public InvalidOperationException UpdateFailure { get; } =
+            new("Simulated creation session update failure.");
+
+        public bool MessageDeleteIntercepted { get; private set; }
+
+        public bool SessionUpdateIntercepted { get; private set; }
+
+        public bool MessageDeleteObservedBeforeSessionUpdate { get; private set; }
+
+        public List<string> ObservedCommands { get; } = new();
+
+        public void Arm()
+        {
+            _armed = true;
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            ObserveCommand(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            ObserveCommand(command);
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void ObserveCommand(DbCommand command)
+        {
+            if (!_armed)
+                return;
+
+            ObservedCommands.Add(command.CommandText);
+
+            var commandText = command.CommandText.TrimStart();
+            if (commandText.StartsWith("DELETE", StringComparison.OrdinalIgnoreCase) &&
+                command.CommandText.Contains("ai_creation_messages", StringComparison.OrdinalIgnoreCase))
+            {
+                MessageDeleteIntercepted = true;
+            }
+
+            if (commandText.StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase) &&
+                command.CommandText.Contains("ai_creation_sessions", StringComparison.OrdinalIgnoreCase))
+            {
+                SessionUpdateIntercepted = true;
+                MessageDeleteObservedBeforeSessionUpdate = MessageDeleteIntercepted;
+                throw UpdateFailure;
+            }
         }
     }
 }

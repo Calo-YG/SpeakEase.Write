@@ -338,14 +338,19 @@ public class CreationSessionManager(
 
         var adopted = DeserializeAdopted(session.AdoptedContentJson);
         adopted.RemoveAll(a => a.TurnNumber > targetTurn);
-        session.AdoptedContentJson = JsonHelper.Serialize(adopted);
 
-        await DeleteMessagesAfterTurnAsync(sessionId, targetTurn);
+        await using (var transaction = await db.Database.BeginTransactionAsync())
+        {
+            await DeleteMessagesAfterTurnAsync(sessionId, targetTurn);
 
-        session.TurnCount = targetTurn;
-        session.LastActivityAt = DateTime.Now;
-        session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
-        await db.SaveChangesAsync();
+            session.AdoptedContentJson = JsonHelper.Serialize(adopted);
+            session.TurnCount = targetTurn;
+            session.LastActivityAt = DateTime.Now;
+            session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
+            await db.SaveChangesAsync();
+            await transaction.CommitAsync();
+        }
+
         try
         {
             // 回滚允许版本下降，先删除旧快照/缓存，再根据剩余消息重建。

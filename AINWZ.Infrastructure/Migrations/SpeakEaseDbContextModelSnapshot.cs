@@ -869,7 +869,8 @@ namespace SpeakEase.Write.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "WorkId", "SessionId", "SnapshotType");
+                    b.HasIndex("UserId", "WorkId", "SessionId", "SnapshotType")
+                        .IsUnique();
 
                     b.ToTable("memory_snapshots", (string)null);
                 });

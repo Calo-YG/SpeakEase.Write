@@ -207,6 +207,7 @@ public sealed class HybridMemoryProvider(
                 sessionId,
                 existingTurn,
                 effectiveTurnNumber);
+            await RefreshLatestSnapshotCacheAsync(userId, workId, sessionId, cancellationToken);
             return;
         }
 
@@ -441,6 +442,7 @@ public sealed class HybridMemoryProvider(
                 return;
         }
 
+        await InvalidateSessionAsync(userId, workId, sessionId, cancellationToken);
         throw new DbUpdateConcurrencyException(
             $"Session memory cache refresh could not observe a stable snapshot: SessionId={sessionId}.");
     }

@@ -366,6 +366,75 @@ public sealed class SessionMemoryProviderTests
     }
 
     [Fact]
+    public async Task RefreshAfterTurnAsync_RepairsStaleCacheWhenDatabaseVersionIsAlreadyNewer()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-stale-cache-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var db = await CreateSqliteDbAsync(databasePath);
+            await SeedSnapshotRaceAsync(db, "stale-cache-session");
+            await db.MemorySnapshots.ExecuteUpdateAsync(setters => setters
+                .SetProperty(x => x.VersionId, "2")
+                .SetProperty(x => x.Summary, "database version two"));
+            var cache = new MutableSnapshotCache
+            {
+                Snapshot = new SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot
+                {
+                    SnapshotId = "snapshot-stale-cache-session",
+                    TurnNumber = 1,
+                    Summary = "stale cache"
+                }
+            };
+            var provider = CreateProvider(db, cache);
+
+            await provider.RefreshAfterTurnAsync("user-1", "work-1", "stale-cache-session", 1);
+            var loaded = await provider.LoadSessionMemoryAsync(
+                "user-1", "work-1", "stale-cache-session");
+
+            Assert.Equal(2, loaded.TurnNumber);
+            Assert.Equal("database version two", loaded.Summary);
+        }
+        finally
+        {
+            TryDelete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshAfterTurnAsync_InvalidatesCacheWhenVersionNeverStabilizes()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-unstable-cache-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var db = await CreateSqliteDbAsync(databasePath);
+            await SeedSnapshotRaceAsync(db, "unstable-cache-session");
+            var cache = new MutableSnapshotCache();
+            cache.AfterRefreshAsync = async () =>
+            {
+                await using var mutationDb = await CreateSqliteDbAsync(databasePath);
+                var currentVersion = await mutationDb.MemorySnapshots
+                    .AsNoTracking()
+                    .Select(x => x.VersionId)
+                    .SingleAsync();
+                var nextVersion = (int.Parse(currentVersion) + 1).ToString();
+                await mutationDb.MemorySnapshots.ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.VersionId, nextVersion));
+            };
+            var provider = CreateProvider(db, cache);
+
+            await Assert.ThrowsAsync<DbUpdateConcurrencyException>(() =>
+                provider.RefreshAfterTurnAsync("user-1", "work-1", "unstable-cache-session", 1));
+
+            Assert.True(cache.WasRemoved);
+            Assert.Null(cache.Snapshot);
+        }
+        finally
+        {
+            TryDelete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task RefreshAfterTurnAsync_ConcurrentInitialInsertKeepsSingleLatestSnapshot()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-insert-{Guid.NewGuid():N}.db");
@@ -622,6 +691,46 @@ public sealed class SessionMemoryProviderTests
         public Task RemoveAsync(string key)
         {
             Snapshot = null;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class MutableSnapshotCache : IMultiCacheService
+    {
+        public SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot Snapshot { get; set; }
+        public Func<Task> AfterRefreshAsync { get; set; }
+        public bool WasRemoved { get; private set; }
+
+        public async Task<TCache> GetOrSetAsync<TCache>(
+            string key,
+            Func<Task<TCache>> func,
+            Action error = null,
+            TimeSpan? memoryExpiry = null,
+            TimeSpan? redisExpiry = null,
+            int jitterSeconds = 30)
+        {
+            if (Snapshot is TCache snapshot)
+                return snapshot;
+
+            return await func();
+        }
+
+        public async Task RefreshAsync<TCache>(
+            string key,
+            TCache cache,
+            TimeSpan? memoryExpiry = null,
+            TimeSpan? redisExpiry = null,
+            int jitterSeconds = 30)
+        {
+            Snapshot = cache as SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
+            if (AfterRefreshAsync is not null)
+                await AfterRefreshAsync();
+        }
+
+        public Task RemoveAsync(string key)
+        {
+            Snapshot = null;
+            WasRemoved = true;
             return Task.CompletedTask;
         }
     }

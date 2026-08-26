@@ -34,6 +34,29 @@ public sealed class CreationOrchestratorPerformanceTests
         Assert.StartsWith("request\n\n[Previous agent result]\n", second.CapturedRequest.UserMessage);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_PassesAllDependencyArtifactsToDagStep()
+    {
+        var first = new PipelineAgent("first", "artifact-from-first");
+        var second = new PipelineAgent("second", "artifact-from-second");
+        var third = new PipelineAgent("third", "done");
+        var orchestrator = new CreationOrchestrator(
+            new CreationRouter(NullLogger<CreationRouter>.Instance),
+            new TestOpenAIContext(),
+            new DagRouterLlm(),
+            new StaticContextBuilder(),
+            new[] { first, second, third },
+            NullLogger<CreationOrchestrator>.Instance);
+
+        await foreach (var _ in orchestrator.ExecuteAsync("work-1", "session-1", "request"))
+        {
+        }
+
+        Assert.NotNull(third.CapturedRequest);
+        Assert.Contains("artifact-from-first", third.CapturedRequest.UserMessage);
+        Assert.Contains("artifact-from-second", third.CapturedRequest.UserMessage);
+    }
+
     private sealed class StaticContextBuilder : ICreationAgentContext
     {
         public Task<AgentContext> BuildContextAsync(
@@ -61,6 +84,33 @@ public sealed class CreationOrchestratorPerformanceTests
             return Task.FromResult(new LLMTurnResult
             {
                 Content = "{\"pipeline\":[\"first\",\"second\"],\"reason\":\"test\"}",
+                Model = context.Model,
+                Success = true
+            });
+        }
+
+        public async IAsyncEnumerable<LLMTurnChunk> StreamAsync(
+            LLMTurnContext context,
+            List<ChatMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.CompletedTask;
+            yield break;
+        }
+    }
+
+    private sealed class DagRouterLlm : IChatCompatible
+    {
+        public Task<LLMTurnResult> ChatAsync(
+            LLMTurnContext context,
+            List<ChatMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new LLMTurnResult
+            {
+                Content = "{\"agent\":\"third\",\"steps\":[{\"id\":\"first-step\",\"agent\":\"first\",\"dependsOn\":[]},{\"id\":\"second-step\",\"agent\":\"second\",\"dependsOn\":[]},{\"id\":\"third-step\",\"agent\":\"third\",\"dependsOn\":[\"first-step\",\"second-step\"]}],\"reason\":\"test\"}",
                 Model = context.Model,
                 Success = true
             });

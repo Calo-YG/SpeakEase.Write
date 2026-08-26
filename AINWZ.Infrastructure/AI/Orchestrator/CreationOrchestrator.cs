@@ -144,8 +144,8 @@ public sealed class CreationOrchestrator(
             llmContext.ContextWindow,
             cancellationToken);
 
-        // 步骤4：按管线顺序逐个执行 Agent，前一个 Agent 的输出作为后续 Agent 的上下文
-        AgentArtifact previousArtifact = null;
+        // 步骤4：按计划顺序逐个执行 Agent，并按 DependsOn 注入前置 Artifact
+        var artifactsByStep = new Dictionary<string, AgentArtifact>(StringComparer.OrdinalIgnoreCase);
         var executedAgentCount = 0;
         for (var i = 0; i < pipeline.Count; i++)
         {
@@ -187,13 +187,12 @@ public sealed class CreationOrchestrator(
                 })
             };
 
-            // 管线模式下，将前一个 Agent 的结果附带到消息中
-            var previousContent = previousArtifact?.Content ?? string.Empty;
-            if (previousContent.Length > 12_000)
-                previousContent = previousContent[..12_000];
-            var chainMessage = previousArtifact is not null && !string.IsNullOrWhiteSpace(previousContent)
-                ? $"{userMessage}\n\n[Previous agent result]\n{previousContent}"
-                : userMessage;
+            // 仅注入当前 Step 声明的依赖，避免无关 Agent 输出污染上下文。
+            var dependencyArtifacts = planStep.DependsOn
+                .Select(dependencyId => artifactsByStep.TryGetValue(dependencyId, out var artifact) ? artifact : null)
+                .Where(artifact => artifact is not null)
+                .ToList();
+            var chainMessage = BuildDependencyMessage(userMessage, dependencyArtifacts);
 
             var request = new AgentRequest
             {
@@ -267,7 +266,7 @@ public sealed class CreationOrchestrator(
             var artifactContent = !string.IsNullOrWhiteSpace(finalResponse?.Content)
                 ? finalResponse.Content
                 : currentResult.ToString();
-            previousArtifact = new AgentArtifact
+            var artifact = new AgentArtifact
             {
                 Id = $"{runtimeRequest.RunId}:{planStep.Id}",
                 RunId = runtimeRequest.RunId,
@@ -277,15 +276,16 @@ public sealed class CreationOrchestrator(
                 Content = artifactContent,
                 EstimatedTokens = Math.Max(1, artifactContent.Length / 4)
             };
+            artifactsByStep[planStep.Id] = artifact;
             if (runStore is not null && !string.IsNullOrWhiteSpace(runtimeRequest.RunId))
             {
                 await runStore.SaveArtifactAsync(
                     runtimeRequest.RunId,
                     planStep.Id,
-                    previousArtifact.ContentType,
-                    previousArtifact.Summary,
-                    previousArtifact.Content,
-                    previousArtifact.EstimatedTokens,
+                    artifact.ContentType,
+                    artifact.Summary,
+                    artifact.Content,
+                    artifact.EstimatedTokens,
                     CancellationToken.None);
             }
         }
@@ -386,6 +386,44 @@ public sealed class CreationOrchestrator(
 
         return candidates.Count == 0 ? 2048 : candidates.Min();
     }
+
+    private static string BuildDependencyMessage(string userMessage, IReadOnlyList<AgentArtifact> dependencies)
+    {
+        if (dependencies.Count == 0)
+            return userMessage;
+
+        if (dependencies.Count == 1)
+        {
+            var content = TruncateArtifactContent(dependencies[0].Content);
+            return string.IsNullOrWhiteSpace(content)
+                ? userMessage
+                : $"{userMessage}\n\n[Previous agent result]\n{content}";
+        }
+
+        var builder = new System.Text.StringBuilder(userMessage);
+        foreach (var dependency in dependencies)
+        {
+            var content = TruncateArtifactContent(dependency.Content);
+            if (string.IsNullOrWhiteSpace(content))
+                continue;
+
+            builder.Append("\n\n[Dependency artifact: ")
+                .Append(dependency.StepId)
+                .Append("]\n")
+                .Append(content);
+        }
+
+        return builder.ToString();
+    }
+
+    private static string TruncateArtifactContent(string content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return string.Empty;
+
+        return content.Length > 12_000 ? content[..12_000] : content;
+    }
+
     // 从共享管线上下文派生 Agent 专属会话历史：
     // - 不需要项目记忆的 Agent 移除 [Session Memory] 系统消息
     // - 需要过滤历史的 Agent 仅保留最近 8 条非系统消息

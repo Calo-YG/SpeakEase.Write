@@ -365,6 +365,8 @@ public sealed class AgentLoopTests
     [Fact]
     public async Task RunAsync_RejectsRequestWhenMinimumContextCannotFit()
     {
+        var systemPrompt = new string('系', 200);
+        var userMessage = new string('用', 200);
         var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "unexpected" });
         var chunks = await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
         {
@@ -374,14 +376,17 @@ public sealed class AgentLoopTests
             {
                 ContextWindowTokens = 100,
                 MaxTokens = 20,
-                SystemPrompt = new string('系', 200),
-                UserMessage = new string('用', 200)
+                SystemPrompt = systemPrompt,
+                UserMessage = userMessage
             }
         }));
 
         Assert.Empty(llm.Requests);
         Assert.Contains(chunks, x => x.Type == "error");
-        Assert.Equal("context_budget_exceeded", chunks.Single(x => x.Type == "done").FinalResponse.StopReason);
+        var response = chunks.Single(x => x.Type == "done").FinalResponse;
+        Assert.Equal("context_budget_exceeded", response.StopReason);
+        Assert.Contains(response.ConversationHistory, x => x is SystemMessage system && system.Content == systemPrompt);
+        Assert.Contains(response.ConversationHistory, x => x is UserMessage user && Equals(user.Content, userMessage));
     }
 
     [Fact]
@@ -483,6 +488,124 @@ public sealed class AgentLoopTests
         var sent = Assert.Single(llm.Requests);
         Assert.DoesNotContain(sent, x => GetMessageText(x).Contains("multipart-"));
         Assert.Contains(sent, x => GetMessageText(x) == "recent-user");
+    }
+
+    [Fact]
+    public async Task RunAsync_CountsCompletePolymorphicMessagePayloadWhenTrimmingHistory()
+    {
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "done" });
+        await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = new RecordingToolCapable(),
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 500,
+                MaxTokens = 50,
+                SystemPrompt = "system",
+                UserMessage = "current",
+                ConversationHistory = new List<ChatMessage>
+                {
+                    new UserMessage { Content = "hidden-fields-turn", Name = new string('n', 180) },
+                    new AssistantMessage
+                    {
+                        Content = "hidden-assistant",
+                        Name = new string('a', 180),
+                        Refusal = new string('r', 180)
+                    },
+                    new ToolMessage { ToolCallId = new string('c', 180), Content = "hidden-tool" },
+                    ChatMessage.User("recent-user"),
+                    ChatMessage.Assistant("recent-assistant")
+                }
+            }
+        }));
+
+        var sent = Assert.Single(llm.Requests);
+        Assert.DoesNotContain(sent, x => GetMessageText(x).Contains("hidden-"));
+        Assert.Contains(sent, x => GetMessageText(x) == "recent-user");
+    }
+
+    [Fact]
+    public async Task RunAsync_ReservesVisualBudgetForImageContentPart()
+    {
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "done" });
+        await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = new RecordingToolCapable(),
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 2_000,
+                MaxTokens = 100,
+                SystemPrompt = "system",
+                UserMessage = "current",
+                ConversationHistory = new List<ChatMessage>
+                {
+                    new UserMessage
+                    {
+                        Content = new List<ContentPart>
+                        {
+                            new()
+                            {
+                                Type = "image_url",
+                                ImageUrl = new ImageUrlContent { Url = "https://example.test/image.png", Detail = "high" }
+                            }
+                        }
+                    },
+                    ChatMessage.Assistant("image answer"),
+                    ChatMessage.User("recent-user"),
+                    ChatMessage.Assistant("recent-assistant")
+                }
+            }
+        }));
+
+        var sent = Assert.Single(llm.Requests);
+        Assert.DoesNotContain(sent, x => x is UserMessage user && user.Content is IEnumerable<ContentPart>);
+        Assert.Contains(sent, x => GetMessageText(x) == "recent-user");
+    }
+
+    [Fact]
+    public async Task RunAsync_RechecksBudgetAfterToolResultWithoutSplittingActivePair()
+    {
+        var toolCall = new ToolCall
+        {
+            Id = "call-budget",
+            Function = new FunctionCallDetail { Name = "lookup", Arguments = "{}" }
+        };
+        var llm = new ScriptedChatCompatible(
+            _ => new LLMTurnResult { Success = true, ToolCalls = new List<ToolCall> { toolCall } },
+            _ => new LLMTurnResult { Success = true, Content = "unexpected" });
+        var tools = new RecordingToolCapable
+        {
+            Result = new ToolResult
+            {
+                Success = true,
+                ToolCallId = toolCall.Id,
+                ToolName = "lookup",
+                Content = new string('结', 300)
+            }
+        };
+        var chunks = await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = tools,
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 800,
+                MaxTokens = 100,
+                SystemPrompt = "system",
+                UserMessage = "request",
+                MaxIterations = 3
+            }
+        }));
+
+        Assert.Single(llm.Requests);
+        var response = chunks.Single(x => x.Type == "done").FinalResponse;
+        Assert.Equal("context_budget_exceeded", response.StopReason);
+        Assert.Contains(response.ConversationHistory, x =>
+            x is AssistantMessage assistant && assistant.ToolCalls?.Any(call => call.Id == toolCall.Id) == true);
+        Assert.Contains(response.ConversationHistory, x =>
+            x is ToolMessage tool && tool.ToolCallId == toolCall.Id);
     }
 
     private static string GetMessageText(ChatMessage message) => message switch

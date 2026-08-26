@@ -48,12 +48,6 @@ public sealed class AgentLoop : IAgentLoop
             : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
         var runtimeToken = linkedCts?.Token ?? cancellationToken;
         var messages = BuildMessages(request);
-        var primarySystemMessage = !string.IsNullOrWhiteSpace(request.SystemPrompt)
-            ? messages.OfType<SystemMessage>().FirstOrDefault()
-            : null;
-        var currentUserMessage = !string.IsNullOrWhiteSpace(request.UserMessage)
-            ? messages.LastOrDefault() as UserMessage
-            : null;
         var historyGroups = BuildHistoryGroups(request.ConversationHistory);
         SystemMessage resolvedSkillMessage = null;
         if (loopRequest.SkillResolver is not null && !string.IsNullOrWhiteSpace(request.SkillName))
@@ -96,9 +90,8 @@ public sealed class AgentLoop : IAgentLoop
                     exposedTools,
                     contextWindowTokens,
                     reservedOutputTokens,
+                    Math.Max(0, options.ImageContentTokenBudget),
                     historyGroups,
-                    primarySystemMessage,
-                    currentUserMessage,
                     ref resolvedSkillMessage))
             {
                 yield return Mark(request, ref sequence, new AgentStreamChunk
@@ -386,16 +379,15 @@ public sealed class AgentLoop : IAgentLoop
         IReadOnlyList<ToolDefinition> tools,
         int contextWindowTokens,
         int reservedOutputTokens,
+        int imageContentTokenBudget,
         List<List<ChatMessage>> historyGroups,
-        SystemMessage primarySystemMessage,
-        UserMessage currentUserMessage,
         ref SystemMessage resolvedSkillMessage)
     {
         if (contextWindowTokens <= 0 || reservedOutputTokens < 0 || reservedOutputTokens >= contextWindowTokens)
             return false;
 
         var inputBudget = contextWindowTokens - reservedOutputTokens;
-        while (EstimateRequestTokens(messages, tools) > inputBudget && historyGroups.Count > 0)
+        while (EstimateRequestTokens(messages, tools, imageContentTokenBudget) > inputBudget && historyGroups.Count > 0)
         {
             var oldestTurn = historyGroups[0];
             historyGroups.RemoveAt(0);
@@ -403,90 +395,35 @@ public sealed class AgentLoop : IAgentLoop
                 messages.Remove(message);
         }
 
-        if (EstimateRequestTokens(messages, tools) > inputBudget && resolvedSkillMessage is not null)
+        if (EstimateRequestTokens(messages, tools, imageContentTokenBudget) > inputBudget && resolvedSkillMessage is not null)
         {
             messages.Remove(resolvedSkillMessage);
             resolvedSkillMessage = null;
         }
 
-        if (EstimateRequestTokens(messages, tools) > inputBudget)
-        {
-            TruncateMessageToBudget(primarySystemMessage, messages, tools, inputBudget);
-            TruncateMessageToBudget(currentUserMessage, messages, tools, inputBudget);
-        }
-
-        return EstimateRequestTokens(messages, tools) <= inputBudget;
-    }
-
-    private static void TruncateMessageToBudget(
-        ChatMessage message,
-        IReadOnlyList<ChatMessage> messages,
-        IReadOnlyList<ToolDefinition> tools,
-        int inputBudget)
-    {
-        const int minimumTextCharacters = 32;
-        var text = ExtractMessageText(message);
-        if (message is null || text.Length <= minimumTextCharacters)
-            return;
-
-        var excessTokens = EstimateRequestTokens(messages, tools) - inputBudget;
-        if (excessTokens <= 0)
-            return;
-
-        var charactersToRemove = (int)Math.Ceiling(excessTokens / 1.5);
-        var targetLength = Math.Max(minimumTextCharacters, text.Length - charactersToRemove);
-        SetMessageText(message, text[..targetLength]);
+        return EstimateRequestTokens(messages, tools, imageContentTokenBudget) <= inputBudget;
     }
 
     private static int EstimateRequestTokens(
         IReadOnlyList<ChatMessage> messages,
-        IReadOnlyList<ToolDefinition> tools)
+        IReadOnlyList<ToolDefinition> tools,
+        int imageContentTokenBudget)
     {
-        var total = messages.Sum(EstimateMessageTokens);
+        var total = messages.Sum(message => EstimateMessageTokens(message, imageContentTokenBudget));
         if (tools is { Count: > 0 })
-            total += 4 + EstimateTextTokens(JsonSerializer.Serialize(tools));
+            total += 4 + JsonSerializer.SerializeToUtf8Bytes(tools).Length;
         return total;
     }
 
-    private static int EstimateMessageTokens(ChatMessage message)
+    private static int EstimateMessageTokens(ChatMessage message, int imageContentTokenBudget)
     {
         const int messageFramingTokens = 4;
-        var total = messageFramingTokens + EstimateTextTokens(ExtractMessageText(message));
-        if (message is AssistantMessage { ToolCalls.Count: > 0 } assistant)
-            total += EstimateTextTokens(JsonSerializer.Serialize(assistant.ToolCalls));
-        return total;
-    }
-
-    private static int EstimateTextTokens(string text)
-    {
-        return (int)Math.Ceiling((text?.Length ?? 0) * 1.5);
-    }
-
-    private static string ExtractMessageText(ChatMessage message)
-    {
-        return message switch
-        {
-            SystemMessage system => system.Content ?? string.Empty,
-            UserMessage { Content: string text } => text,
-            UserMessage { Content: IEnumerable<ContentPart> parts } => string.Concat(parts.Select(part =>
-                (part.Text ?? string.Empty) + (part.ImageUrl?.Url ?? string.Empty))),
-            AssistantMessage assistant => (assistant.Content ?? string.Empty) + (assistant.ReasoningContent ?? string.Empty),
-            ToolMessage tool => tool.Content ?? string.Empty,
-            _ => string.Empty
-        };
-    }
-
-    private static void SetMessageText(ChatMessage message, string text)
-    {
-        switch (message)
-        {
-            case SystemMessage system:
-                system.Content = text;
-                break;
-            case UserMessage user:
-                user.Content = text;
-                break;
-        }
+        var payloadBytes = JsonSerializer.SerializeToUtf8Bytes(message, typeof(ChatMessage)).Length;
+        var imageCount = message is UserMessage { Content: IEnumerable<ContentPart> parts }
+            ? parts.Count(part => part.ImageUrl is not null ||
+                                  string.Equals(part.Type, "image_url", StringComparison.OrdinalIgnoreCase))
+            : 0;
+        return messageFramingTokens + payloadBytes + imageCount * imageContentTokenBudget;
     }
 
     private static AgentStreamChunk Mark(AgentRequest request, ref long sequence, AgentStreamChunk chunk)

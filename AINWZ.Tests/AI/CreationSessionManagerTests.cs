@@ -187,7 +187,13 @@ public sealed class CreationSessionManagerTests
             $"Observed commands:{Environment.NewLine}{string.Join(Environment.NewLine, interceptor.ObservedCommands)}");
         Assert.True(interceptor.SessionUpdateIntercepted);
         Assert.True(interceptor.MessageDeleteObservedBeforeSessionUpdate);
-        db.ChangeTracker.Clear();
+        var sessionStateAfterRollback = db.ChangeTracker
+            .Entries<AICreationSessionEntity>()
+            .SingleOrDefault()
+            ?.State;
+
+        await db.SaveChangesAsync();
+
         await using var verificationDb = new SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext(options);
         var persistedSession = await verificationDb.AICreationSessions
             .AsNoTracking()
@@ -198,9 +204,11 @@ public sealed class CreationSessionManagerTests
             .OrderBy(x => x.TurnNumber)
             .ToListAsync();
 
+        Assert.Equal(1, interceptor.InjectedFailureCount);
         Assert.Equal(2, persistedSession.TurnCount);
         Assert.Equal(originalAdoptedContent, persistedSession.AdoptedContentJson);
         Assert.Equal(new[] { 1, 2 }, persistedMessages.Select(x => x.TurnNumber));
+        Assert.NotEqual(EntityState.Modified, sessionStateAfterRollback);
     }
 
     [Fact]
@@ -260,6 +268,7 @@ public sealed class CreationSessionManagerTests
     private sealed class FailSessionUpdateInterceptor : DbCommandInterceptor
     {
         private bool _armed;
+        private bool _failureInjected;
 
         public InvalidOperationException UpdateFailure { get; } =
             new("Simulated creation session update failure.");
@@ -269,6 +278,8 @@ public sealed class CreationSessionManagerTests
         public bool SessionUpdateIntercepted { get; private set; }
 
         public bool MessageDeleteObservedBeforeSessionUpdate { get; private set; }
+
+        public int InjectedFailureCount { get; private set; }
 
         public List<string> ObservedCommands { get; } = new();
 
@@ -316,6 +327,11 @@ public sealed class CreationSessionManagerTests
             {
                 SessionUpdateIntercepted = true;
                 MessageDeleteObservedBeforeSessionUpdate = MessageDeleteIntercepted;
+                if (_failureInjected)
+                    return;
+
+                _failureInjected = true;
+                InjectedFailureCount++;
                 throw UpdateFailure;
             }
         }

@@ -341,14 +341,38 @@ public class CreationSessionManager(
 
         await using (var transaction = await db.Database.BeginTransactionAsync())
         {
-            await DeleteMessagesAfterTurnAsync(sessionId, targetTurn);
+            try
+            {
+                await DeleteMessagesAfterTurnAsync(sessionId, targetTurn);
 
-            session.AdoptedContentJson = JsonHelper.Serialize(adopted);
-            session.TurnCount = targetTurn;
-            session.LastActivityAt = DateTime.Now;
-            session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
-            await db.SaveChangesAsync();
-            await transaction.CommitAsync();
+                session.AdoptedContentJson = JsonHelper.Serialize(adopted);
+                session.TurnCount = targetTurn;
+                session.LastActivityAt = DateTime.Now;
+                session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
+                await db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackException)
+                {
+                    logger.LogWarning(
+                        rollbackException,
+                        "Failed to roll back creation session transaction: SessionId={SessionId}, TargetTurn={TargetTurn}",
+                        sessionId,
+                        targetTurn);
+                }
+                finally
+                {
+                    db.AICreationSessions.Attach(session).State = EntityState.Detached;
+                }
+
+                throw;
+            }
         }
 
         try

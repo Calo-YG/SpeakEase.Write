@@ -70,6 +70,10 @@ public sealed class AgentRunStore(
 
         if (existing.Status is "failed" or "cancelled" or "timed_out")
         {
+            var lastEventSequence = await db.AgentRunEvents.AsNoTracking()
+                .Where(x => x.RunId == existing.Id)
+                .Select(x => (long?)x.Sequence)
+                .MaxAsync(cancellationToken) ?? 0;
             var now = DateTime.Now;
             int recovered;
             if (db.Database.IsRelational())
@@ -118,10 +122,6 @@ public sealed class AgentRunStore(
 
             if (recovered == 1)
             {
-                var lastEventSequence = await db.AgentRunEvents.AsNoTracking()
-                    .Where(x => x.RunId == existing.Id)
-                    .Select(x => (long?)x.Sequence)
-                    .MaxAsync(cancellationToken) ?? 0;
                 return new AgentRunStartResult
                 {
                     RunId = existing.Id,

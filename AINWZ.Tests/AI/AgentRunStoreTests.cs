@@ -1,5 +1,8 @@
+using System.Data.Common;
+
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.AI.Lib.Runtime;
@@ -183,6 +186,41 @@ public sealed class AgentRunStoreTests
     }
 
     [Fact]
+    public async Task StartAsync_LeavesRunTerminalWhenLastEventSequenceQueryIsCancelled()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var interceptor = new CancelMaxQueryInterceptor();
+        var options = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+            .UseSqlite(connection)
+            .AddInterceptors(interceptor)
+            .Options;
+        await using var db = new SpeakEaseDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        var first = await store.StartAsync("work-cancel", "session-cancel", "idem-cancel", "client-cancel");
+        await store.CompleteAsync(first.RunId, new AgentResponse
+        {
+            Content = "partial answer",
+            StopReason = "failed",
+            Model = "test-model"
+        });
+        await store.AppendEventAsync(first.RunId, "step-old", 1, "content", new { Content = "old" });
+        interceptor.CancelNextMaxQuery();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() =>
+            store.StartAsync("work-cancel", "session-cancel", "idem-cancel", "client-cancel"));
+
+        Assert.True(interceptor.MaxQueryIntercepted);
+        await using var verificationDb = new SpeakEaseDbContext(options);
+        var persisted = await verificationDb.AgentRuns.AsNoTracking().SingleAsync();
+        Assert.Equal("failed", persisted.Status);
+    }
+
+    [Fact]
     public async Task ToolJournal_ReplaysCompletedCallAndDoesNotCreateDuplicateLease()
     {
         await using var db = TestDb.Create();
@@ -310,6 +348,34 @@ public sealed class AgentRunStoreTests
                 throw InsertFailure;
 
             return base.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private sealed class CancelMaxQueryInterceptor : DbCommandInterceptor
+    {
+        private bool _cancelNextMaxQuery;
+
+        public bool MaxQueryIntercepted { get; private set; }
+
+        public void CancelNextMaxQuery()
+        {
+            _cancelNextMaxQuery = true;
+        }
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (_cancelNextMaxQuery && command.CommandText.Contains("MAX(", StringComparison.OrdinalIgnoreCase))
+            {
+                _cancelNextMaxQuery = false;
+                MaxQueryIntercepted = true;
+                throw new OperationCanceledException("Simulated MAX query cancellation.", cancellationToken);
+            }
+
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
         }
     }
 }

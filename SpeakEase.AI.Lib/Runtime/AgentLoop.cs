@@ -180,15 +180,20 @@ public sealed class AgentLoop : IAgentLoop
 
                         if (loopRequest.Journal is not null)
                         {
+                            // Tool side effects are complete, so journal persistence gets an independent
+                            // bounded window instead of inheriting client or run cancellation.
+                            using var journalCompletionCts = new CancellationTokenSource(
+                                options.ToolJournalCompletionTimeout);
                             await loopRequest.Journal.CompleteAsync(
                                 request.RunId,
                                 request.StepId,
                                 toolCall,
                                 toolResult,
-                                CancellationToken.None);
+                                journalCompletionCts.Token);
                         }
                     }
 
+                    runtimeToken.ThrowIfCancellationRequested();
                     toolResults.Add(toolResult);
                     yield return Mark(request, ref sequence, new AgentStreamChunk
                     {

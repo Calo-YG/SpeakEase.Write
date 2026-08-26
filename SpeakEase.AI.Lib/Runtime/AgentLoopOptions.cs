@@ -10,5 +10,6 @@ public sealed class AgentLoopOptions
     public int MaxOutputTokens { get; init; } = 2048;
     public int ContextWindowTokens { get; init; } = 32_000;
     public TimeSpan RunTimeout { get; init; } = TimeSpan.FromMinutes(5);
+    public TimeSpan ToolJournalCompletionTimeout { get; init; } = TimeSpan.FromSeconds(5);
     public bool AllowParallelReadOnlyTools { get; init; }
 }

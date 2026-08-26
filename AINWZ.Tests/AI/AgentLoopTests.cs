@@ -196,6 +196,7 @@ public sealed class AgentLoopTests
     public async Task RunAsync_CompletesToolJournalBeforePropagatingCancellation()
     {
         using var cancellation = new CancellationTokenSource();
+        var chunks = new List<AgentStreamChunk>();
         var events = new List<string>();
         var toolCall = new ToolCall
         {
@@ -213,23 +214,114 @@ public sealed class AgentLoopTests
         var journal = new RecordingToolExecutionJournal(events);
         var loop = new AgentLoop();
 
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await foreach (var chunk in loop.RunAsync(
+                new AgentLoopRequest
+                {
+                    Llm = new ScriptedChatCompatible(_ => new LLMTurnResult
+                    {
+                        Success = true,
+                        ToolCalls = new List<ToolCall> { toolCall }
+                    }),
+                    Tools = tools,
+                    Journal = journal,
+                    Request = new AgentRequest { UserMessage = "save", MaxIterations = 1 }
+                },
+                cancellation.Token))
+            {
+                chunks.Add(chunk);
+            }
+        });
+
+        Assert.Equal(new[] { "tool_completed", "journal_completed" }, events);
+        Assert.Equal(1, journal.CompleteCount);
+        Assert.False(journal.CompleteTokenWasCanceled);
+        Assert.DoesNotContain(chunks, chunk => chunk.Type is "tool_result" or "done");
+    }
+
+    [Fact]
+    public async Task RunAsync_DoesNotExecuteNextToolAfterCancellationFollowingFirstCompletion()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var events = new List<string>();
+        var firstToolCall = new ToolCall
+        {
+            Id = "call-save-1",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":1}" }
+        };
+        var secondToolCall = new ToolCall
+        {
+            Id = "call-save-2",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":2}" }
+        };
+        var executionCount = 0;
+        var tools = new RecordingToolCapable
+        {
+            OnExecuted = () =>
+            {
+                executionCount++;
+                if (executionCount == 1)
+                    cancellation.Cancel();
+            }
+        };
+        var journal = new RecordingToolExecutionJournal(events);
+        var loop = new AgentLoop();
+
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => CollectAsync(loop.RunAsync(
             new AgentLoopRequest
             {
                 Llm = new ScriptedChatCompatible(_ => new LLMTurnResult
                 {
                     Success = true,
-                    ToolCalls = new List<ToolCall> { toolCall }
+                    ToolCalls = new List<ToolCall> { firstToolCall, secondToolCall }
                 }),
                 Tools = tools,
                 Journal = journal,
-                Request = new AgentRequest { UserMessage = "save", MaxIterations = 2 }
+                Request = new AgentRequest { UserMessage = "save", MaxIterations = 1 }
             },
             cancellation.Token)));
 
-        Assert.Equal(new[] { "tool_completed", "journal_completed" }, events);
+        var executedToolCall = Assert.Single(tools.Calls);
+        Assert.Equal(firstToolCall.Id, executedToolCall.Id);
         Assert.Equal(1, journal.CompleteCount);
-        Assert.False(journal.CompleteTokenWasCanceled);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancelsBlockedToolJournalAfterCompletionTimeout()
+    {
+        var toolCall = new ToolCall
+        {
+            Id = "call-blocked-journal",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{}" }
+        };
+        var journal = new BlockingToolExecutionJournal();
+        var loop = new AgentLoop();
+        var runTask = CollectAsync(loop.RunAsync(new AgentLoopRequest
+        {
+            Llm = new ScriptedChatCompatible(_ => new LLMTurnResult
+            {
+                Success = true,
+                ToolCalls = new List<ToolCall> { toolCall }
+            }),
+            Tools = new RecordingToolCapable(),
+            Journal = journal,
+            Options = new AgentLoopOptions
+            {
+                ToolJournalCompletionTimeout = TimeSpan.FromMilliseconds(50)
+            },
+            Request = new AgentRequest { UserMessage = "save", MaxIterations = 1 }
+        }));
+
+        await journal.CompletionStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        var completedTask = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromMilliseconds(250)));
+        if (completedTask != runTask)
+            journal.Release();
+        var exception = await Record.ExceptionAsync(() => runTask);
+
+        Assert.Same(runTask, completedTask);
+        Assert.True(journal.CompletionTokenCanBeCanceled);
+        Assert.IsAssignableFrom<OperationCanceledException>(exception);
     }
 
     private static async Task<List<AgentStreamChunk>> CollectAsync(IAsyncEnumerable<AgentStreamChunk> stream)
@@ -314,6 +406,45 @@ public sealed class AgentLoopTests
             events.Add("journal_completed");
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingToolExecutionJournal : IToolExecutionJournal
+    {
+        private readonly TaskCompletionSource<bool> _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> CompletionStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool CompletionTokenCanBeCanceled { get; private set; }
+
+        public Task<ToolExecutionLease> BeginAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ToolExecutionLease.Execute());
+        }
+
+        public async Task CompleteAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            ToolResult result,
+            CancellationToken cancellationToken = default)
+        {
+            CompletionTokenCanBeCanceled = cancellationToken.CanBeCanceled;
+            CompletionStarted.TrySetResult(true);
+            await Task.WhenAny(
+                Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken),
+                _release.Task);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult(true);
         }
     }
 

@@ -52,6 +52,8 @@ namespace SpeakEase.Write.Domain.Entities.Memory
         /// </summary>
         public string VersionId { get; set; } = string.Empty;
 
+        public long MemoryGeneration { get; set; }
+
         public int CoveredFromTurn { get; set; }
         public int CoveredToTurn { get; set; }
         public string MemoryStatus { get; set; } = "fresh";

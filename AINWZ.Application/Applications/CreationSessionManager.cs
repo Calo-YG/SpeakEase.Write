@@ -347,6 +347,7 @@ public class CreationSessionManager(
 
                 session.AdoptedContentJson = JsonHelper.Serialize(adopted);
                 session.TurnCount = targetTurn;
+                session.MemoryGeneration++;
                 session.LastActivityAt = DateTime.Now;
                 session.ExpiresAt = DateTime.Now.Add(SessionExpiration);
                 await db.SaveChangesAsync();
@@ -377,8 +378,6 @@ public class CreationSessionManager(
 
         try
         {
-            // 回滚允许版本下降，先删除旧快照/缓存，再根据剩余消息重建。
-            await DeleteSessionMemorySnapshotsAsync(userId, session.WorkId, sessionId);
             await memory.PruneSessionFactsAfterTurnAsync(userId, session.WorkId, sessionId, targetTurn);
             await memory.InvalidateSessionAsync(userId, session.WorkId, sessionId);
             if (memoryRefreshQueue is not null)
@@ -420,25 +419,6 @@ public class CreationSessionManager(
         {
             var messages = await query.ToListAsync();
             db.AICreationMessages.RemoveRange(messages);
-            await db.SaveChangesAsync();
-        }
-    }
-
-    private async Task DeleteSessionMemorySnapshotsAsync(string userId, string workId, string sessionId)
-    {
-        var query = db.MemorySnapshots
-            .Where(x => x.UserId == userId &&
-                        x.WorkId == workId &&
-                        x.SessionId == sessionId &&
-                        x.SnapshotType == "session-turn-summary");
-        try
-        {
-            await query.ExecuteDeleteAsync();
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("ExecuteDelete", StringComparison.Ordinal))
-        {
-            var snapshots = await query.ToListAsync();
-            db.MemorySnapshots.RemoveRange(snapshots);
             await db.SaveChangesAsync();
         }
     }

@@ -51,6 +51,7 @@ public sealed class SessionMemorySnapshot
     public string Summary { get; set; } = string.Empty;
     public string SnapshotJson { get; set; } = string.Empty;
     public int TurnNumber { get; set; }
+    public long MemoryGeneration { get; set; }
     public int CoveredFromTurn { get; set; }
     public int CoveredToTurn { get; set; }
     public string MemoryStatus { get; set; } = "fresh";

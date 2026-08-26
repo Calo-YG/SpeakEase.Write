@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
 
+using SpeakEase.Write.Application.Applications;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Memory;
 using SpeakEase.Write.Infrastructure.AI.Memory;
@@ -111,7 +112,7 @@ public sealed class SessionMemoryProviderTests
         Assert.Contains("hello memory", loaded.Summary);
         Assert.Contains("answer memory", loaded.Summary);
         Assert.DoesNotContain("tool output", loaded.Summary);
-        Assert.Contains("memory:session:user-1:work-1:session-1", cache.RefreshedKeys);
+        Assert.Contains("memory:session:user-1:work-1:session-1:generation:0", cache.RefreshedKeys);
     }
 
     [Fact]
@@ -471,6 +472,96 @@ public sealed class SessionMemoryProviderTests
     }
 
     [Fact]
+    public async Task RefreshAfterTurnAsync_OldGenerationUpdateCannotReviveRolledBackTurns()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-generation-update-{Guid.NewGuid():N}.db");
+        var oldInterceptor = new PauseMatchingCommandInterceptor("UPDATE \"memory_snapshots\"");
+        var cache = new FakeMultiCacheService();
+        var ids = new SequentialIdGenerator();
+        try
+        {
+            await using var setupDb = await CreateSqliteDbAsync(databasePath);
+            await SeedRollbackRaceAsync(setupDb, "generation-update-session", includeSnapshot: true);
+
+            await using var oldDb = await CreateSqliteDbAsync(databasePath, oldInterceptor);
+            var oldProvider = CreateProvider(oldDb, cache, ids);
+            var oldRefresh = oldProvider.RefreshAfterTurnAsync(
+                "user-1", "work-generation", "generation-update-session", 10);
+            await oldInterceptor.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await using var rollbackDb = await CreateSqliteDbAsync(databasePath);
+            var rollbackProvider = CreateProvider(rollbackDb, cache, ids);
+            var manager = CreateSessionManager(rollbackDb, rollbackProvider);
+            var rollback = await manager.RollbackToTurnAsync("generation-update-session", 5);
+            Assert.True(rollback.Successed);
+
+            oldInterceptor.Release();
+            await oldRefresh;
+
+            var loaded = await rollbackProvider.LoadSessionMemoryAsync(
+                "user-1", "work-generation", "generation-update-session");
+            Assert.Equal(5, loaded.TurnNumber);
+            Assert.Equal(1L, loaded.MemoryGeneration);
+            var currentGeneration = await rollbackDb.AICreationSessions
+                .AsNoTracking()
+                .Where(x => x.Id == "generation-update-session")
+                .Select(x => x.MemoryGeneration)
+                .SingleAsync();
+            Assert.Equal(1L, currentGeneration);
+        }
+        finally
+        {
+            oldInterceptor.Release();
+            TryDelete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshAfterTurnAsync_OldGenerationLateInsertCannotReplaceRollbackSnapshot()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-generation-insert-{Guid.NewGuid():N}.db");
+        var oldInterceptor = new PauseMatchingCommandInterceptor("INSERT INTO \"memory_snapshots\"");
+        var cache = new FakeMultiCacheService();
+        var ids = new SequentialIdGenerator();
+        try
+        {
+            await using var setupDb = await CreateSqliteDbAsync(databasePath);
+            await SeedRollbackRaceAsync(setupDb, "generation-insert-session", includeSnapshot: false);
+
+            await using var oldDb = await CreateSqliteDbAsync(databasePath, oldInterceptor);
+            var oldProvider = CreateProvider(oldDb, cache, ids);
+            var oldRefresh = oldProvider.RefreshAfterTurnAsync(
+                "user-1", "work-generation", "generation-insert-session", 10);
+            await oldInterceptor.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await using var rollbackDb = await CreateSqliteDbAsync(databasePath);
+            var rollbackProvider = CreateProvider(rollbackDb, cache, ids);
+            var manager = CreateSessionManager(rollbackDb, rollbackProvider);
+            var rollback = await manager.RollbackToTurnAsync("generation-insert-session", 5);
+            Assert.True(rollback.Successed);
+
+            oldInterceptor.Release();
+            await oldRefresh;
+
+            var loaded = await rollbackProvider.LoadSessionMemoryAsync(
+                "user-1", "work-generation", "generation-insert-session");
+            Assert.Equal(5, loaded.TurnNumber);
+            Assert.Equal(1L, loaded.MemoryGeneration);
+            var snapshots = await rollbackDb.MemorySnapshots
+                .AsNoTracking()
+                .OrderBy(x => x.MemoryGeneration)
+                .ToListAsync();
+            Assert.Equal(new long[] { 0, 1 }, snapshots.Select(x => x.MemoryGeneration));
+            Assert.Equal("5", snapshots.Single(x => x.MemoryGeneration == 1).VersionId);
+        }
+        finally
+        {
+            oldInterceptor.Release();
+            TryDelete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task PruneSessionFactsAfterTurnAsync_RemovesOnlyFactsFromRolledBackTurns()
     {
         await using var db = TestDb.Create();
@@ -503,13 +594,73 @@ public sealed class SessionMemoryProviderTests
 
     private static HybridMemoryProvider CreateProvider(
         SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext db,
-        IMultiCacheService cache = null)
+        IMultiCacheService cache = null,
+        SequentialIdGenerator idGenerator = null)
     {
         return new HybridMemoryProvider(
             db,
             cache ?? new FakeMultiCacheService(),
-            new SequentialIdGenerator(),
+            idGenerator ?? new SequentialIdGenerator(),
             NullLogger<HybridMemoryProvider>.Instance);
+    }
+
+    private static CreationSessionManager CreateSessionManager(
+        SpeakEaseDbContext db,
+        HybridMemoryProvider memory)
+    {
+        return new CreationSessionManager(
+            db,
+            NullLogger<CreationSessionManager>.Instance,
+            new TestUserContext("user-1"),
+            memory,
+            new SequentialIdGenerator());
+    }
+
+    private static async Task SeedRollbackRaceAsync(
+        SpeakEaseDbContext db,
+        string sessionId,
+        bool includeSnapshot)
+    {
+        var now = DateTime.Now;
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "ai_creation_sessions"
+                ("Id", "CreateBy", "CreateAt", "UpdateBy", "UpdateAt", "UserId", "WorkId", "Status",
+                 "TurnCount", "MemoryGeneration", "AdoptedContentJson", "StartedAt", "LastActivityAt", "ExpiresAt",
+                 "CloseReason", "xmin")
+            VALUES
+                ({sessionId}, {string.Empty}, {now}, {string.Empty}, {now}, {"user-1"}, {"work-generation"}, {"active"},
+                 {10}, {0L}, {"[]"}, {now}, {now}, {now.AddHours(24)}, {string.Empty}, {1u})
+            """);
+        for (var turn = 1; turn <= 10; turn++)
+        {
+            db.AICreationMessages.Add(new AICreationMessageEntity
+            {
+                Id = $"{sessionId}-turn-{turn}",
+                SessionId = sessionId,
+                TurnNumber = turn,
+                Role = "user",
+                Content = $"turn {turn}",
+                CreatedAt = DateTime.Now.AddSeconds(turn)
+            });
+        }
+
+        if (includeSnapshot)
+        {
+            db.MemorySnapshots.Add(new MemorySnapshotEntity
+            {
+                Id = $"{sessionId}-snapshot-0",
+                UserId = "user-1",
+                WorkId = "work-generation",
+                SessionId = sessionId,
+                SnapshotType = "session-turn-summary",
+                Summary = "generation zero through turn nine",
+                VersionId = "9",
+                MemoryGeneration = 0,
+                CreateAt = DateTime.Now
+            });
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private static async Task<SpeakEaseDbContext> CreateSqliteDbAsync(

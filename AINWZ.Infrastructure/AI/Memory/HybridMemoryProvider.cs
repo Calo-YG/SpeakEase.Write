@@ -41,11 +41,24 @@ public sealed class HybridMemoryProvider(
             return SessionMemorySnapshot.Empty;
         }
 
-        return await cache.GetOrSetAsync(
-            CacheKey(userId, workId, sessionId),
-            () => LoadLatestSnapshotAsync(userId, workId, sessionId, cancellationToken),
-            memoryExpiry: MemExpiry,
-            redisExpiry: RedisExpiry) ?? SessionMemorySnapshot.Empty;
+        for (var attempt = 1; attempt <= MaxSnapshotConcurrencyAttempts; attempt++)
+        {
+            var memoryGeneration = await LoadMemoryGenerationAsync(
+                userId, workId, sessionId, cancellationToken);
+            var snapshot = await cache.GetOrSetAsync(
+                CacheKey(userId, workId, sessionId, memoryGeneration),
+                () => LoadLatestSnapshotAsync(
+                    userId, workId, sessionId, memoryGeneration, cancellationToken),
+                memoryExpiry: MemExpiry,
+                redisExpiry: RedisExpiry) ?? SessionMemorySnapshot.Empty;
+            var currentGeneration = await LoadMemoryGenerationAsync(
+                userId, workId, sessionId, cancellationToken);
+            if (currentGeneration == memoryGeneration)
+                return snapshot;
+        }
+
+        throw new DbUpdateConcurrencyException(
+            $"Session memory generation could not be read consistently: SessionId={sessionId}.");
     }
 
     public async Task<IReadOnlyList<SpeakEase.Write.Application.Abstractions.AI.MemoryFact>> LoadProjectFactsAsync(
@@ -132,6 +145,9 @@ public sealed class HybridMemoryProvider(
             return;
         }
 
+        var memoryGeneration = await LoadMemoryGenerationAsync(
+            userId, workId, sessionId, cancellationToken);
+
         var messages = await db.AICreationMessages
             .AsNoTracking()
             .Where(m => m.SessionId == sessionId && m.Role != "tool")
@@ -151,10 +167,11 @@ public sealed class HybridMemoryProvider(
                 .Where(x => x.UserId == userId &&
                             x.WorkId == workId &&
                             x.SessionId == sessionId &&
-                            x.SnapshotType == SnapshotType)
+                            x.SnapshotType == SnapshotType &&
+                            x.MemoryGeneration == memoryGeneration)
                 .ExecuteDeleteAsync(cancellationToken);
 
-            await InvalidateSessionAsync(userId, workId, sessionId, cancellationToken);
+            await cache.RemoveAsync(CacheKey(userId, workId, sessionId, memoryGeneration));
             return;
         }
 
@@ -176,6 +193,7 @@ public sealed class HybridMemoryProvider(
             userId,
             workId,
             sessionId,
+            memoryGeneration,
             turnNumber = effectiveTurnNumber,
             coveredFromTurn,
             coveredToTurn,
@@ -189,7 +207,8 @@ public sealed class HybridMemoryProvider(
             .Where(x => x.UserId == userId &&
                         x.WorkId == workId &&
                         x.SessionId == sessionId &&
-                        x.SnapshotType == SnapshotType)
+                        x.SnapshotType == SnapshotType &&
+                        x.MemoryGeneration == memoryGeneration)
             .OrderByDescending(x => x.CreateAt)
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
@@ -207,7 +226,8 @@ public sealed class HybridMemoryProvider(
                 sessionId,
                 existingTurn,
                 effectiveTurnNumber);
-            await RefreshLatestSnapshotCacheAsync(userId, workId, sessionId, cancellationToken);
+            await RefreshLatestSnapshotCacheAsync(
+                userId, workId, sessionId, memoryGeneration, cancellationToken);
             return;
         }
 
@@ -221,6 +241,7 @@ public sealed class HybridMemoryProvider(
                 WorkId = workId,
                 SessionId = sessionId,
                 SnapshotType = SnapshotType,
+                MemoryGeneration = memoryGeneration,
                 CreateBy = userId,
                 CreateAt = now
             };
@@ -236,7 +257,8 @@ public sealed class HybridMemoryProvider(
                 // refresh was building its summary. Detach the failed insert before
                 // re-reading so the context cannot replay stale state on the next save.
                 db.Entry(entity).State = EntityState.Detached;
-                entity = await LoadLatestSnapshotEntityAsync(userId, workId, sessionId, cancellationToken);
+                entity = await LoadLatestSnapshotEntityAsync(
+                    userId, workId, sessionId, memoryGeneration, cancellationToken);
                 if (entity is null)
                     throw;
 
@@ -271,7 +293,8 @@ public sealed class HybridMemoryProvider(
             return;
         }
 
-        await RefreshLatestSnapshotCacheAsync(userId, workId, sessionId, cancellationToken);
+        await RefreshLatestSnapshotCacheAsync(
+            userId, workId, sessionId, memoryGeneration, cancellationToken);
 
         foreach (var fact in ExtractFacts(messages, effectiveTurnNumber, sessionId))
             await UpsertProjectFactAsync(userId, workId, fact, cancellationToken);
@@ -287,7 +310,10 @@ public sealed class HybridMemoryProvider(
         string sessionId,
         CancellationToken cancellationToken = default)
     {
-        await cache.RemoveAsync(CacheKey(userId, workId, sessionId));
+        var memoryGeneration = await LoadMemoryGenerationAsync(
+            userId, workId, sessionId, cancellationToken);
+        await cache.RemoveAsync(CacheKey(userId, workId, sessionId, memoryGeneration));
+        await cache.RemoveAsync(LegacySessionCacheKey(userId, workId, sessionId));
     }
 
     public async Task PruneSessionFactsAfterTurnAsync(
@@ -362,6 +388,7 @@ public sealed class HybridMemoryProvider(
                                 x.WorkId == existing.WorkId &&
                                 x.SessionId == existing.SessionId &&
                                 x.SnapshotType == existing.SnapshotType &&
+                                x.MemoryGeneration == existing.MemoryGeneration &&
                                 x.VersionId == expectedVersionId)
                     .ExecuteUpdateAsync(setters => setters
                         .SetProperty(x => x.Summary, summary)
@@ -385,7 +412,9 @@ public sealed class HybridMemoryProvider(
                 // EF Core's in-memory provider does not translate ExecuteUpdate.
                 var tracked = await db.MemorySnapshots
                     .FirstOrDefaultAsync(
-                        x => x.Id == existing.Id && x.VersionId == expectedVersionId,
+                        x => x.Id == existing.Id &&
+                             x.MemoryGeneration == existing.MemoryGeneration &&
+                             x.VersionId == expectedVersionId,
                         cancellationToken);
                 if (tracked is not null)
                 {
@@ -400,6 +429,7 @@ public sealed class HybridMemoryProvider(
                 existing.UserId,
                 existing.WorkId,
                 existing.SessionId,
+                existing.MemoryGeneration,
                 cancellationToken);
             if (current is null)
                 throw new DbUpdateConcurrencyException(
@@ -420,29 +450,32 @@ public sealed class HybridMemoryProvider(
         string userId,
         string workId,
         string sessionId,
+        long memoryGeneration,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; attempt <= MaxSnapshotConcurrencyAttempts; attempt++)
         {
-            var latest = await LoadLatestSnapshotEntityAsync(userId, workId, sessionId, cancellationToken);
+            var latest = await LoadLatestSnapshotEntityAsync(
+                userId, workId, sessionId, memoryGeneration, cancellationToken);
             if (latest is null)
             {
-                await InvalidateSessionAsync(userId, workId, sessionId, cancellationToken);
+                await cache.RemoveAsync(CacheKey(userId, workId, sessionId, memoryGeneration));
                 return;
             }
 
             await cache.RefreshAsync(
-                CacheKey(userId, workId, sessionId),
+                CacheKey(userId, workId, sessionId, memoryGeneration),
                 ToSnapshot(latest),
                 MemExpiry,
                 RedisExpiry);
 
-            var current = await LoadLatestSnapshotEntityAsync(userId, workId, sessionId, cancellationToken);
+            var current = await LoadLatestSnapshotEntityAsync(
+                userId, workId, sessionId, memoryGeneration, cancellationToken);
             if (current is not null && current.Id == latest.Id && current.VersionId == latest.VersionId)
                 return;
         }
 
-        await InvalidateSessionAsync(userId, workId, sessionId, cancellationToken);
+        await cache.RemoveAsync(CacheKey(userId, workId, sessionId, memoryGeneration));
         throw new DbUpdateConcurrencyException(
             $"Session memory cache refresh could not observe a stable snapshot: SessionId={sessionId}.");
     }
@@ -451,6 +484,7 @@ public sealed class HybridMemoryProvider(
         string userId,
         string workId,
         string sessionId,
+        long memoryGeneration,
         CancellationToken cancellationToken)
     {
         return await db.MemorySnapshots
@@ -458,7 +492,8 @@ public sealed class HybridMemoryProvider(
             .Where(x => x.UserId == userId &&
                         x.WorkId == workId &&
                         x.SessionId == sessionId &&
-                        x.SnapshotType == SnapshotType)
+                        x.SnapshotType == SnapshotType &&
+                        x.MemoryGeneration == memoryGeneration)
             .OrderByDescending(x => x.CreateAt)
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
@@ -493,6 +528,7 @@ public sealed class HybridMemoryProvider(
         string userId,
         string workId,
         string sessionId,
+        long memoryGeneration,
         CancellationToken cancellationToken)
     {
         var entities = await db.MemorySnapshots
@@ -500,7 +536,8 @@ public sealed class HybridMemoryProvider(
             .Where(x => x.UserId == userId &&
                         x.WorkId == workId &&
                         x.SessionId == sessionId &&
-                        x.SnapshotType == SnapshotType)
+                        x.SnapshotType == SnapshotType &&
+                        x.MemoryGeneration == memoryGeneration)
             .ToListAsync(cancellationToken);
 
         var entity = entities
@@ -522,6 +559,7 @@ public sealed class HybridMemoryProvider(
             Summary = entity.Summary,
             SnapshotJson = entity.SnapshotJson,
             TurnNumber = int.TryParse(entity.VersionId, out var turn) ? turn : 0,
+            MemoryGeneration = entity.MemoryGeneration,
             CoveredFromTurn = entity.CoveredFromTurn,
             CoveredToTurn = entity.CoveredToTurn,
             MemoryStatus = entity.MemoryStatus,
@@ -597,7 +635,29 @@ public sealed class HybridMemoryProvider(
         return compact.Length <= maxChars ? compact : compact[..maxChars] + "...";
     }
 
-    private static string CacheKey(string userId, string workId, string sessionId)
+    private async Task<long> LoadMemoryGenerationAsync(
+        string userId,
+        string workId,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        return await db.AICreationSessions
+            .AsNoTracking()
+            .Where(x => x.Id == sessionId && x.UserId == userId && x.WorkId == workId)
+            .Select(x => x.MemoryGeneration)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private static string CacheKey(
+        string userId,
+        string workId,
+        string sessionId,
+        long memoryGeneration)
+    {
+        return $"memory:session:{userId}:{workId}:{sessionId}:generation:{memoryGeneration}";
+    }
+
+    private static string LegacySessionCacheKey(string userId, string workId, string sessionId)
     {
         return $"memory:session:{userId}:{workId}:{sessionId}";
     }

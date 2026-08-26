@@ -153,10 +153,10 @@ public sealed class CreationSessionManagerTests
         await db.Database.ExecuteSqlInterpolatedAsync($"""
             INSERT INTO "ai_creation_sessions"
                 ("Id", "CreateBy", "CreateAt", "UpdateBy", "UpdateAt", "UserId", "WorkId", "Status",
-                 "TurnCount", "AdoptedContentJson", "StartedAt", "LastActivityAt", "ExpiresAt", "CloseReason", "xmin")
+                 "TurnCount", "MemoryGeneration", "AdoptedContentJson", "StartedAt", "LastActivityAt", "ExpiresAt", "CloseReason", "xmin")
             VALUES
                 ({"session-rollback"}, {string.Empty}, {now}, {string.Empty}, {now}, {"user-1"}, {"work-rollback"}, {"active"},
-                 {2}, {originalAdoptedContent}, {now}, {now}, {now.AddHours(24)}, {string.Empty}, {1u})
+                 {2}, {0L}, {originalAdoptedContent}, {now}, {now}, {now.AddHours(24)}, {string.Empty}, {1u})
             """);
         db.AICreationMessages.AddRange(
             new AICreationMessageEntity
@@ -206,6 +206,7 @@ public sealed class CreationSessionManagerTests
 
         Assert.Equal(1, interceptor.InjectedFailureCount);
         Assert.Equal(2, persistedSession.TurnCount);
+        Assert.Equal(0L, persistedSession.MemoryGeneration);
         Assert.Equal(originalAdoptedContent, persistedSession.AdoptedContentJson);
         Assert.Equal(new[] { 1, 2 }, persistedMessages.Select(x => x.TurnNumber));
         Assert.NotEqual(EntityState.Modified, sessionStateAfterRollback);
@@ -238,6 +239,50 @@ public sealed class CreationSessionManagerTests
         Assert.Equal(1, await db.AICreationSessions.Select(x => x.TurnCount).SingleAsync());
         Assert.Single(await db.AICreationMessages.ToListAsync());
         Assert.Equal(("user-1", "work-1", "session-1", 1), Assert.Single(memory.Prunes));
+    }
+
+    [Fact]
+    public async Task RollbackToTurnAsync_IncrementsMemoryGenerationInTransaction()
+    {
+        await using var db = TestDb.Create();
+        var manager = CreateManager(db, new FakeMemoryProvider());
+        db.AICreationSessions.Add(new AICreationSessionEntity
+        {
+            Id = "session-generation",
+            UserId = "user-1",
+            WorkId = "work-generation",
+            Status = "active",
+            TurnCount = 2,
+            AdoptedContentJson = "[]"
+        });
+        db.AICreationMessages.AddRange(
+            new AICreationMessageEntity
+            {
+                Id = "generation-turn-1",
+                SessionId = "session-generation",
+                TurnNumber = 1,
+                Role = "user",
+                Content = "one"
+            },
+            new AICreationMessageEntity
+            {
+                Id = "generation-turn-2",
+                SessionId = "session-generation",
+                TurnNumber = 2,
+                Role = "user",
+                Content = "two"
+            });
+        await db.SaveChangesAsync();
+
+        var result = await manager.RollbackToTurnAsync("session-generation", 1);
+
+        Assert.True(result.Successed);
+        var generationProperty = db.Model
+            .FindEntityType(typeof(AICreationSessionEntity))
+            ?.FindProperty("MemoryGeneration");
+        Assert.NotNull(generationProperty);
+        var session = await db.AICreationSessions.SingleAsync(x => x.Id == "session-generation");
+        Assert.Equal(1L, db.Entry(session).Property<long>("MemoryGeneration").CurrentValue);
     }
 
     private static CreationSessionManager CreateManager(

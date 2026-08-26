@@ -192,7 +192,10 @@ public sealed class CreationOrchestrator(
                 .Select(dependencyId => artifactsByStep.TryGetValue(dependencyId, out var artifact) ? artifact : null)
                 .Where(artifact => artifact is not null)
                 .ToList();
-            var chainMessage = BuildDependencyMessage(userMessage, dependencyArtifacts);
+            var chainMessage = BuildDependencyMessage(
+                userMessage,
+                dependencyArtifacts,
+                llmContext.ContextWindow);
 
             var request = new AgentRequest
             {
@@ -387,41 +390,74 @@ public sealed class CreationOrchestrator(
         return candidates.Count == 0 ? 2048 : candidates.Min();
     }
 
-    private static string BuildDependencyMessage(string userMessage, IReadOnlyList<AgentArtifact> dependencies)
+    private static string BuildDependencyMessage(
+        string userMessage,
+        IReadOnlyList<AgentArtifact> dependencies,
+        int contextWindowTokens)
     {
         if (dependencies.Count == 0)
             return userMessage;
 
+        var aggregateBudget = ResolveDependencyArtifactBudget(contextWindowTokens);
         if (dependencies.Count == 1)
         {
-            var content = TruncateArtifactContent(dependencies[0].Content);
+            var content = TruncateArtifactContent(dependencies[0].Content, aggregateBudget);
             return string.IsNullOrWhiteSpace(content)
                 ? userMessage
                 : $"{userMessage}\n\n[Previous agent result]\n{content}";
         }
 
+        var metadata = dependencies
+            .Select(dependency => new
+            {
+                Artifact = dependency,
+                Text = $"\n\n[Dependency artifact: {dependency.StepId}]\nSummary: {TruncateArtifactContent(dependency.Summary, 240)}"
+            })
+            .ToList();
         var builder = new System.Text.StringBuilder(userMessage);
-        foreach (var dependency in dependencies)
+        foreach (var item in metadata)
         {
-            var content = TruncateArtifactContent(dependency.Content);
-            if (string.IsNullOrWhiteSpace(content))
+            builder.Append(item.Text);
+        }
+
+        var metadataLength = metadata.Sum(item => item.Text.Length);
+        var remainingContentBudget = Math.Max(0, aggregateBudget - metadataLength);
+        foreach (var item in metadata)
+        {
+            if (remainingContentBudget <= 0 || string.IsNullOrWhiteSpace(item.Artifact.Content))
                 continue;
 
-            builder.Append("\n\n[Dependency artifact: ")
-                .Append(dependency.StepId)
-                .Append("]\n")
-                .Append(content);
+            const string contentLabel = "\nContent:\n";
+            if (remainingContentBudget <= contentLabel.Length)
+                break;
+
+            var content = TruncateArtifactContent(
+                item.Artifact.Content,
+                remainingContentBudget - contentLabel.Length);
+            if (content.Length == 0)
+                continue;
+
+            builder.Append(contentLabel).Append(content);
+            remainingContentBudget -= contentLabel.Length + content.Length;
         }
 
         return builder.ToString();
     }
 
-    private static string TruncateArtifactContent(string content)
+    private static int ResolveDependencyArtifactBudget(int contextWindowTokens)
+    {
+        if (contextWindowTokens <= 0)
+            return 12_000;
+
+        return Math.Min(12_000, Math.Max(2_000, contextWindowTokens * 2));
+    }
+
+    private static string TruncateArtifactContent(string content, int maxChars)
     {
         if (string.IsNullOrEmpty(content))
             return string.Empty;
 
-        return content.Length > 12_000 ? content[..12_000] : content;
+        return content.Length > maxChars ? content[..maxChars] : content;
     }
 
     // 从共享管线上下文派生 Agent 专属会话历史：

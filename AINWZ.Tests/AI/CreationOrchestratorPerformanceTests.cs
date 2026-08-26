@@ -57,6 +57,34 @@ public sealed class CreationOrchestratorPerformanceTests
         Assert.Contains("artifact-from-second", third.CapturedRequest.UserMessage);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_BoundsAggregateDependencyArtifactsAndKeepsEverySummary()
+    {
+        var first = new PipelineAgent("first", "first-summary|" + new string('a', 20_000));
+        var second = new PipelineAgent("second", "second-summary|" + new string('b', 20_000));
+        var third = new PipelineAgent("third", "done");
+        var orchestrator = new CreationOrchestrator(
+            new CreationRouter(NullLogger<CreationRouter>.Instance),
+            new TestOpenAIContext(),
+            new DagRouterLlm(),
+            new StaticContextBuilder(),
+            new[] { first, second, third },
+            NullLogger<CreationOrchestrator>.Instance);
+
+        await foreach (var _ in orchestrator.ExecuteAsync("work-1", "session-1", "request"))
+        {
+        }
+
+        Assert.NotNull(third.CapturedRequest);
+        Assert.Contains("[Dependency artifact: first-step]", third.CapturedRequest.UserMessage);
+        Assert.Contains("Summary: first-summary|", third.CapturedRequest.UserMessage);
+        Assert.Contains("[Dependency artifact: second-step]", third.CapturedRequest.UserMessage);
+        Assert.Contains("Summary: second-summary|", third.CapturedRequest.UserMessage);
+        Assert.True(
+            third.CapturedRequest.UserMessage.Length <= 12_200,
+            $"Dependency context exceeded aggregate budget: {third.CapturedRequest.UserMessage.Length} chars.");
+    }
+
     private sealed class StaticContextBuilder : ICreationAgentContext
     {
         public Task<AgentContext> BuildContextAsync(

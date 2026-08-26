@@ -85,6 +85,36 @@ public sealed class CreationOrchestratorPerformanceTests
             $"Dependency context exceeded aggregate budget: {third.CapturedRequest.UserMessage.Length} chars.");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_UsesConservativeBudgetForTinyWindowAndChineseSummaries()
+    {
+        var first = new PipelineAgent("first", "中文摘要一：" + new string('汉', 1_000));
+        var second = new PipelineAgent("second", "中文摘要二：" + new string('字', 1_000));
+        var third = new PipelineAgent("third", "done");
+        var llmContext = new TestOpenAIContext { ContextWindow = 64 };
+        var orchestrator = new CreationOrchestrator(
+            new CreationRouter(NullLogger<CreationRouter>.Instance),
+            llmContext,
+            new DagRouterLlm(),
+            new StaticContextBuilder(),
+            new[] { first, second, third },
+            NullLogger<CreationOrchestrator>.Instance);
+
+        await foreach (var _ in orchestrator.ExecuteAsync("work-1", "session-1", "request"))
+        {
+        }
+
+        Assert.NotNull(third.CapturedRequest);
+        Assert.True(
+            third.CapturedRequest.UserMessage.Length <= 320,
+            $"Tiny-window dependency context exceeded budget: {third.CapturedRequest.UserMessage.Length} chars.");
+        Assert.Contains("[Dependency artifact: first-step]", third.CapturedRequest.UserMessage);
+        Assert.Contains("Summary: 中文摘要一：", third.CapturedRequest.UserMessage);
+        Assert.Contains("[Dependency artifact: second-step]", third.CapturedRequest.UserMessage);
+        Assert.Contains("Summary: 中文摘要二：", third.CapturedRequest.UserMessage);
+        Assert.DoesNotContain(new string('汉', 500), third.CapturedRequest.UserMessage);
+    }
+
     private sealed class StaticContextBuilder : ICreationAgentContext
     {
         public Task<AgentContext> BuildContextAsync(

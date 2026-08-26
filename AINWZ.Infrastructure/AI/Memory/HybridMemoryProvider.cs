@@ -233,7 +233,10 @@ public sealed class HybridMemoryProvider(
                 // re-reading so the context cannot replay stale state on the next save.
                 db.Entry(entity).State = EntityState.Detached;
                 entity = await LoadLatestSnapshotEntityAsync(userId, workId, sessionId, cancellationToken);
-                if (entity is null || GetSnapshotTurn(entity) >= effectiveTurnNumber)
+                if (entity is null)
+                    throw;
+
+                if (GetSnapshotTurn(entity) >= effectiveTurnNumber)
                     return;
 
                 if (!await TryUpdateSnapshotAsync(

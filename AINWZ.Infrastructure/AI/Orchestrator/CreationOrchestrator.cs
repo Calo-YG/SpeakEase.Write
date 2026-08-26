@@ -398,30 +398,40 @@ public sealed class CreationOrchestrator(
         if (dependencies.Count == 0)
             return userMessage;
 
-        var aggregateBudget = ResolveDependencyArtifactBudget(contextWindowTokens);
         if (dependencies.Count == 1)
         {
-            var content = TruncateArtifactContent(dependencies[0].Content, aggregateBudget);
+            // 保持线性管线的历史兼容格式和 12k 单 Artifact 上限。
+            var content = TruncateArtifactContent(dependencies[0].Content, 12_000);
             return string.IsNullOrWhiteSpace(content)
                 ? userMessage
                 : $"{userMessage}\n\n[Previous agent result]\n{content}";
         }
 
+        var aggregateBudget = ResolveDependencyArtifactBudget(contextWindowTokens);
         var metadata = dependencies
             .Select(dependency => new
             {
                 Artifact = dependency,
-                Text = $"\n\n[Dependency artifact: {dependency.StepId}]\nSummary: {TruncateArtifactContent(dependency.Summary, 240)}"
+                Prefix = $"\n\n[Dependency artifact: {dependency.StepId}]\nSummary: "
             })
             .ToList();
         var builder = new System.Text.StringBuilder(userMessage);
+        var remainingBudget = aggregateBudget;
+        var remainingDependencies = metadata.Count;
         foreach (var item in metadata)
         {
-            builder.Append(item.Text);
+            // 保留每个依赖的标签；摘要按剩余元数据预算平均分配，避免中文等多字节文本撑爆小窗口。
+            builder.Append(item.Prefix);
+            remainingBudget -= item.Prefix.Length;
+            var summaryBudget = Math.Max(0, remainingBudget / remainingDependencies);
+            var summary = TruncateArtifactContent(item.Artifact.Summary, summaryBudget);
+            builder.Append(summary);
+            remainingBudget -= summary.Length;
+            remainingDependencies--;
         }
 
-        var metadataLength = metadata.Sum(item => item.Text.Length);
-        var remainingContentBudget = Math.Max(0, aggregateBudget - metadataLength);
+        // 这是 Artifact 子预算，不代表完整 LLM 请求预算；系统提示、历史和输出预留尚未在此扣除。
+        var remainingContentBudget = Math.Max(0, remainingBudget);
         foreach (var item in metadata)
         {
             if (remainingContentBudget <= 0 || string.IsNullOrWhiteSpace(item.Artifact.Content))
@@ -449,7 +459,8 @@ public sealed class CreationOrchestrator(
         if (contextWindowTokens <= 0)
             return 12_000;
 
-        return Math.Min(12_000, Math.Max(2_000, contextWindowTokens * 2));
+        // 保守地只分配约 20% 的窗口给依赖 Artifact，且不设置 2k 的固定下限。
+        return Math.Min(12_000, Math.Max(256, contextWindowTokens / 5));
     }
 
     private static string TruncateArtifactContent(string content, int maxChars)

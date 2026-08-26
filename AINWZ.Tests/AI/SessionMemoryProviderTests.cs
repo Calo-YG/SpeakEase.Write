@@ -1,11 +1,14 @@
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Data.Sqlite;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using System.Data.Common;
+
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.Extensions.Logging.Abstractions;
+
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Memory;
 using SpeakEase.Write.Infrastructure.AI.Memory;
+using SpeakEase.Write.Infrastructure.MutilCache;
 using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace AINWZ.Tests.AI;
@@ -171,7 +174,6 @@ public sealed class SessionMemoryProviderTests
         var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-{Guid.NewGuid():N}.db");
         try
         {
-            {
             var saveInterceptor = new PauseFirstSaveChangesInterceptor();
             await using var oldConnection = new SqliteConnection($"Data Source={databasePath}");
             await oldConnection.OpenAsync();
@@ -248,8 +250,14 @@ public sealed class SessionMemoryProviderTests
             await newDb.SaveChangesAsync();
 
             var newProvider = CreateProvider(newDb, cache);
-            await newProvider.RefreshAfterTurnAsync("user-1", "work-1", "race-session", 2);
-            saveInterceptor.Release();
+            try
+            {
+                await newProvider.RefreshAfterTurnAsync("user-1", "work-1", "race-session", 2);
+            }
+            finally
+            {
+                saveInterceptor.Release();
+            }
 
             await oldRefresh;
 
@@ -265,7 +273,6 @@ public sealed class SessionMemoryProviderTests
             Assert.Equal("2", snapshot.VersionId);
             Assert.Equal(2, (await newProvider.LoadSessionMemoryAsync(
                 "user-1", "work-1", "race-session")).TurnNumber);
-            }
         }
         finally
         {
@@ -280,6 +287,117 @@ public sealed class SessionMemoryProviderTests
                     // SQLite may release the native handle after the async disposals complete.
                 }
             }
+        }
+    }
+
+    [Fact]
+    public async Task RefreshAfterTurnAsync_RetriesCasWhenOlderWriterWinsFirst()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-cas-{Guid.NewGuid():N}.db");
+        var oldInterceptor = new PauseMatchingCommandInterceptor("UPDATE \"memory_snapshots\"");
+        var newInterceptor = new PauseMatchingCommandInterceptor("UPDATE \"memory_snapshots\"");
+        try
+        {
+            await using var setupDb = await CreateSqliteDbAsync(databasePath);
+            await SeedSnapshotRaceAsync(setupDb, "cas-session");
+
+            await using var oldDb = await CreateSqliteDbAsync(databasePath, oldInterceptor);
+            var oldProvider = CreateProvider(oldDb);
+            var oldRefresh = oldProvider.RefreshAfterTurnAsync("user-1", "work-1", "cas-session", 1);
+            await oldInterceptor.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await using var messageDb = await CreateSqliteDbAsync(databasePath);
+            AddTurnTwoMessages(messageDb, "cas-session", "cas");
+            await messageDb.SaveChangesAsync();
+
+            await using var newDb = await CreateSqliteDbAsync(databasePath, newInterceptor);
+            var newProvider = CreateProvider(newDb);
+            var newRefresh = newProvider.RefreshAfterTurnAsync("user-1", "work-1", "cas-session", 2);
+            await newInterceptor.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            oldInterceptor.Release();
+            await oldRefresh;
+            newInterceptor.Release();
+            await newRefresh;
+
+            await using var verificationDb = await CreateSqliteDbAsync(databasePath);
+            var snapshot = await verificationDb.MemorySnapshots.AsNoTracking().SingleAsync();
+            Assert.Equal("2", snapshot.VersionId);
+        }
+        finally
+        {
+            oldInterceptor.Release();
+            newInterceptor.Release();
+            TryDelete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshAfterTurnAsync_RefreshesCacheFromLatestDatabaseSnapshot()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-cache-{Guid.NewGuid():N}.db");
+        var cache = new PauseFirstRefreshCache();
+        try
+        {
+            await using var setupDb = await CreateSqliteDbAsync(databasePath);
+            await SeedSnapshotRaceAsync(setupDb, "cache-session");
+
+            await using var oldDb = await CreateSqliteDbAsync(databasePath);
+            var oldProvider = CreateProvider(oldDb, cache);
+            var oldRefresh = oldProvider.RefreshAfterTurnAsync("user-1", "work-1", "cache-session", 1);
+            await cache.FirstRefreshStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await using var newDb = await CreateSqliteDbAsync(databasePath);
+            AddTurnTwoMessages(newDb, "cache-session", "cache");
+            await newDb.SaveChangesAsync();
+            var newProvider = CreateProvider(newDb, cache);
+            await newProvider.RefreshAfterTurnAsync("user-1", "work-1", "cache-session", 2);
+
+            cache.Release();
+            await oldRefresh;
+
+            Assert.Equal(2, cache.Snapshot.TurnNumber);
+        }
+        finally
+        {
+            cache.Release();
+            TryDelete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task RefreshAfterTurnAsync_ConcurrentInitialInsertKeepsSingleLatestSnapshot()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-insert-{Guid.NewGuid():N}.db");
+        var oldInterceptor = new PauseMatchingCommandInterceptor("INSERT INTO \"memory_snapshots\"");
+        try
+        {
+            await using var setupDb = await CreateSqliteDbAsync(databasePath);
+            await SeedMessagesAsync(setupDb, "insert-session");
+
+            await using var oldDb = await CreateSqliteDbAsync(databasePath, oldInterceptor);
+            var oldProvider = CreateProvider(oldDb);
+            var oldRefresh = oldProvider.RefreshAfterTurnAsync("user-1", "work-1", "insert-session", 1);
+            await oldInterceptor.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await using var newDb = await CreateSqliteDbAsync(databasePath);
+            AddTurnTwoMessages(newDb, "insert-session", "insert");
+            await newDb.SaveChangesAsync();
+            var newProvider = CreateProvider(newDb);
+            await newProvider.RefreshAfterTurnAsync("user-1", "work-1", "insert-session", 2);
+
+            oldInterceptor.Release();
+            await oldRefresh;
+
+            await using var verificationDb = await CreateSqliteDbAsync(databasePath);
+            var snapshots = await verificationDb.MemorySnapshots.AsNoTracking().ToListAsync();
+            Assert.Single(snapshots);
+            Assert.Equal("2", snapshots[0].VersionId);
+        }
+        finally
+        {
+            oldInterceptor.Release();
+            TryDelete(databasePath);
         }
     }
 
@@ -316,13 +434,196 @@ public sealed class SessionMemoryProviderTests
 
     private static HybridMemoryProvider CreateProvider(
         SpeakEase.Write.Infrastructure.Persistence.SpeakEaseDbContext db,
-        FakeMultiCacheService cache = null)
+        IMultiCacheService cache = null)
     {
         return new HybridMemoryProvider(
             db,
             cache ?? new FakeMultiCacheService(),
             new SequentialIdGenerator(),
             NullLogger<HybridMemoryProvider>.Instance);
+    }
+
+    private static async Task<SpeakEaseDbContext> CreateSqliteDbAsync(
+        string databasePath,
+        IInterceptor interceptor = null)
+    {
+        var connection = new SqliteConnection($"Data Source={databasePath};Default Timeout=5");
+        await connection.OpenAsync();
+        var optionsBuilder = new DbContextOptionsBuilder<SpeakEaseDbContext>()
+            .UseSqlite(connection);
+        if (interceptor is not null)
+            optionsBuilder.AddInterceptors(interceptor);
+
+        var db = new SpeakEaseDbContext(optionsBuilder.Options);
+        await db.Database.EnsureCreatedAsync();
+        return db;
+    }
+
+    private static async Task SeedSnapshotRaceAsync(SpeakEaseDbContext db, string sessionId)
+    {
+        await SeedMessagesAsync(db, sessionId);
+        db.MemorySnapshots.Add(new MemorySnapshotEntity
+        {
+            Id = $"snapshot-{sessionId}",
+            UserId = "user-1",
+            WorkId = "work-1",
+            SessionId = sessionId,
+            SnapshotType = "session-turn-summary",
+            Summary = "initial",
+            VersionId = "0",
+            CreateAt = DateTime.Now
+        });
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedMessagesAsync(SpeakEaseDbContext db, string sessionId)
+    {
+        db.AICreationMessages.AddRange(
+            new AICreationMessageEntity
+            {
+                Id = $"{sessionId}-msg-1",
+                SessionId = sessionId,
+                Role = "user",
+                Content = "turn one",
+                TurnNumber = 1,
+                CreatedAt = DateTime.Now
+            },
+            new AICreationMessageEntity
+            {
+                Id = $"{sessionId}-msg-2",
+                SessionId = sessionId,
+                Role = "assistant",
+                Content = "turn one answer",
+                TurnNumber = 1,
+                CreatedAt = DateTime.Now.AddSeconds(1)
+            });
+        await db.SaveChangesAsync();
+    }
+
+    private static void AddTurnTwoMessages(SpeakEaseDbContext db, string sessionId, string idPrefix)
+    {
+        db.AICreationMessages.AddRange(
+            new AICreationMessageEntity
+            {
+                Id = $"{idPrefix}-msg-3",
+                SessionId = sessionId,
+                Role = "user",
+                Content = "turn two",
+                TurnNumber = 2,
+                CreatedAt = DateTime.Now.AddSeconds(2)
+            },
+            new AICreationMessageEntity
+            {
+                Id = $"{idPrefix}-msg-4",
+                SessionId = sessionId,
+                Role = "assistant",
+                Content = "turn two answer",
+                TurnNumber = 2,
+                CreatedAt = DateTime.Now.AddSeconds(3)
+            });
+    }
+
+    private static void TryDelete(string databasePath)
+    {
+        if (!File.Exists(databasePath))
+            return;
+
+        try
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(databasePath);
+        }
+        catch (IOException)
+        {
+            // The OS will clean temporary test files if SQLite releases late.
+        }
+    }
+
+    private sealed class PauseMatchingCommandInterceptor(string commandPrefix) : DbCommandInterceptor
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _paused;
+
+        public TaskCompletionSource CommandStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release() => _release.TrySetResult();
+
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            await PauseIfMatchingAsync(command);
+
+            return result;
+        }
+
+        public override async ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            await PauseIfMatchingAsync(command);
+            return result;
+        }
+
+        private async Task PauseIfMatchingAsync(DbCommand command)
+        {
+            if (!command.CommandText.TrimStart().StartsWith(commandPrefix, StringComparison.OrdinalIgnoreCase) ||
+                Interlocked.CompareExchange(ref _paused, 1, 0) != 0)
+                return;
+
+            CommandStarted.TrySetResult();
+            await _release.Task;
+        }
+    }
+
+    private sealed class PauseFirstRefreshCache : IMultiCacheService
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _refreshCount;
+
+        public TaskCompletionSource FirstRefreshStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot Snapshot { get; private set; }
+
+        public void Release() => _release.TrySetResult();
+
+        public async Task<TCache> GetOrSetAsync<TCache>(
+            string key,
+            Func<Task<TCache>> func,
+            Action error = null,
+            TimeSpan? memoryExpiry = null,
+            TimeSpan? redisExpiry = null,
+            int jitterSeconds = 30)
+        {
+            if (Snapshot is TCache snapshot)
+                return snapshot;
+            return await func();
+        }
+
+        public async Task RefreshAsync<TCache>(
+            string key,
+            TCache cache,
+            TimeSpan? memoryExpiry = null,
+            TimeSpan? redisExpiry = null,
+            int jitterSeconds = 30)
+        {
+            if (Interlocked.Increment(ref _refreshCount) == 1)
+            {
+                FirstRefreshStarted.TrySetResult();
+                await _release.Task;
+            }
+
+            Snapshot = cache as SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
+        }
+
+        public Task RemoveAsync(string key)
+        {
+            Snapshot = null;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class PauseFirstSaveChangesInterceptor : DbCommandInterceptor

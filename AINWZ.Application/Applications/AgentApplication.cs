@@ -60,7 +60,8 @@ public sealed class AgentApplication(
                 EnableAutoToolDispatch = request.EnableAutoToolDispatch
             }, cancellationToken))
             {
-                await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
+                AlignRunEventMetadata(runId.RunId, chunk, ++eventSequence);
+                await AppendRunEventAsync(runId.RunId, chunk, eventSequence, cancellationToken);
                 if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                     contentParts.Add(chunk.Content);
 
@@ -184,7 +185,8 @@ public sealed class AgentApplication(
                 EnableAutoToolDispatch = request.EnableAutoToolDispatch
             }, cancellationToken))
             {
-                await AppendRunEventAsync(runId.RunId, chunk, ++eventSequence, cancellationToken);
+                AlignRunEventMetadata(runId.RunId, chunk, ++eventSequence);
+                await AppendRunEventAsync(runId.RunId, chunk, eventSequence, cancellationToken);
                 if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                     accumulatedContent.Append(chunk.Content);
 
@@ -385,6 +387,17 @@ public sealed class AgentApplication(
             chunk.Type ?? string.Empty,
             chunk,
             cancellationToken) ?? Task.CompletedTask;
+    }
+
+    private static void AlignRunEventMetadata(
+        string runId,
+        AgentStreamChunk chunk,
+        long sequence)
+    {
+        chunk.RunId = runId;
+        chunk.Sequence = sequence;
+        if (string.IsNullOrWhiteSpace(chunk.StepId))
+            chunk.StepId = "runtime";
     }
 
 }

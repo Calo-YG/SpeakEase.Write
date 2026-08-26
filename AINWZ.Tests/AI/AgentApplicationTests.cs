@@ -32,6 +32,10 @@ public sealed class AgentApplicationTests
         await application.ChatAsync(CreateRequest("chat-sequence"));
 
         Assert.Equal(new long[] { 42, 43, 44 }, runStore.EventSequences);
+        Assert.Equal(new long[] { 42, 43, 44 }, runStore.EventPayloads.Select(x => x.Sequence));
+        Assert.All(runStore.EventPayloads, chunk => Assert.Equal("recovered-run", chunk.RunId));
+        Assert.All(runStore.EventPayloads, chunk => Assert.Equal("runtime", chunk.StepId));
+        Assert.All(runStore.Events, item => Assert.Equal(item.Sequence, item.Payload.Sequence));
     }
 
     [Fact]
@@ -43,11 +47,18 @@ public sealed class AgentApplicationTests
             new CapturingSessionManager(),
             runStore);
 
-        await foreach (var _ in application.StreamChatAsync(CreateRequest("stream-sequence")))
+        var chunks = new List<AgentStreamChunk>();
+        await foreach (var chunk in application.StreamChatAsync(CreateRequest("stream-sequence")))
         {
+            chunks.Add(chunk);
         }
 
         Assert.Equal(new long[] { 42, 43, 44 }, runStore.EventSequences);
+        Assert.Equal(new long[] { 42, 43, 44 }, chunks.Select(x => x.Sequence));
+        Assert.Equal(new long[] { 42, 43, 44 }, runStore.EventPayloads.Select(x => x.Sequence));
+        Assert.All(chunks, chunk => Assert.Equal("recovered-run", chunk.RunId));
+        Assert.All(chunks, chunk => Assert.Equal("runtime", chunk.StepId));
+        Assert.All(runStore.Events, item => Assert.Equal(item.Sequence, item.Payload.Sequence));
     }
 
     [Fact]
@@ -380,6 +391,8 @@ public sealed class AgentApplicationTests
         }
 
         public List<long> EventSequences { get; } = new();
+        public List<AgentStreamChunk> EventPayloads { get; } = new();
+        public List<(long Sequence, AgentStreamChunk Payload)> Events { get; } = new();
 
         public Task<AgentRunStartResult> StartAsync(
             string workId,
@@ -408,6 +421,9 @@ public sealed class AgentApplicationTests
             CancellationToken cancellationToken = default)
         {
             EventSequences.Add(sequence);
+            var chunk = Assert.IsType<AgentStreamChunk>(payload);
+            EventPayloads.Add(chunk);
+            Events.Add((sequence, chunk));
             return Task.CompletedTask;
         }
 
@@ -459,14 +475,27 @@ public sealed class AgentApplicationTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             await Task.Yield();
-            yield return new AgentStreamChunk { Type = "content", Content = "intermediate " };
             yield return new AgentStreamChunk
             {
+                RunId = "local-run",
+                StepId = "runtime",
+                Sequence = 1,
+                Type = "content",
+                Content = "intermediate "
+            };
+            yield return new AgentStreamChunk
+            {
+                RunId = "local-run",
+                StepId = "runtime",
+                Sequence = 2,
                 Type = "tool_result",
                 ToolResult = new ToolResult { ToolName = "lookup", Success = true, Content = "found" }
             };
             yield return new AgentStreamChunk
             {
+                RunId = "local-run",
+                StepId = "runtime",
+                Sequence = 3,
                 Type = "done",
                 FinalResponse = new AgentResponse { Content = "final answer", StopReason = "completed" }
             };

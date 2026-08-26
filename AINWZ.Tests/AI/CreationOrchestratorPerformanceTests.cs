@@ -108,14 +108,80 @@ public sealed class CreationOrchestratorPerformanceTests
         Assert.True(
             third.CapturedRequest.UserMessage.Length <= 320,
             $"Tiny-window dependency context exceeded budget: {third.CapturedRequest.UserMessage.Length} chars.");
-        Assert.Contains("[Dependency artifact: first-step]", third.CapturedRequest.UserMessage);
-        Assert.Contains("Summary: 中文摘要一：", third.CapturedRequest.UserMessage);
-        Assert.Contains("[Dependency artifact: second-step]", third.CapturedRequest.UserMessage);
-        Assert.Contains("Summary: 中文摘要二：", third.CapturedRequest.UserMessage);
+        Assert.Equal("request", third.CapturedRequest.UserMessage);
         Assert.DoesNotContain(new string('汉', 500), third.CapturedRequest.UserMessage);
     }
 
-    private sealed class StaticContextBuilder : ICreationAgentContext
+    [Fact]
+    public async Task ExecuteAsync_BudgetsDependenciesAgainstFullAgentRequest()
+    {
+        var first = new PipelineAgent("first", "first-summary|" + new string('甲', 10_000));
+        var second = new PipelineAgent("second", "second-summary|" + new string('乙', 10_000));
+        var third = new PipelineAgent("third", "done")
+        {
+            PromptSuffix = new string('系', 250)
+        };
+        var llmContext = new TestOpenAIContext { ContextWindow = 1_150, MaxOutputTokens = 64 };
+        var orchestrator = new CreationOrchestrator(
+            new CreationRouter(NullLogger<CreationRouter>.Instance),
+            llmContext,
+            new DagRouterLlm(),
+            new StaticContextBuilder(new List<ChatMessage>
+            {
+                ChatMessage.User(new string('历', 200))
+            }),
+            new[] { first, second, third },
+            NullLogger<CreationOrchestrator>.Instance);
+
+        await foreach (var _ in orchestrator.ExecuteAsync("work-1", "session-1", new string('用', 100)))
+        {
+        }
+
+        Assert.NotNull(third.CapturedRequest);
+        var estimatedRequestTokens = EstimateConservatively(third.CapturedRequest.SystemPrompt)
+            + EstimateConservatively(third.CapturedRequest.UserMessage)
+            + third.CapturedRequest.ConversationHistory.Sum(x => EstimateConservatively(GetContent(x)));
+        Assert.True(
+            estimatedRequestTokens <= llmContext.ContextWindow - third.CapturedRequest.MaxTokens,
+            $"Estimated request tokens exceeded budget: {estimatedRequestTokens}.");
+        Assert.Contains("[Dependency artifact: first-step]", third.CapturedRequest.UserMessage);
+        Assert.Contains("[Dependency artifact: second-step]", third.CapturedRequest.UserMessage);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DoesNotAppendSingleDependencyWhenArtifactBudgetIsExhausted()
+    {
+        var first = new PipelineAgent("first", new string('中', 10_000));
+        var second = new PipelineAgent("second", "done");
+        var llmContext = new TestOpenAIContext { ContextWindow = 32, MaxOutputTokens = 16 };
+        var orchestrator = new CreationOrchestrator(
+            new CreationRouter(NullLogger<CreationRouter>.Instance),
+            llmContext,
+            new PipelineRouterLlm(),
+            new StaticContextBuilder(),
+            new[] { first, second },
+            NullLogger<CreationOrchestrator>.Instance);
+
+        await foreach (var _ in orchestrator.ExecuteAsync("work-1", "session-1", "request"))
+        {
+        }
+
+        Assert.NotNull(second.CapturedRequest);
+        Assert.Equal("request", second.CapturedRequest.UserMessage);
+    }
+
+    private static int EstimateConservatively(string value) => (int)Math.Ceiling((value?.Length ?? 0) * 1.5);
+
+    private static string GetContent(ChatMessage message) => message switch
+    {
+        SystemMessage system => system.Content ?? string.Empty,
+        UserMessage user => user.Content?.ToString() ?? string.Empty,
+        AssistantMessage assistant => assistant.Content ?? string.Empty,
+        ToolMessage tool => tool.Content ?? string.Empty,
+        _ => string.Empty
+    };
+
+    private sealed class StaticContextBuilder(IReadOnlyList<ChatMessage> history = null) : ICreationAgentContext
     {
         public Task<AgentContext> BuildContextAsync(
             string workId,
@@ -127,7 +193,11 @@ public sealed class CreationOrchestratorPerformanceTests
             int contextWindowTokens,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(new AgentContext { UserId = "user-1" });
+            return Task.FromResult(new AgentContext
+            {
+                UserId = "user-1",
+                ConversationHistory = history?.ToList() ?? new List<ChatMessage>()
+            });
         }
     }
 
@@ -192,8 +262,9 @@ public sealed class CreationOrchestratorPerformanceTests
         public string RouteDescription => name;
         public AgentMetadata Metadata { get; } = new() { DefaultParameters = new AgentParameters(0.7, MaxTokens: 30_000) };
         public AgentRequest CapturedRequest { get; private set; }
+        public string PromptSuffix { get; init; } = string.Empty;
 
-        public string BuildPrompt() => name;
+        public string BuildPrompt() => name + PromptSuffix;
 
         public void RegisterTools(IToolCapable toolCapable)
         {

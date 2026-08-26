@@ -192,24 +192,37 @@ public sealed class CreationOrchestrator(
                 .Select(dependencyId => artifactsByStep.TryGetValue(dependencyId, out var artifact) ? artifact : null)
                 .Where(artifact => artifact is not null)
                 .ToList();
+            var systemPrompt = _promptComposer.Compose(agent.BuildPromptProfile());
+            var resolvedMaxTokens = Math.Min(
+                ResolveMaxTokens(
+                    meta.DefaultParameters.MaxTokens,
+                    requestedMaxTokens,
+                    llmContext.MaxOutputTokens),
+                Math.Max(1, llmContext.ContextWindow / 4));
+            var fixedRequestTokens = EstimateConservativeTokens(agentHistory)
+                + EstimateConservativeTokens(systemPrompt)
+                + EstimateConservativeTokens(userMessage);
+            var dependencyTokenBudget = Math.Max(
+                0,
+                llmContext.ContextWindow - resolvedMaxTokens - fixedRequestTokens - 8);
             var chainMessage = BuildDependencyMessage(
                 userMessage,
                 dependencyArtifacts,
-                llmContext.ContextWindow);
+                dependencyTokenBudget);
 
             var request = new AgentRequest
             {
                 RunId = runtimeRequest.RunId,
                 StepId = planStep.Id,
                 UserMessage = chainMessage,
-                SystemPrompt = _promptComposer.Compose(agent.BuildPromptProfile()),
+                SystemPrompt = systemPrompt,
                 Model = llmContext.Model,
                 MaxIterations = ResolveMaxIterations(maxIterations),
                 Temperature = requestedTemperature ?? meta.DefaultParameters.Temperature,
                 TopP = meta.DefaultParameters.TopP,
                 FrequencyPenalty = meta.DefaultParameters.FrequencyPenalty,
                 PresencePenalty = meta.DefaultParameters.PresencePenalty,
-                MaxTokens = ResolveMaxTokens(meta.DefaultParameters.MaxTokens, requestedMaxTokens, llmContext.MaxOutputTokens),
+                MaxTokens = resolvedMaxTokens,
                 ConversationHistory = agentHistory,
                 WorkId = workId,
                 UserId = sharedContext.UserId,
@@ -393,21 +406,29 @@ public sealed class CreationOrchestrator(
     private static string BuildDependencyMessage(
         string userMessage,
         IReadOnlyList<AgentArtifact> dependencies,
-        int contextWindowTokens)
+        int dependencyTokenBudget)
     {
         if (dependencies.Count == 0)
             return userMessage;
 
+        var aggregateBudget = ResolveDependencyArtifactBudget(dependencyTokenBudget);
+        if (aggregateBudget <= 0)
+            return userMessage;
+
         if (dependencies.Count == 1)
         {
-            // 保持线性管线的历史兼容格式和 12k 单 Artifact 上限。
-            var content = TruncateArtifactContent(dependencies[0].Content, 12_000);
-            return string.IsNullOrWhiteSpace(content)
-                ? userMessage
-                : $"{userMessage}\n\n[Previous agent result]\n{content}";
+            // 预算足够时保持线性管线的历史兼容格式和 12k 单 Artifact 上限。
+            const string prefix = "\n\n[Previous agent result]\n";
+            var totalBudget = (int)Math.Floor(dependencyTokenBudget / 1.5);
+            if (totalBudget <= prefix.Length)
+                return userMessage;
+
+            var content = TruncateArtifactContent(
+                dependencies[0].Content,
+                Math.Min(12_000, totalBudget - prefix.Length));
+            return $"{userMessage}{prefix}{content}";
         }
 
-        var aggregateBudget = ResolveDependencyArtifactBudget(contextWindowTokens);
         var metadata = dependencies
             .Select(dependency => new
             {
@@ -420,6 +441,12 @@ public sealed class CreationOrchestrator(
         var remainingDependencies = metadata.Count;
         foreach (var item in metadata)
         {
+            if (remainingBudget < item.Prefix.Length)
+            {
+                remainingBudget = 0;
+                break;
+            }
+
             // 保留每个依赖的标签；摘要按剩余元数据预算平均分配，避免中文等多字节文本撑爆小窗口。
             builder.Append(item.Prefix);
             remainingBudget -= item.Prefix.Length;
@@ -430,7 +457,6 @@ public sealed class CreationOrchestrator(
             remainingDependencies--;
         }
 
-        // 这是 Artifact 子预算，不代表完整 LLM 请求预算；系统提示、历史和输出预留尚未在此扣除。
         var remainingContentBudget = Math.Max(0, remainingBudget);
         foreach (var item in metadata)
         {
@@ -454,13 +480,36 @@ public sealed class CreationOrchestrator(
         return builder.ToString();
     }
 
-    private static int ResolveDependencyArtifactBudget(int contextWindowTokens)
+    private static int ResolveDependencyArtifactBudget(int dependencyTokenBudget)
     {
-        if (contextWindowTokens <= 0)
-            return 12_000;
+        if (dependencyTokenBudget <= 0)
+            return 0;
 
-        // 保守地只分配约 20% 的窗口给依赖 Artifact，且不设置 2k 的固定下限。
-        return Math.Min(12_000, Math.Max(256, contextWindowTokens / 5));
+        // 这是完整请求预算扣除后的 Artifact 子预算，按最坏 1.5 token/char 保守换算。
+        return Math.Min(12_000, (int)Math.Floor(dependencyTokenBudget / 1.5));
+    }
+
+    // 这里不追求 tokenizer 精度，而是以 ASCII/中文统一 1.5 token/char 的最坏情况估算。
+    private static int EstimateConservativeTokens(IEnumerable<ChatMessage> messages)
+    {
+        return messages.Sum(message => EstimateConservativeTokens(ExtractMessageText(message)));
+    }
+
+    private static int EstimateConservativeTokens(string text)
+    {
+        return (int)Math.Ceiling((text?.Length ?? 0) * 1.5);
+    }
+
+    private static string ExtractMessageText(ChatMessage message)
+    {
+        return message switch
+        {
+            SystemMessage system => system.Content ?? string.Empty,
+            UserMessage user => user.Content?.ToString() ?? string.Empty,
+            AssistantMessage assistant => assistant.Content ?? string.Empty,
+            ToolMessage tool => tool.Content ?? string.Empty,
+            _ => string.Empty
+        };
     }
 
     private static string TruncateArtifactContent(string content, int maxChars)

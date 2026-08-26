@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
+using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Application.Applications;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
@@ -18,6 +20,36 @@ namespace AINWZ.Tests.AI;
 
 public sealed class AgentApplicationTests
 {
+    [Fact]
+    public async Task ChatAsync_ContinuesRecoveredRunEventSequence()
+    {
+        var runStore = new CapturingRunStore(41);
+        var application = new AgentApplication(
+            new IntermediateContentOrchestrator(),
+            new CapturingSessionManager(),
+            runStore);
+
+        await application.ChatAsync(CreateRequest("chat-sequence"));
+
+        Assert.Equal(new long[] { 42, 43, 44 }, runStore.EventSequences);
+    }
+
+    [Fact]
+    public async Task StreamChatAsync_ContinuesRecoveredRunEventSequence()
+    {
+        var runStore = new CapturingRunStore(41);
+        var application = new AgentApplication(
+            new IntermediateContentOrchestrator(),
+            new CapturingSessionManager(),
+            runStore);
+
+        await foreach (var _ in application.StreamChatAsync(CreateRequest("stream-sequence")))
+        {
+        }
+
+        Assert.Equal(new long[] { 42, 43, 44 }, runStore.EventSequences);
+    }
+
     [Fact]
     public async Task ChatAsync_DoesNotPersistWhenAgentReachesMaxIterations()
     {
@@ -183,6 +215,19 @@ public sealed class AgentApplicationTests
         Assert.Equal("timed_out", run.StopReason);
     }
 
+    private static AgentChatRequestDto CreateRequest(string idempotencyKey)
+    {
+        return new AgentChatRequestDto
+        {
+            WorkId = "work-1",
+            IdempotencyKey = idempotencyKey,
+            Messages = new List<AgentChatMessage>
+            {
+                new() { Role = "user", Content = "continue" }
+            }
+        };
+    }
+
     private sealed class RouteChatCompatible : IChatCompatible
     {
         public Task<LLMTurnResult> ChatAsync(
@@ -319,6 +364,92 @@ public sealed class AgentApplicationTests
         public Task<int> ExpireStaleSessionsAsync() => throw new NotImplementedException();
         public Task SaveMessagesAsync(string sessionId, int turnNumber, string userMessage, string aiMessage, List<(string ToolName, bool Success, string Content)> toolResults = null) => throw new NotImplementedException();
         public Task<ApiResult<List<SessionMessageResponse>>> GetSessionMessagesAsync(string sessionId, int? limit = null) => throw new NotImplementedException();
+    }
+
+    private sealed class CapturingRunStore : IAgentRunStore
+    {
+        private readonly AgentRunStartResult _startResult;
+
+        public CapturingRunStore(long lastEventSequence)
+        {
+            _startResult = new AgentRunStartResult
+            {
+                RunId = "recovered-run",
+                LastEventSequence = lastEventSequence
+            };
+        }
+
+        public List<long> EventSequences { get; } = new();
+
+        public Task<AgentRunStartResult> StartAsync(
+            string workId,
+            string sessionId,
+            string deduplicationKey,
+            string clientMessageId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(_startResult);
+        }
+
+        public Task CompleteAsync(
+            string runId,
+            AgentResponse response,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task AppendEventAsync(
+            string runId,
+            string stepId,
+            long sequence,
+            string type,
+            object payload,
+            CancellationToken cancellationToken = default)
+        {
+            EventSequences.Add(sequence);
+            return Task.CompletedTask;
+        }
+
+        public Task SaveArtifactAsync(
+            string runId,
+            string stepId,
+            string contentType,
+            string summary,
+            string content,
+            int estimatedTokens,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task RecordToolCallAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<ToolExecutionLease> BeginAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(ToolExecutionLease.Execute());
+        }
+
+        public Task CompleteAsync(
+            string runId,
+            string stepId,
+            ToolCall toolCall,
+            ToolResult result,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class IntermediateContentOrchestrator : SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator

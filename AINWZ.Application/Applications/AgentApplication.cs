@@ -40,7 +40,7 @@ public sealed class AgentApplication(
         var toolResults = new List<(string ToolName, bool Success, string Content)>();
         var errorMessage = string.Empty;
         AgentResponse finalResponse = null;
-        long eventSequence = 0;
+        var eventSequence = runId.LastEventSequence;
 
         // 通过AI编排器执行对话，收集返回的内容块
         try
@@ -163,7 +163,7 @@ public sealed class AgentApplication(
         var toolResults = new List<(string ToolName, bool Success, string Content)>();
         var hadError = false;
         AgentResponse finalResponse = null;
-        long eventSequence = 0;
+        var eventSequence = runId.LastEventSequence;
 
         // 流式执行AI编排器，实时yield内容块给调用方
         var streamCompleted = false;

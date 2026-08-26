@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.AI.Lib.Runtime;
+using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Infrastructure.AI.Runtime;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -40,7 +41,7 @@ public sealed class AgentRunStoreTests
     }
 
     [Fact]
-    public async Task StartAsync_DetachesFailedInsertAfterUniqueKeyRace()
+    public async Task StartAsync_DetachesFailedInsertAfterSimulatedUniqueKeyRace()
     {
         var options = new DbContextOptionsBuilder<SpeakEaseDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -123,7 +124,7 @@ public sealed class AgentRunStoreTests
     }
 
     [Fact]
-    public async Task StartAsync_ReacquiresFailedRunWithRelationalConditionalUpdate()
+    public async Task StartAsync_ReacquiresFailedRunAndContinuesRelationalEventSequence()
     {
         await using var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -144,18 +145,41 @@ public sealed class AgentRunStoreTests
             StopReason = "failed",
             Model = "test-model"
         });
+        await store.AppendEventAsync(first.RunId, "step-old", 1, "content", new { Content = "old" });
+        var terminal = await db.AgentRuns.SingleAsync();
+        terminal.UpdateBy = "previous-user";
+        terminal.UpdateAt = DateTime.Now.AddMinutes(-5);
+        await db.SaveChangesAsync();
+        var failed = await db.AgentRuns.AsNoTracking().SingleAsync();
 
         var reacquired = await store.StartAsync("work-sqlite", "session-sqlite", "idem-sqlite", "client-sqlite");
+        await store.AppendEventAsync(
+            first.RunId,
+            "step-new",
+            reacquired.LastEventSequence + 1,
+            "content",
+            new { Content = "new" });
         var inProgress = await store.StartAsync("work-sqlite", "session-sqlite", "idem-sqlite", "client-sqlite");
 
         Assert.Equal(first.RunId, reacquired.RunId);
         Assert.False(reacquired.IsReplay);
         Assert.False(reacquired.IsInProgress);
+        Assert.Equal(1, reacquired.LastEventSequence);
         Assert.Equal(first.RunId, inProgress.RunId);
         Assert.True(inProgress.IsInProgress);
         var recovered = await db.AgentRuns.AsNoTracking().SingleAsync();
         Assert.Equal("running", recovered.Status);
+        Assert.Equal(string.Empty, recovered.StopReason);
+        Assert.Equal(string.Empty, recovered.Content);
+        Assert.Equal(string.Empty, recovered.ResultJson);
+        Assert.Equal(string.Empty, recovered.Model);
         Assert.Null(recovered.CompletedAt);
+        Assert.True(recovered.UpdateAt > failed.UpdateAt);
+        Assert.Equal("user-1", recovered.UpdateBy);
+        Assert.Equal(new long[] { 1, 2 }, await db.AgentRunEvents.AsNoTracking()
+            .OrderBy(x => x.Sequence)
+            .Select(x => x.Sequence)
+            .ToArrayAsync());
     }
 
     [Fact]

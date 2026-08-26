@@ -44,6 +44,7 @@ public interface IAgentRunStore : IToolExecutionJournal
 public sealed class AgentRunStartResult
 {
     public string RunId { get; init; } = string.Empty;
+    public long LastEventSequence { get; init; }
     public bool IsReplay { get; init; }
     public bool IsInProgress { get; init; }
     public AgentResponse ExistingResponse { get; init; }

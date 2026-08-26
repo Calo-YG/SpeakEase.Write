@@ -117,7 +117,17 @@ public sealed class AgentRunStore(
             }
 
             if (recovered == 1)
-                return new AgentRunStartResult { RunId = existing.Id };
+            {
+                var lastEventSequence = await db.AgentRunEvents.AsNoTracking()
+                    .Where(x => x.RunId == existing.Id)
+                    .Select(x => (long?)x.Sequence)
+                    .MaxAsync(cancellationToken) ?? 0;
+                return new AgentRunStartResult
+                {
+                    RunId = existing.Id,
+                    LastEventSequence = lastEventSequence
+                };
+            }
 
             existing = await db.AgentRuns.AsNoTracking()
                 .FirstAsync(x => x.Id == existing.Id, cancellationToken);

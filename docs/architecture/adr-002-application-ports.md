@@ -4,6 +4,10 @@
 
 Accepted
 
+## Implementation Status
+
+The Agent Runtime persistence slice now uses the dedicated `IAgentRuntimeDbContext` port. `IWriteDbContext` remains available for legacy application and AI modules while additional slices are migrated incrementally.
+
 ## Context
 
 Application 当前直接引用 Infrastructure、EF DbContext、缓存、身份上下文和 ID 实现，导致业务层无法独立测试，且项目依赖方向反转。
@@ -14,5 +18,5 @@ Application 当前直接引用 Infrastructure、EF DbContext、缓存、身份�
 
 ## Trade-offs
 
-- 过渡期 `IWriteDbContext` 仍暴露 EF 类型，后续必须按模块 Store 收窄。
+- 过渡期 `IWriteDbContext` 仍暴露 EF 类型；Agent Runtime 已先收窄为独立端口，后续按相同方式迁移 Memory、Story 和 Creation Session。
 - 接口数量增加，但可以隔离实现、改善测试，并避免 Application 依赖基础设施项目。

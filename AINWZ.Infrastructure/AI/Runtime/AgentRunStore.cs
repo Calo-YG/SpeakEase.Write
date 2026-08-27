@@ -12,7 +12,7 @@ using SpeakEase.Write.Domain.Entities.AI;
 namespace SpeakEase.Write.Infrastructure.AI.Runtime;
 
 public sealed class AgentRunStore(
-    IWriteDbContext db,
+    IAgentRuntimeDbContext db,
     IUserContext userContext,
     ISnowflakeIdGenerator idGenerator) : IAgentRunStore
 {

@@ -14,7 +14,7 @@ namespace SpeakEase.Write.Infrastructure.AI.Context;
 public sealed class CreationAgentContext(
     ApplicationMemoryProvider memory,
     IUserContext user,
-    IWriteDbContext dbContext,
+    IMemoryDbContext dbContext,
     ISnowflakeIdGenerator idGenerator) : ICreationAgentContext
 {
     private const int FilteredHistoryTurns = 8;     // 筛选模式：仅保留最近 8 个完整轮次

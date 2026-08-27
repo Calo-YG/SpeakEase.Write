@@ -15,7 +15,7 @@ using SpeakEase.Write.Infrastructure.Shared;
 namespace SpeakEase.Write.Infrastructure.AI.Memory;
 
 public sealed class HybridMemoryProvider(
-    IWriteDbContext db,
+    IMemoryDbContext db,
     IMultiCacheService cache,
     ISnowflakeIdGenerator idGenerator,
     ILogger<HybridMemoryProvider> logger) : IMemoryProvider

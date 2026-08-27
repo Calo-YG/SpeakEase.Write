@@ -27,10 +27,13 @@ public sealed class InfrastructureServiceRegistrationTests
         var concrete = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
         var abstraction = scope.ServiceProvider.GetService<IWriteDbContext>();
         var runtimePort = scope.ServiceProvider.GetService<IAgentRuntimeDbContext>();
+        var memoryPort = scope.ServiceProvider.GetService<IMemoryDbContext>();
 
         Assert.NotNull(abstraction);
         Assert.Same(concrete, abstraction);
         Assert.NotNull(runtimePort);
         Assert.Same(concrete, runtimePort);
+        Assert.NotNull(memoryPort);
+        Assert.Same(concrete, memoryPort);
     }
 }

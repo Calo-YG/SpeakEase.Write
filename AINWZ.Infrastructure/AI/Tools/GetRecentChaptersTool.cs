@@ -46,7 +46,7 @@ public sealed class GetRecentChaptersTool(IServiceScopeFactory scopeFactory) : I
         var count = args.Count != 0 ? args.Count : 3;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var baseQuery = db.Chapters.AsNoTracking()
             .Where(c => c.WorkId == args.WorkId);

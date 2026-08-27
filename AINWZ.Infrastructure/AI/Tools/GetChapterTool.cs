@@ -44,7 +44,7 @@ public sealed class GetChapterTool(IServiceScopeFactory scopeFactory) : IToolExe
         var maxContentChars = args.MaxContentChars != 0 ? args.MaxContentChars : 4000;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var chapter = await db.Chapters.AsNoTracking()
             .Where(c => c.Id == args.ChapterId && c.WorkId == args.WorkId)

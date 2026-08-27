@@ -45,7 +45,7 @@ public sealed class GetChapterVersionsTool(IServiceScopeFactory scopeFactory) : 
         var limit = args.Limit != 0 ? args.Limit : 5;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var chapter = await db.Chapters.AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == args.ChapterId && c.WorkId == args.WorkId, ct);

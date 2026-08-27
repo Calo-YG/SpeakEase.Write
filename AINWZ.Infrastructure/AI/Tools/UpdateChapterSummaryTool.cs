@@ -42,7 +42,7 @@ public sealed class UpdateChapterSummaryTool(IServiceScopeFactory scopeFactory) 
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var chapter = await db.Chapters.FirstOrDefaultAsync(
             c => c.Id == args.ChapterId && c.WorkId == args.WorkId, ct);

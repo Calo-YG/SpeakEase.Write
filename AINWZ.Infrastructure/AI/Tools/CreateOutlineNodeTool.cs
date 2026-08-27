@@ -82,7 +82,7 @@ public sealed class CreateOutlineNodeTool(IServiceScopeFactory scopeFactory) : I
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         OutlineNodeEntity entity = null;

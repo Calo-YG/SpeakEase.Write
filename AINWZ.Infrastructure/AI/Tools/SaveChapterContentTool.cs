@@ -47,7 +47,7 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         ChapterEntity chapter = null;
@@ -67,7 +67,7 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
     }
 
     private static async Task<ToolResult> UpdateExisting(
-        IWriteDbContext db, ChapterEntity chapter, string content, CancellationToken ct)
+        IStoryDbContext db, ChapterEntity chapter, string content, CancellationToken ct)
     {
         chapter.Content = content;
         chapter.WordCount = content.Count(c => !char.IsWhiteSpace(c));
@@ -92,7 +92,7 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
     }
 
     private static async Task<ToolResult> CreateNew(
-        IWriteDbContext db, ISnowflakeIdGenerator idGen,
+        IStoryDbContext db, ISnowflakeIdGenerator idGen,
         string workId, int chapterSequence, string chapterTitle, string content, CancellationToken ct)
     {
         var volumes = await db.Volumes
@@ -169,7 +169,7 @@ public sealed class SaveChapterContentTool(IServiceScopeFactory scopeFactory) : 
         }
     }
 
-    private static async Task RecalcTotalWords(IWriteDbContext db, string workId, CancellationToken ct)
+    private static async Task RecalcTotalWords(IStoryDbContext db, string workId, CancellationToken ct)
     {
         var totalWords = await db.Chapters.AsNoTracking()
             .Where(c => c.WorkId == workId)

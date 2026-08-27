@@ -41,7 +41,7 @@ public sealed class ListVolumesTool(IServiceScopeFactory scopeFactory, IOptionsS
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var volumes = await db.Volumes.AsNoTracking()
             .Where(x => x.WorkId == args.WorkId)

@@ -45,7 +45,7 @@ public sealed class GetChapterBySequenceTool(IServiceScopeFactory scopeFactory, 
         var maxContentChars = args.MaxContentChars != 0 ? args.MaxContentChars : 4000;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var chapter = await db.Chapters.AsNoTracking()
             .Where(x => x.WorkId == args.WorkId && x.Sequence == args.Sequence)

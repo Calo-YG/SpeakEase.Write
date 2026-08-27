@@ -43,7 +43,7 @@ public sealed class GetOutlineTool(IServiceScopeFactory scopeFactory) : IToolExe
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var work = await db.Outlines.AsNoTracking()
             .FirstOrDefaultAsync(x => x.WorkId == args.WorkId, ct);

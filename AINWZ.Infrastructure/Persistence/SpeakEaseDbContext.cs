@@ -14,7 +14,7 @@ namespace SpeakEase.Write.Infrastructure.Persistence;
 /// <summary>
 /// SpeakEase.Write 应用数据库上下文。
 /// </summary>
-public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : DbContext(options), IWriteDbContext, IAgentRuntimeDbContext, IMemoryDbContext, ICreationSessionDbContext
+public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : DbContext(options), IWriteDbContext, IAgentRuntimeDbContext, IMemoryDbContext, ICreationSessionDbContext, IStoryDbContext
 {
     public DbSet<UserEntity> Users => Set<UserEntity>();
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();

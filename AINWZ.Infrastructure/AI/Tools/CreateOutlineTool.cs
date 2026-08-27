@@ -68,7 +68,7 @@ public sealed class CreateOutlineTool(IServiceScopeFactory scopeFactory) : ITool
             return ToolResult.Fail($"无效的结构模板: {args.StructureTemplate}，有效值: three_act/four_act/hero_journey/freeform");
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var existingPrimary = await db.Outlines

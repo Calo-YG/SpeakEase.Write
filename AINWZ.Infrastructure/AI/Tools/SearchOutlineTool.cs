@@ -45,7 +45,7 @@ public sealed class SearchOutlineTool(IServiceScopeFactory scopeFactory, IOption
         var limit = args.Limit != 0 ? args.Limit : 10;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
 
         var nodes = await db.OutlineNodes.AsNoTracking()
             .Where(x => x.WorkId == args.WorkId

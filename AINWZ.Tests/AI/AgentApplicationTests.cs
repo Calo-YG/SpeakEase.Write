@@ -451,6 +451,7 @@ public sealed class AgentApplicationTests
         public Task<ToolExecutionLease> BeginAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             CancellationToken cancellationToken = default)
         {
@@ -460,6 +461,7 @@ public sealed class AgentApplicationTests
         public Task CompleteAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             ToolResult result,
             CancellationToken cancellationToken = default)

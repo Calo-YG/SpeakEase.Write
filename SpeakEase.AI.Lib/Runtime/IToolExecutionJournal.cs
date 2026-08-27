@@ -11,12 +11,14 @@ public interface IToolExecutionJournal
     Task<ToolExecutionLease> BeginAsync(
         string runId,
         string stepId,
+        string executionKey,
         ToolCall toolCall,
         CancellationToken cancellationToken = default);
 
     Task CompleteAsync(
         string runId,
         string stepId,
+        string executionKey,
         ToolCall toolCall,
         ToolResult result,
         CancellationToken cancellationToken = default);

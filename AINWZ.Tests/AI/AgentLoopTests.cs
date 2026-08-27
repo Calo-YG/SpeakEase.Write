@@ -690,6 +690,7 @@ public sealed class AgentLoopTests
         public Task<ToolExecutionLease> BeginAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             CancellationToken cancellationToken = default)
         {
@@ -699,6 +700,7 @@ public sealed class AgentLoopTests
         public Task CompleteAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             ToolResult result,
             CancellationToken cancellationToken = default)
@@ -723,6 +725,7 @@ public sealed class AgentLoopTests
         public Task<ToolExecutionLease> BeginAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             CancellationToken cancellationToken = default)
         {
@@ -732,6 +735,7 @@ public sealed class AgentLoopTests
         public async Task CompleteAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             ToolResult result,
             CancellationToken cancellationToken = default)
@@ -758,6 +762,7 @@ public sealed class AgentLoopTests
         public Task<ToolExecutionLease> BeginAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             CancellationToken cancellationToken = default)
         {
@@ -768,6 +773,7 @@ public sealed class AgentLoopTests
         public Task CompleteAsync(
             string runId,
             string stepId,
+            string executionKey,
             ToolCall toolCall,
             ToolResult result,
             CancellationToken cancellationToken = default)

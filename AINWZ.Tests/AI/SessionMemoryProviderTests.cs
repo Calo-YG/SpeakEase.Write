@@ -562,6 +562,47 @@ public sealed class SessionMemoryProviderTests
     }
 
     [Fact]
+    public async Task RefreshAfterTurnAsync_DoesNotExposeFactsFromGenerationRolledBackWhileRefreshWasRunning()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"session-memory-fact-generation-{Guid.NewGuid():N}.db");
+        var oldInterceptor = new PauseMatchingCommandInterceptor("INSERT INTO \"memory_snapshots\"");
+        var cache = new FakeMultiCacheService();
+        var ids = new SequentialIdGenerator();
+        try
+        {
+            await using var setupDb = await CreateSqliteDbAsync(databasePath);
+            await SeedRollbackRaceAsync(setupDb, "fact-generation-session", includeSnapshot: false);
+            var staleMessage = await setupDb.AICreationMessages
+                .SingleAsync(x => x.SessionId == "fact-generation-session" && x.TurnNumber == 10);
+            staleMessage.Content = "[[fact:plot:future=rolled back]]";
+            await setupDb.SaveChangesAsync();
+
+            await using var oldDb = await CreateSqliteDbAsync(databasePath, oldInterceptor);
+            var oldProvider = CreateProvider(oldDb, cache, ids);
+            var oldRefresh = oldProvider.RefreshAfterTurnAsync(
+                "user-1", "work-generation", "fact-generation-session", 10);
+            await oldInterceptor.CommandStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+            await using var rollbackDb = await CreateSqliteDbAsync(databasePath);
+            var rollbackProvider = CreateProvider(rollbackDb, cache, ids);
+            var manager = CreateSessionManager(rollbackDb, rollbackProvider);
+            var rollback = await manager.RollbackToTurnAsync("fact-generation-session", 5);
+            Assert.True(rollback.Successed);
+
+            oldInterceptor.Release();
+            await oldRefresh;
+
+            var facts = await rollbackProvider.LoadProjectFactsAsync("user-1", "work-generation");
+            Assert.DoesNotContain(facts, fact => fact.Key == "future");
+        }
+        finally
+        {
+            oldInterceptor.Release();
+            TryDelete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task PruneSessionFactsAfterTurnAsync_RemovesOnlyFactsFromRolledBackTurns()
     {
         await using var db = TestDb.Create();

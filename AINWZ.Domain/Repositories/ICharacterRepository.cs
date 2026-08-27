@@ -1,7 +1,7 @@
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Domain.Repositories;
 
-namespace SpeakEase.Write.Application.Repositories;
+namespace SpeakEase.Write.Domain.Repositories;
 
 /// <summary>
 /// 角色聚合根仓储。

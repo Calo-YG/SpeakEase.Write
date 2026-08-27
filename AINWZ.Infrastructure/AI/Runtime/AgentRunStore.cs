@@ -265,16 +265,27 @@ public sealed class AgentRunStore(
     public async Task<ToolExecutionLease> BeginAsync(
         string runId,
         string stepId,
+        string executionKey,
         ToolCall toolCall,
         CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId;
+        var argumentsHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(toolCall.Function?.Arguments ?? string.Empty)));
+        var toolName = toolCall.Function?.Name ?? string.Empty;
         var existing = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
-            x.UserId == userId && x.RunId == runId && x.ToolCallId == (toolCall.Id ?? string.Empty),
+            x.UserId == userId && x.RunId == runId && x.ToolCallId == executionKey,
             cancellationToken);
 
         if (existing is not null)
         {
+            if (existing.ToolName != toolName || existing.ArgumentsHash != argumentsHash)
+            {
+                return ToolExecutionLease.Replay(ToolResult.Fail(
+                    "Recovered tool call does not match the original execution slot.",
+                    "tool_call_identity_conflict"));
+            }
+
             if (existing.Status == "completed" && !string.IsNullOrWhiteSpace(existing.ResultJson))
             {
                 try
@@ -300,10 +311,9 @@ public sealed class AgentRunStore(
             UserId = userId,
             RunId = runId,
             StepId = stepId ?? string.Empty,
-            ToolCallId = toolCall.Id ?? string.Empty,
-            ToolName = toolCall.Function?.Name ?? string.Empty,
-            ArgumentsHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(toolCall.Function?.Arguments ?? string.Empty))),
+            ToolCallId = executionKey,
+            ToolName = toolName,
+            ArgumentsHash = argumentsHash,
             Status = "running",
             CreateBy = userId,
             CreateAt = now,
@@ -320,7 +330,7 @@ public sealed class AgentRunStore(
         {
             db.Entry(entity).State = EntityState.Detached;
             var concurrent = await db.AgentToolCalls.AsNoTracking().FirstOrDefaultAsync(x =>
-                x.UserId == userId && x.RunId == runId && x.ToolCallId == (toolCall.Id ?? string.Empty),
+                x.UserId == userId && x.RunId == runId && x.ToolCallId == executionKey,
                 cancellationToken);
             if (concurrent is null)
                 throw;
@@ -334,12 +344,13 @@ public sealed class AgentRunStore(
     public async Task CompleteAsync(
         string runId,
         string stepId,
+        string executionKey,
         ToolCall toolCall,
         ToolResult result,
         CancellationToken cancellationToken = default)
     {
         var entity = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
-            x.UserId == userContext.UserId && x.RunId == runId && x.ToolCallId == (toolCall.Id ?? string.Empty),
+            x.UserId == userContext.UserId && x.RunId == runId && x.ToolCallId == executionKey,
             cancellationToken);
         if (entity is null)
             return;

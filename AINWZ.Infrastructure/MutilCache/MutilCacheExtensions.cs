@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ApplicationCache = SpeakEase.Write.Application.Abstractions.Caching.IMultiCacheService;
 using SpeakEase.Write.Infrastructure.MutilCache;
 
 namespace SpeakEase.Write.Infrastructure.MutilCache
@@ -12,7 +13,8 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
         public static IServiceCollection AddMutilCache(this IServiceCollection services,IConfiguration configuration)
         {
             services.AddMemoryCache();
-            services.AddSingleton<IMultiCacheService, MultiCacheService>();
+        services.AddSingleton<IMultiCacheService, MultiCacheService>();
+        services.AddSingleton<ApplicationCache>(sp => sp.GetRequiredService<IMultiCacheService>());
 
             var redisConfig = configuration.GetConnectionString("Redis") ?? configuration["Redis"];
 

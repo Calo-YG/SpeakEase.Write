@@ -1,4 +1,4 @@
-using SpeakEase.Write.Infrastructure.Authorization;
+using SpeakEase.Write.Application.Abstractions.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,6 +8,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using InfrastructureTokenManager = SpeakEase.Authorization.Authorization.ITokenManager;
 
 namespace SpeakEase.Authorization;
 
@@ -15,7 +16,7 @@ namespace SpeakEase.Authorization;
 /// JWT Token 管理器 - 优化版本
 /// 改进：安全性、性能、错误处理、线程安全
 /// </summary>
-public sealed class TokenManager : ITokenManager
+public sealed class TokenManager : InfrastructureTokenManager
 {
     private readonly JwtOptions _options;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -68,8 +69,8 @@ public sealed class TokenManager : ITokenManager
             issuer: _options.Issuer,
             audience: _options.Audience,
             claims: claims,
-            notBefore: DateTime.Now,
-            expires: DateTime.Now.AddMinutes(_options.ExpMinutes),
+            notBefore: DateTime.UtcNow,
+            expires: DateTime.UtcNow.AddMinutes(_options.ExpMinutes),
             signingCredentials: _signingCredentials
         );
 
@@ -176,7 +177,7 @@ public sealed class TokenManager : ITokenManager
         try
         {
             var jwt = ReadJwtToken(token);
-            return jwt.ValidTo - DateTime.Now;
+            return jwt.ValidTo - DateTime.UtcNow;
         }
         catch
         {

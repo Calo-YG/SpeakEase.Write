@@ -21,5 +21,6 @@ internal sealed class CharacterGraphNodeEntityConfiguration : IEntityTypeConfigu
         builder.Property(x => x.StyleJson).HasColumnType("text");
         builder.Property(x => x.Metadata).HasColumnType("text");
         builder.Property(x => x.Metadata).ConfigureStringDictionaryProperty<CharacterGraphNodeEntity>();
+        builder.HasIndex(x => new { x.WorkId, x.GraphId, x.CharacterId }).IsUnique();
     }
 }

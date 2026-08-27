@@ -93,9 +93,9 @@ public sealed class CreateHistoricalEventTool(IServiceScopeFactory scopeFactory)
         public string Id { get; init; }
         public string Title { get; init; }
         public string Description { get; init; }
-        public string? EraLabel { get; init; }
-        public string? EventTime { get; init; }
-        public string? ImpactSummary { get; init; }
+        public string EraLabel { get; init; }
+        public string EventTime { get; init; }
+        public string ImpactSummary { get; init; }
 
         public ToolResult Validate()
         {

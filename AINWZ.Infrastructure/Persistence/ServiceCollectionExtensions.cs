@@ -1,11 +1,12 @@
-using SpeakEase.Write.Application.Repositories;
+using SpeakEase.Write.Domain.Repositories;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using SpeakEase.Write.Domain.Repositories;
+using ApplicationDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
+using ApplicationIdGenerator = SpeakEase.Write.Application.Abstractions.Ids.ISnowflakeIdGenerator;
 
 namespace SpeakEase.Write.Infrastructure.Persistence;
 
@@ -26,6 +27,8 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddDbContext<SpeakEaseDbContext>(options => options.UseNpgsql(connectionString));
+        services.AddScoped<ApplicationDbContext>(serviceProvider =>
+            serviceProvider.GetRequiredService<SpeakEaseDbContext>());
 
         services.AddOptions<SnowflakeIdOptions>()
             .Bind(configuration.GetSection(SnowflakeIdOptions.SectionName));
@@ -35,6 +38,7 @@ public static class ServiceCollectionExtensions
             var options = serviceProvider.GetRequiredService<IOptions<SnowflakeIdOptions>>().Value;
             return new SnowflakeIdGenerator(options.WorkerId, options.MaxBackwardMilliseconds);
         });
+        services.AddSingleton<ApplicationIdGenerator>(sp => sp.GetRequiredService<ISnowflakeIdGenerator>());
 
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IWorkRepository, WorkRepository>();

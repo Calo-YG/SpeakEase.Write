@@ -2,19 +2,22 @@ using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Identity;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
 
 namespace SpeakEase.Write.Application.Novel.Export;
 
 // 小说导出服务：将作品内容导出为TXT或EPUB格式，支持按章节序号范围筛选
-public class ExportService(SpeakEaseDbContext db)
+public class ExportService(SpeakEaseDbContext db, IUserContext userContext)
 {
     // 导出为TXT格式：包含作品元信息（标题、题材、字数）和各章节内容（HTML转纯文本）
     public async Task<(byte[] Content, string FileName, string ContentType)> ExportTxtAsync(
         string workId, int? startSequence = null, int? endSequence = null, CancellationToken ct = default)
     {
-        var work = await db.Works.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workId, ct)
-            ?? throw new InvalidOperationException($"作品(id={workId})不存在");
+        var work = await db.Works.AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == workId && w.UserId == userContext.UserId, ct)
+            ?? throw new UnauthorizedAccessException("无权访问该作品。");
 
         var chapters = await QueryChaptersAsync(workId, startSequence, endSequence, ct);
 
@@ -54,8 +57,9 @@ public class ExportService(SpeakEaseDbContext db)
     public async Task<(byte[] Content, string FileName, string ContentType)> ExportEpubAsync(
         string workId, int? startSequence = null, int? endSequence = null, CancellationToken ct = default)
     {
-        var work = await db.Works.AsNoTracking().FirstOrDefaultAsync(w => w.Id == workId, ct)
-            ?? throw new InvalidOperationException($"作品(id={workId})不存在");
+        var work = await db.Works.AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == workId && w.UserId == userContext.UserId, ct)
+            ?? throw new UnauthorizedAccessException("无权访问该作品。");
 
         var chapters = await QueryChaptersAsync(workId, startSequence, endSequence, ct);
 

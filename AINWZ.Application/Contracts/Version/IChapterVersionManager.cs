@@ -1,13 +1,16 @@
 using SpeakEase.Write.Application.Contracts.Story.Dto;
 using SpeakEase.Write.Application.Contracts.Version.Dto;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Contracts.Version;
 
 public interface IChapterVersionManager
 {
     Task<ApiResult<ChapterVersionDto>> CreateVersionAsync(CreateVersionRequest request);
-    Task<ApiResult<List<ChapterVersionDto>>> ListVersionsAsync(string chapterId);
+    Task<ApiResult<List<ChapterVersionDto>>> ListVersionsAsync(
+        string workId,
+        string chapterId,
+        CancellationToken cancellationToken = default);
     Task<ApiResult<ChapterVersionDetailDto>> GetVersionAsync(string versionId);
     Task<ApiResult<ChapterVersionDto>> RollbackToVersionAsync(string chapterId, string targetVersionId);
     Task<ApiResult<ChapterVersionDto>> MergeFromVersionAsync(string chapterId, string sourceVersionId);

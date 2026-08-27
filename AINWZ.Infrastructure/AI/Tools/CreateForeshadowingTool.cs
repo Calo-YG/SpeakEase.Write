@@ -93,7 +93,7 @@ public sealed class CreateForeshadowingTool(IServiceScopeFactory scopeFactory) :
         public string Description { get; init; }
         public string SetupChapterId { get; init; }
         public int Importance { get; init; }
-        public string? ExpectedPayoffChapterId { get; init; }
+        public string ExpectedPayoffChapterId { get; init; }
 
         public ToolResult Validate()
         {

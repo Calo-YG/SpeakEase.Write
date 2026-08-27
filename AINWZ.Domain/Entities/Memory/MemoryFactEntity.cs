@@ -8,6 +8,7 @@ public sealed class MemoryFactEntity : AggregateRootEntity, IOwner
     public string OwnerId => UserId;
     public string WorkId { get; set; } = string.Empty;
     public string SessionId { get; set; } = string.Empty;
+    public long MemoryGeneration { get; set; }
     public string Category { get; set; } = string.Empty;
     public string Key { get; set; } = string.Empty;
     public string Value { get; set; } = string.Empty;

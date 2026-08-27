@@ -25,9 +25,10 @@ public static class VersionRoute
         group.MapGet(string.Empty, async (
             string workId,
             string chapterId,
-            IChapterVersionManager mgr) =>
+            IChapterVersionManager mgr,
+            CancellationToken cancellationToken) =>
         {
-            return await mgr.ListVersionsAsync(chapterId);
+            return await mgr.ListVersionsAsync(workId, chapterId, cancellationToken);
         }).WithName("list_versions");
 
         group.MapGet("{versionId}", async (

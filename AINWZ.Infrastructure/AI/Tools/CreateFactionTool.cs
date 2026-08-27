@@ -91,7 +91,7 @@ public sealed class CreateFactionTool(IServiceScopeFactory scopeFactory) : ITool
         public string Name { get; init; }
         public string FactionType { get; init; }
         public string Description { get; init; }
-        public string? RelationshipJson { get; init; }
+        public string RelationshipJson { get; init; }
 
         public ToolResult Validate()
         {

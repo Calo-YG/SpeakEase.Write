@@ -1,7 +1,7 @@
 using SpeakEase.Write.Domain.Entities.World;
 using SpeakEase.Write.Domain.Repositories;
 
-namespace SpeakEase.Write.Application.Repositories;
+namespace SpeakEase.Write.Domain.Repositories;
 
 /// <summary>
 /// 世界观聚合根仓储。

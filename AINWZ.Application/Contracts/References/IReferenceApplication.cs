@@ -1,5 +1,5 @@
 using SpeakEase.Write.Application.Contracts.References.Dto;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Contracts.References;
 

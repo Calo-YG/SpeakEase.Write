@@ -235,9 +235,9 @@ public sealed class AgentRunStoreTests
             Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":1}" }
         };
 
-        var firstLease = await store.BeginAsync(run.RunId, "step-1", call);
+        var firstLease = await store.BeginAsync(run.RunId, "step-1", "0:0", call);
         Assert.True(firstLease.ShouldExecute);
-        await store.CompleteAsync(run.RunId, "step-1", call, new ToolResult
+        await store.CompleteAsync(run.RunId, "step-1", "0:0", call, new ToolResult
         {
             Success = true,
             Content = "saved",
@@ -245,10 +245,58 @@ public sealed class AgentRunStoreTests
             ToolName = call.Function.Name
         });
 
-        var replayLease = await store.BeginAsync(run.RunId, "step-1", call);
+        var replayLease = await store.BeginAsync(run.RunId, "step-1", "0:0", call);
         Assert.False(replayLease.ShouldExecute);
         Assert.Equal("saved", replayLease.ReplayResult.Content);
         Assert.Equal(1, await db.AgentToolCalls.CountAsync());
+    }
+
+    [Fact]
+    public async Task ToolJournal_ReplaysRecoveredCallWhenModelChangesToolCallId()
+    {
+        await using var db = TestDb.Create();
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        var run = await store.StartAsync("work-1", "session-1", "idem-recovered-tool", "client-tool");
+        var originalCall = new ToolCall
+        {
+            Id = "model-call-original",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":1}" }
+        };
+        var recoveredCall = new ToolCall
+        {
+            Id = "model-call-recovered",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":1}" }
+        };
+
+        var firstLease = await store.BeginAsync(run.RunId, "step-1", "0:0", originalCall);
+        Assert.True(firstLease.ShouldExecute);
+        await store.CompleteAsync(run.RunId, "step-1", "0:0", originalCall, new ToolResult
+        {
+            Success = true,
+            Content = "saved",
+            ToolCallId = originalCall.Id,
+            ToolName = originalCall.Function.Name
+        });
+
+        var recoveredLease = await store.BeginAsync(run.RunId, "step-1", "0:0", recoveredCall);
+
+        Assert.False(recoveredLease.ShouldExecute);
+        Assert.Equal("saved", recoveredLease.ReplayResult.Content);
+        Assert.Equal(1, await db.AgentToolCalls.CountAsync());
+
+        recoveredCall.Function.Arguments = "{\"value\":2}";
+        var conflictingLease = await store.BeginAsync(
+            run.RunId, "step-1", "0:0", recoveredCall);
+        var secondSlotLease = await store.BeginAsync(
+            run.RunId, "step-1", "0:1", originalCall);
+
+        Assert.False(conflictingLease.ShouldExecute);
+        Assert.Equal("tool_call_identity_conflict", conflictingLease.ReplayResult.ErrorCode);
+        Assert.True(secondSlotLease.ShouldExecute);
+        Assert.Equal(2, await db.AgentToolCalls.CountAsync());
     }
 
     [Fact]
@@ -269,7 +317,7 @@ public sealed class AgentRunStoreTests
             Function = new FunctionCallDetail { Name = "save", Arguments = "{}" }
         };
 
-        var lease = await store.BeginAsync(run.RunId, "step-1", call);
+        var lease = await store.BeginAsync(run.RunId, "step-1", "0:0", call);
 
         Assert.False(lease.ShouldExecute);
         Assert.Equal("tool_call_in_progress", lease.ReplayResult.ErrorCode);

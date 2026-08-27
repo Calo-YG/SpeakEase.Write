@@ -1,13 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Abstractions.Identity;
 using SpeakEase.Write.Application.Contracts.Creation;
 using SpeakEase.Write.Application.Contracts.Creation.Dto;
 using SpeakEase.Write.Application.Contracts.Story.Dto;
 using SpeakEase.Write.Application.Contracts.Version;
 using SpeakEase.Write.Application.Contracts.Version.Dto;
-using SpeakEase.Write.Infrastructure.Persistence;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
@@ -56,27 +57,38 @@ public sealed class AdoptionManager : IAdoptionManager
         if (chapter == null)
             return new ApiResult<ChapterDetailResponse>("章节不存在", 404);
 
-        // 先创建版本快照（来源标记为ai-generate）
-        var versionResult = await _versionMgr.CreateVersionAsync(new CreateVersionRequest
-        {
-            ChapterId = request.ChapterId,
-            Content = request.Content,
-            Summary = request.Summary,
-            Source = "ai-generate"
-        });
-
-        // 更新章节内容、摘要和字数
-        chapter.Content = request.Content;
-        chapter.Summary = request.Summary;
-        chapter.WordCount = CountWords(request.Content);
-        chapter.LastContentSavedAt = DateTime.Now;
-        chapter.UpdateBy = _user.UserId;
-        chapter.UpdateAt = DateTime.Now;
-
-        // 开启事务：章节保存和作品字数统计需原子性完成
+        // 版本快照、章节内容和作品统计必须共享同一事务。
         await using var transaction = await _db.Database.BeginTransactionAsync();
         try
         {
+            // 先创建版本快照（来源标记为 ai-generate）。版本管理器使用同一个 DbContext，
+            // 因而其 SaveChanges 会参与当前事务。
+            var versionResult = await _versionMgr.CreateVersionAsync(new CreateVersionRequest
+            {
+                ChapterId = request.ChapterId,
+                Content = request.Content,
+                Summary = request.Summary,
+                Source = "ai-generate"
+            });
+
+            if (!versionResult.Successed || versionResult.Data == null)
+            {
+                await transaction.RollbackAsync();
+                _log.LogWarning("为章节 {ChapterId} 创建采纳版本失败: {Message}",
+                    request.ChapterId, versionResult.Message);
+                return new ApiResult<ChapterDetailResponse>(
+                    versionResult.Message ?? "版本创建失败，未采纳章节内容",
+                    versionResult.Status > 0 ? versionResult.Status : 500);
+            }
+
+            // 更新章节内容、摘要和字数
+            chapter.Content = request.Content;
+            chapter.Summary = request.Summary;
+            chapter.WordCount = CountWords(request.Content);
+            chapter.LastContentSavedAt = DateTime.Now;
+            chapter.UpdateBy = _user.UserId;
+            chapter.UpdateAt = DateTime.Now;
+
             // 提交章节变更
             await _db.SaveChangesAsync();
 
@@ -93,6 +105,8 @@ public sealed class AdoptionManager : IAdoptionManager
                     .SetProperty(x => x.UpdateAt, DateTime.Now));
 
             await transaction.CommitAsync();
+            _log.LogInformation("用户 {UserId} 将AI生成内容采纳到章节 {ChapterId}，版本 {Version}",
+                _user.UserId, request.ChapterId, versionResult.Data.VersionNumber);
         }
         catch (Exception ex)
         {
@@ -111,9 +125,6 @@ public sealed class AdoptionManager : IAdoptionManager
                 Summary = request.Summary
             });
         }
-
-        _log.LogInformation("用户 {UserId} 将AI生成内容采纳到章节 {ChapterId}，版本 {Version}",
-            _user.UserId, request.ChapterId, versionResult.Data?.VersionNumber);
 
         return new ApiResult<ChapterDetailResponse>(new ChapterDetailResponse
         {

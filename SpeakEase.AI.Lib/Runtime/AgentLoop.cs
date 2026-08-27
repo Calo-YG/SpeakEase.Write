@@ -181,8 +181,10 @@ public sealed class AgentLoop : IAgentLoop
                     ToolCalls = turnResult.ToolCalls
                 });
 
-                foreach (var toolCall in turnResult.ToolCalls)
+                for (var toolCallIndex = 0; toolCallIndex < turnResult.ToolCalls.Count; toolCallIndex++)
                 {
+                    var toolCall = turnResult.ToolCalls[toolCallIndex];
+                    var toolExecutionKey = $"{iteration}:{toolCallIndex}";
                     yield return Mark(request, ref sequence, new AgentStreamChunk
                     {
                         Type = "tool_call",
@@ -212,6 +214,7 @@ public sealed class AgentLoop : IAgentLoop
                         : await loopRequest.Journal.BeginAsync(
                             request.RunId,
                             request.StepId,
+                            toolExecutionKey,
                             toolCall,
                             runtimeToken);
 
@@ -241,6 +244,7 @@ public sealed class AgentLoop : IAgentLoop
                             await loopRequest.Journal.CompleteAsync(
                                 request.RunId,
                                 request.StepId,
+                                toolExecutionKey,
                                 toolCall,
                                 toolResult,
                                 journalCompletionCts.Token);

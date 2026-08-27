@@ -68,7 +68,14 @@ public sealed class HybridMemoryProvider(
     {
         return await db.MemoryFacts
             .AsNoTracking()
-            .Where(x => x.UserId == userId && x.WorkId == workId && x.IsCurrent)
+            .Where(x => x.UserId == userId &&
+                        x.WorkId == workId &&
+                        x.IsCurrent &&
+                        (x.SessionId == string.Empty || db.AICreationSessions.Any(session =>
+                            session.Id == x.SessionId &&
+                            session.UserId == x.UserId &&
+                            session.WorkId == x.WorkId &&
+                            session.MemoryGeneration == x.MemoryGeneration)))
             .OrderBy(x => x.Category)
             .ThenBy(x => x.Key)
             .Select(x => new SpeakEase.Write.Application.Abstractions.AI.MemoryFact
@@ -96,9 +103,25 @@ public sealed class HybridMemoryProvider(
             string.IsNullOrWhiteSpace(fact.Category) || string.IsNullOrWhiteSpace(fact.Key))
             return;
 
+        var memoryGeneration = string.IsNullOrWhiteSpace(fact.SessionId)
+            ? 0
+            : await LoadMemoryGenerationAsync(
+                userId, workId, fact.SessionId, cancellationToken);
+        await UpsertProjectFactAsync(
+            userId, workId, fact, memoryGeneration, cancellationToken);
+    }
+
+    private async Task UpsertProjectFactAsync(
+        string userId,
+        string workId,
+        SpeakEase.Write.Application.Abstractions.AI.MemoryFact fact,
+        long memoryGeneration,
+        CancellationToken cancellationToken)
+    {
         var entity = await db.MemoryFacts.FirstOrDefaultAsync(x =>
             x.UserId == userId && x.WorkId == workId && x.SessionId == (fact.SessionId ?? string.Empty) &&
-            x.Category == fact.Category && x.Key == fact.Key, cancellationToken);
+            x.MemoryGeneration == memoryGeneration && x.Category == fact.Category && x.Key == fact.Key,
+            cancellationToken);
 
         if (entity is not null &&
             (entity.VersionTurn > fact.VersionTurn ||
@@ -112,6 +135,7 @@ public sealed class HybridMemoryProvider(
             UserId = userId,
             WorkId = workId,
             SessionId = fact.SessionId ?? string.Empty,
+            MemoryGeneration = memoryGeneration,
             Category = fact.Category,
             Key = fact.Key,
             CreateBy = userId,
@@ -297,7 +321,8 @@ public sealed class HybridMemoryProvider(
             userId, workId, sessionId, memoryGeneration, cancellationToken);
 
         foreach (var fact in ExtractFacts(messages, effectiveTurnNumber, sessionId))
-            await UpsertProjectFactAsync(userId, workId, fact, cancellationToken);
+            await UpsertProjectFactAsync(
+                userId, workId, fact, memoryGeneration, cancellationToken);
 
         logger.LogDebug(
             "Session memory refreshed: UserId={UserId}, WorkId={WorkId}, SessionId={SessionId}, Turn={Turn}",

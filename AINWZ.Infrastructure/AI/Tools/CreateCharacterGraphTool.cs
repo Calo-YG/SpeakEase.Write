@@ -87,7 +87,7 @@ public sealed class CreateCharacterGraphTool(IServiceScopeFactory scopeFactory) 
         public string Id { get; init; }
         public string Name { get; init; }
         public string Description { get; init; }
-        public string? LayoutJson { get; init; }
+        public string LayoutJson { get; init; }
 
         public ToolResult Validate()
         {

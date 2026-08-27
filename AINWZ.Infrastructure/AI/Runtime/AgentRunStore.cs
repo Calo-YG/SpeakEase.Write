@@ -6,13 +6,13 @@ using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Application.Abstractions.Identity;
 using SpeakEase.Write.Application.Abstractions.Ids;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 using SpeakEase.Write.Domain.Entities.AI;
-using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Runtime;
 
 public sealed class AgentRunStore(
-    SpeakEaseDbContext db,
+    IWriteDbContext db,
     IUserContext userContext,
     ISnowflakeIdGenerator idGenerator) : IAgentRunStore
 {
@@ -59,7 +59,7 @@ public sealed class AgentRunStore(
             }
             catch (DbUpdateException)
             {
-                db.Entry(entity).State = EntityState.Detached;
+                db.Detach(entity);
                 existing = await db.AgentRuns.AsNoTracking().FirstOrDefaultAsync(x =>
                     x.UserId == userId && x.WorkId == workId && x.SessionId == sessionId &&
                     x.DeduplicationKey == deduplicationKey, cancellationToken);
@@ -210,17 +210,19 @@ public sealed class AgentRunStore(
         var entity = await db.AgentArtifacts.FirstOrDefaultAsync(x =>
             x.RunId == runId && x.StepId == stepId, cancellationToken);
         var now = DateTime.Now;
-        entity ??= new AgentArtifactEntity
+        if (entity is null)
         {
-            Id = idGenerator.NextIdString(),
-            UserId = userId,
-            RunId = runId,
-            StepId = stepId,
-            CreateBy = userId,
-            CreateAt = now
-        };
-        if (entity.Id is not null && db.Entry(entity).State == EntityState.Detached)
+            entity = new AgentArtifactEntity
+            {
+                Id = idGenerator.NextIdString(),
+                UserId = userId,
+                RunId = runId,
+                StepId = stepId,
+                CreateBy = userId,
+                CreateAt = now
+            };
             db.AgentArtifacts.Add(entity);
+        }
         entity.ContentType = contentType ?? "plain";
         entity.Summary = summary ?? string.Empty;
         entity.Content = content ?? string.Empty;
@@ -243,22 +245,24 @@ public sealed class AgentRunStore(
         var entity = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
             x.RunId == runId && x.ToolCallId == toolCall.Id, cancellationToken);
         var now = DateTime.Now;
-        entity ??= new AgentToolCallEntity
+        if (entity is null)
         {
-            Id = idGenerator.NextIdString(),
-            UserId = userId,
-            RunId = runId,
-            StepId = stepId ?? string.Empty,
-            ToolCallId = toolCall.Id ?? string.Empty,
-            ToolName = toolCall.Function?.Name ?? string.Empty,
-            ArgumentsHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(toolCall.Function?.Arguments ?? string.Empty))),
-            Status = "requested",
-            CreateBy = userId,
-            CreateAt = now
-        };
-        if (entity.Id is not null && db.Entry(entity).State == EntityState.Detached)
+            entity = new AgentToolCallEntity
+            {
+                Id = idGenerator.NextIdString(),
+                UserId = userId,
+                RunId = runId,
+                StepId = stepId ?? string.Empty,
+                ToolCallId = toolCall.Id ?? string.Empty,
+                ToolName = toolCall.Function?.Name ?? string.Empty,
+                ArgumentsHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(toolCall.Function?.Arguments ?? string.Empty))),
+                Status = "requested",
+                CreateBy = userId,
+                CreateAt = now
+            };
             db.AgentToolCalls.Add(entity);
+        }
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -328,7 +332,7 @@ public sealed class AgentRunStore(
         }
         catch (DbUpdateException)
         {
-            db.Entry(entity).State = EntityState.Detached;
+            db.Detach(entity);
             var concurrent = await db.AgentToolCalls.AsNoTracking().FirstOrDefaultAsync(x =>
                 x.UserId == userId && x.RunId == runId && x.ToolCallId == executionKey,
                 cancellationToken);

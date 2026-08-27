@@ -7,15 +7,15 @@ using Microsoft.Extensions.Logging;
 using SessionMemorySnapshot = SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Memory;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.MutilCache;
-using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Infrastructure.AI.Memory;
 
 public sealed class HybridMemoryProvider(
-    SpeakEaseDbContext db,
+    IWriteDbContext db,
     IMultiCacheService cache,
     ISnowflakeIdGenerator idGenerator,
     ILogger<HybridMemoryProvider> logger) : IMemoryProvider
@@ -129,20 +129,22 @@ public sealed class HybridMemoryProvider(
             return;
 
         var now = DateTime.Now;
-        entity ??= new MemoryFactEntity
+        if (entity is null)
         {
-            Id = idGenerator.NextIdString(),
-            UserId = userId,
-            WorkId = workId,
-            SessionId = fact.SessionId ?? string.Empty,
-            MemoryGeneration = memoryGeneration,
-            Category = fact.Category,
-            Key = fact.Key,
-            CreateBy = userId,
-            CreateAt = now
-        };
-        if (entity.Id is not null && db.Entry(entity).State == EntityState.Detached)
+            entity = new MemoryFactEntity
+            {
+                Id = idGenerator.NextIdString(),
+                UserId = userId,
+                WorkId = workId,
+                SessionId = fact.SessionId ?? string.Empty,
+                MemoryGeneration = memoryGeneration,
+                Category = fact.Category,
+                Key = fact.Key,
+                CreateBy = userId,
+                CreateAt = now
+            };
             db.MemoryFacts.Add(entity);
+        }
 
         entity.Value = fact.Value ?? string.Empty;
         entity.SourceTurn = fact.SourceTurn;
@@ -280,7 +282,7 @@ public sealed class HybridMemoryProvider(
                 // Another worker may have inserted the unique session row while this
                 // refresh was building its summary. Detach the failed insert before
                 // re-reading so the context cannot replay stale state on the next save.
-                db.Entry(entity).State = EntityState.Detached;
+                db.Detach(entity);
                 entity = await LoadLatestSnapshotEntityAsync(
                     userId, workId, sessionId, memoryGeneration, cancellationToken);
                 if (entity is null)

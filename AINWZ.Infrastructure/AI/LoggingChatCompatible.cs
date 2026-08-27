@@ -6,15 +6,15 @@ using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI;
 
 public sealed class LoggingChatCompatible(
     OpenAICompatible inner,
-    SpeakEaseDbContext db,
+    IWriteDbContext db,
     IUserContext user,
     ISnowflakeIdGenerator idGenerator,
     ILogger<LoggingChatCompatible> logger) : IChatCompatible

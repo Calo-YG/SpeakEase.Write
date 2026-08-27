@@ -4,8 +4,8 @@ using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Domain.Entities.Memory;
 using ApplicationMemoryProvider = SpeakEase.Write.Application.Abstractions.AI.IMemoryProvider;
 using SessionMemorySnapshot = SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
 using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Infrastructure.AI.Context;
@@ -14,7 +14,7 @@ namespace SpeakEase.Write.Infrastructure.AI.Context;
 public sealed class CreationAgentContext(
     ApplicationMemoryProvider memory,
     IUserContext user,
-    SpeakEaseDbContext dbContext,
+    IWriteDbContext dbContext,
     ISnowflakeIdGenerator idGenerator) : ICreationAgentContext
 {
     private const int FilteredHistoryTurns = 8;     // 筛选模式：仅保留最近 8 个完整轮次

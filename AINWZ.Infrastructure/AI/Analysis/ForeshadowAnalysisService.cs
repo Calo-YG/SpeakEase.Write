@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Analysis;
 
@@ -16,10 +16,10 @@ public interface IForeshadowAnalysisService
 // 伏笔分析服务：通过关键词匹配检测章节中的伏笔引用和超期伏笔
 public sealed class ForeshadowAnalysisService : IForeshadowAnalysisService
 {
-    private readonly SpeakEaseDbContext _db;
+    private readonly IWriteDbContext _db;
     private readonly ILogger<ForeshadowAnalysisService> _logger;
 
-    public ForeshadowAnalysisService(SpeakEaseDbContext db, ILogger<ForeshadowAnalysisService> logger)
+    public ForeshadowAnalysisService(IWriteDbContext db, ILogger<ForeshadowAnalysisService> logger)
     {
         _db = db;
         _logger = logger;

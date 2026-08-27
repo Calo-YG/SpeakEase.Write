@@ -1,9 +1,9 @@
-using SpeakEase.Write.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 using SpeakEase.Write.Infrastructure.MutilCache;
 
 namespace SpeakEase.Write.Infrastructure.AI;
@@ -13,7 +13,7 @@ namespace SpeakEase.Write.Infrastructure.AI;
 /// </summary>
 public sealed class OpenAIContext(
     IUserContext user,
-    SpeakEaseDbContext db,
+    IWriteDbContext db,
     IMultiCacheService cache,
     IConfiguration cfg,
     ILogger<OpenAIContext> log) : IOpenAIContext

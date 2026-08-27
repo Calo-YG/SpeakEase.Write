@@ -49,7 +49,7 @@ public sealed class CreateRelationshipTool(IServiceScopeFactory scopeFactory) : 
         var intensity = args.Intensity.HasValue ? args.Intensity.Value : 5;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var source = await db.Characters.FirstOrDefaultAsync(

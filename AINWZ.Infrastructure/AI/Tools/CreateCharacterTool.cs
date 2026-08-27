@@ -54,7 +54,7 @@ public sealed class CreateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         CharacterEntity character = null;

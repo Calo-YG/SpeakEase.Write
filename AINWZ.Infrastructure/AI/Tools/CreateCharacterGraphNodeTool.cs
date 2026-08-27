@@ -50,7 +50,7 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var graph = await db.CharacterGraphs.AsNoTracking()

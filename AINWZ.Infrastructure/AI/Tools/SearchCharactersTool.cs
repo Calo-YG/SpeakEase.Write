@@ -45,7 +45,7 @@ public sealed class SearchCharactersTool(IServiceScopeFactory scopeFactory, IOpt
         var limit = args.Limit != 0 ? args.Limit : 5;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
 
         var matched = await db.Characters.AsNoTracking()
             .Where(c => c.WorkId == args.WorkId &&

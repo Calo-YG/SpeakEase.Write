@@ -53,7 +53,7 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var graph = await db.CharacterGraphs.AsNoTracking()
@@ -122,7 +122,7 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
     }
 
     private static async Task<ToolResult> CreateOrUpdateEdge(
-        IWriteDbContext db, ISnowflakeIdGenerator idGen,
+        ICharacterDbContext db, ISnowflakeIdGenerator idGen,
         string graphId, string workId,
         string sourceNodeId, string targetNodeId,
         string relationType, string label, int weight, string direction,

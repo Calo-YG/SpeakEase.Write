@@ -58,7 +58,7 @@ public sealed class UpdateCharacterTool(IServiceScopeFactory scopeFactory) : ITo
             return ToolResult.Fail("至少需要提供一个更新字段", "no_fields");
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
 
         var character = await db.Characters.FirstOrDefaultAsync(
             c => c.WorkId == args.WorkId && c.Name == args.Name, ct);

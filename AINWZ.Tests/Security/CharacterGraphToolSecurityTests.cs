@@ -382,6 +382,7 @@ public sealed class CharacterGraphToolSecurityTests
             var services = new ServiceCollection();
             services.AddDbContext<SpeakEaseDbContext>(options => options.UseSqlite(connection));
             services.AddScoped<IWriteDbContext>(sp => sp.GetRequiredService<SpeakEaseDbContext>());
+            services.AddScoped<ICharacterDbContext>(sp => sp.GetRequiredService<SpeakEaseDbContext>());
             services.AddScoped<IWorkAccessChecker, WorkAccessChecker>();
             services.AddScoped<IToolExecutionGuard, WorkToolExecutionGuard>();
             services.AddSingleton<IUserContext>(new TestUserContext("user-1"));

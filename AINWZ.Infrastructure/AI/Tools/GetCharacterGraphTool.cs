@@ -42,7 +42,7 @@ public sealed class GetCharacterGraphTool(IServiceScopeFactory scopeFactory) : I
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
 
         var characters = await db.Characters.AsNoTracking()
             .Where(c => c.WorkId == args.WorkId)

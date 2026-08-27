@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -41,7 +41,7 @@ public sealed class SearchWorldSettingTool(IServiceScopeFactory scopeFactory) : 
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
 
         var setting = await db.WorldSettings.AsNoTracking()
             .FirstOrDefaultAsync(x => x.WorkId == args.WorkId, ct);

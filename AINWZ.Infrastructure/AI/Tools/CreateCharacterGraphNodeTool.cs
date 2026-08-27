@@ -6,7 +6,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -50,7 +50,7 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var graph = await db.CharacterGraphs.AsNoTracking()
@@ -130,7 +130,7 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
         }
         catch (DbUpdateException)
         {
-            db.Entry(node).State = EntityState.Detached;
+            db.Detach(node);
             existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(
                 n => n.WorkId == args.WorkId &&
                      n.GraphId == args.GraphId &&

@@ -60,6 +60,9 @@ public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : 
     public DbSet<TagEntity> Tags => Set<TagEntity>();
     public DbSet<UserPassageFavoriteEntity> UserPassageFavorites => Set<UserPassageFavoriteEntity>();
 
+    public void Detach(object entity)
+        => Entry(entity).State = EntityState.Detached;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

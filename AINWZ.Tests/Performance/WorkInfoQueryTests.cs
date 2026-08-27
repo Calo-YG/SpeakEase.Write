@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 using SpeakEase.Write.Domain.Entities.Works;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -38,6 +39,7 @@ public sealed class WorkInfoQueryTests
         counter.Reset();
         using var provider = new ServiceCollection()
             .AddScoped(_ => new SpeakEaseDbContext(options))
+            .AddScoped<IWriteDbContext>(sp => sp.GetRequiredService<SpeakEaseDbContext>())
             .BuildServiceProvider();
         var tool = new GetWorkInfoTool(
             provider.GetRequiredService<IServiceScopeFactory>(),

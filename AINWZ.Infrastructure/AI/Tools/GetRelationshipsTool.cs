@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -42,7 +42,7 @@ public sealed class GetRelationshipsTool(IServiceScopeFactory scopeFactory, IOpt
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
 
         var character = await db.Characters.AsNoTracking()
             .FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.Name == args.CharacterName, ct)

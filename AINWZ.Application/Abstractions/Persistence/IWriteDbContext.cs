@@ -59,5 +59,7 @@ public interface IWriteDbContext
 
     DatabaseFacade Database { get; }
 
+    void Detach(object entity);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

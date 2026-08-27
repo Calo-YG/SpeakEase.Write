@@ -6,7 +6,7 @@ Accepted
 
 ## Implementation Status
 
-The Agent Runtime persistence slice now uses the dedicated `IAgentRuntimeDbContext` port. The Memory/Context slice now uses `IMemoryDbContext` for session messages, snapshots, facts and assembly logs. `IWriteDbContext` remains available for legacy application modules while additional slices are migrated incrementally.
+The Agent Runtime persistence slice now uses the dedicated `IAgentRuntimeDbContext` port. The Memory/Context slice now uses `IMemoryDbContext` for session messages, snapshots, facts and assembly logs. The Creation Session slice now uses `ICreationSessionDbContext` for session lifecycle and conversation messages. `IWriteDbContext` remains available for legacy application modules while additional slices are migrated incrementally.
 
 ## Context
 
@@ -18,5 +18,5 @@ Application 当前直接引用 Infrastructure、EF DbContext、缓存、身份�
 
 ## Trade-offs
 
-- 过渡期 `IWriteDbContext` 仍暴露 EF 类型；Agent Runtime 与 Memory/Context 已先收窄为独立端口，后续按相同方式迁移 Story 和 Creation Session。
+- 过渡期 `IWriteDbContext` 仍暴露 EF 类型；Agent Runtime、Memory/Context 与 Creation Session 已先收窄为独立端口，后续按相同方式迁移 Story。
 - 接口数量增加，但可以隔离实现、改善测试，并避免 Application 依赖基础设施项目。

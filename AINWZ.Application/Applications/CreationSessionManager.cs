@@ -7,7 +7,7 @@ using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Application.Abstractions.Ids;
 using SpeakEase.Write.Application.Abstractions.Persistence;
-using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.ICreationSessionDbContext;
 using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
@@ -369,7 +369,7 @@ public class CreationSessionManager(
                 }
                 finally
                 {
-                    db.AICreationSessions.Attach(session).State = EntityState.Detached;
+                    db.Detach(session);
                 }
 
                 throw;

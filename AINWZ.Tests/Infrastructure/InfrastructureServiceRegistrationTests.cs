@@ -28,6 +28,7 @@ public sealed class InfrastructureServiceRegistrationTests
         var abstraction = scope.ServiceProvider.GetService<IWriteDbContext>();
         var runtimePort = scope.ServiceProvider.GetService<IAgentRuntimeDbContext>();
         var memoryPort = scope.ServiceProvider.GetService<IMemoryDbContext>();
+        var creationSessionPort = scope.ServiceProvider.GetService<ICreationSessionDbContext>();
 
         Assert.NotNull(abstraction);
         Assert.Same(concrete, abstraction);
@@ -35,5 +36,7 @@ public sealed class InfrastructureServiceRegistrationTests
         Assert.Same(concrete, runtimePort);
         Assert.NotNull(memoryPort);
         Assert.Same(concrete, memoryPort);
+        Assert.NotNull(creationSessionPort);
+        Assert.Same(concrete, creationSessionPort);
     }
 }

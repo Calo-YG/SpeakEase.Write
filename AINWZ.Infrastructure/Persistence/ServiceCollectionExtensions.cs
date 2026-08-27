@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using ApplicationDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
 using ApplicationAgentRuntimeDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IAgentRuntimeDbContext;
 using ApplicationMemoryDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IMemoryDbContext;
+using ApplicationCreationSessionDbContext = SpeakEase.Write.Application.Abstractions.Persistence.ICreationSessionDbContext;
 using ApplicationIdGenerator = SpeakEase.Write.Application.Abstractions.Ids.ISnowflakeIdGenerator;
 
 namespace SpeakEase.Write.Infrastructure.Persistence;
@@ -34,6 +35,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ApplicationAgentRuntimeDbContext>(serviceProvider =>
             serviceProvider.GetRequiredService<SpeakEaseDbContext>());
         services.AddScoped<ApplicationMemoryDbContext>(serviceProvider =>
+            serviceProvider.GetRequiredService<SpeakEaseDbContext>());
+        services.AddScoped<ApplicationCreationSessionDbContext>(serviceProvider =>
             serviceProvider.GetRequiredService<SpeakEaseDbContext>());
 
         services.AddOptions<SnowflakeIdOptions>()

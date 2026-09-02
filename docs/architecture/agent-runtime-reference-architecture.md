@@ -795,6 +795,218 @@ RelationshipType 非空且属于注册类型
 - 图谱展示可以从关系事实重新生成；
 - 现有 API、SSE、Tool 名称和数据库历史数据保持兼容。
 
+## 十二、Tool 数量与暴露策略
+
+### 12.1 决策结论
+
+不删除现有 Tool，也不修改现有 Tool 名称、参数 Schema 和返回契约；但不再把全量 Tool 同时暴露给模型。
+
+```text
+代码层面：保留全部 Tool 实现
+注册层面：全部注册到 Tool Registry
+Runtime 层面：按 Agent + PlanStep + Phase 动态筛选
+模型层面：只看到当前任务需要的最小 Tool 集合
+兼容层面：旧 Tool 名称通过 LegacyToolAdapter 持续可用
+```
+
+当前约 47 个业务 Tool（查询类约 25 个、写入类约 22 个），数量本身不是删除理由；真正需要控制的是单次 Run 的 Tool Schema 数量、权限范围和模型选择空间。
+
+### 12.2 Tool Registry 与能力分组
+
+Tool Registry 保存兼容元数据和运行时策略：
+
+```csharp
+public sealed class ToolCapabilityDescriptor
+{
+    public string Name { get; init; }
+    public string Group { get; init; }
+    public string RiskLevel { get; init; }
+    public bool ReadOnly { get; init; }
+    public bool RequiresExplicitConsent { get; init; }
+    public IReadOnlyList<string> RequiredScopes { get; init; }
+    public IReadOnlyList<string> RequiredPhases { get; init; }
+}
+```
+
+建议的能力分组：
+
+```text
+work.read
+chapter.read
+chapter.write
+character.read
+character.write
+character.growth
+relationship.read
+relationship.write
+world.read
+world.write
+outline.read
+outline.write
+story.consistency
+graph.internal
+system.high-risk
+```
+
+Agent 只声明允许的能力组，不维护逐个 Tool 的长 Prompt：
+
+```json
+{
+  "agent": "write",
+  "toolGroups": [
+    "work.read",
+    "chapter.read",
+    "character.read",
+    "world.read",
+    "story.consistency",
+    "chapter.write"
+  ]
+}
+```
+
+### 12.3 按执行阶段暴露最小集合
+
+```mermaid
+flowchart LR
+    Descriptor[AgentDescriptor\n允许的能力组]
+    Plan[PlanStep\n当前任务目标]
+    Phase[Runtime Phase\ncontext / generate / commit]
+    Consent[用户确认/风险策略]
+    Registry[Tool Registry\n全量兼容 Tool]
+    Policy[ToolExposurePolicy]
+    Exposed[本次 LLM Turn 的 Tool 集合]
+
+    Descriptor --> Policy
+    Plan --> Policy
+    Phase --> Policy
+    Consent --> Policy
+    Registry --> Policy
+    Policy --> Exposed
+```
+
+以章节写作为例：
+
+```json
+{
+  "phase": "context_loading",
+  "expose": [
+    "get_work_info",
+    "get_outline",
+    "get_recent_chapters",
+    "get_character",
+    "get_world_setting",
+    "get_writing_rules"
+  ]
+}
+```
+
+```json
+{
+  "phase": "commit",
+  "expose": [
+    "save_chapter_content",
+    "update_chapter_summary",
+    "create_timeline_event",
+    "create_character_arc"
+  ]
+}
+```
+
+建议约束：
+
+```text
+普通 Agent：6–12 个 Tool
+复杂审核：最多约 15 个只读 Tool
+高风险 Tool：默认 0 个，必须显式授权
+全量 Tool：只存在于 Registry，不直接注入模型上下文
+```
+
+### 12.4 低层 Tool 下沉为 Runtime 内部能力
+
+以下能力不应作为模型主要决策对象：
+
+```text
+create_character_graph
+create_character_graph_node
+create_character_graph_edge
+```
+
+它们是图谱持久化细节。模型表达“更新人物关系”后，Runtime 通过内部 Use Case 完成：
+
+```text
+CharacterRelationship 更新
+  → RelationshipStateEvent 追加
+  → Graph Projection 刷新
+  → 图谱版本递增
+```
+
+旧 Tool 仍由 `LegacyToolAdapter` 支持，已有 API、Skill 或历史 Run 不会失效。
+
+### 12.5 Tool 实现复用，而非 Tool 合约合并
+
+多个外部 Tool 可以复用同一 Application Use Case：
+
+```text
+get_character
+get_character_list
+search_characters
+        ↓
+CharacterQueryService
+
+create_character
+update_character
+        ↓
+SaveCharacterCommandHandler
+```
+
+兼容层仍保留原有入口：
+
+```text
+create_character → SaveCharacterCommandHandler(Create)
+update_character → SaveCharacterCommandHandler(Update)
+```
+
+这样可以减少业务实现重复，同时不会破坏 Tool 名称和参数 Schema。
+
+### 12.6 高风险 Tool 策略
+
+```text
+PowerShell
+WebSearch
+Agent Browser
+SkillFindTool
+```
+
+这些能力必须经过：
+
+1. AgentDescriptor 能力声明；
+2. 当前 PlanStep 允许；
+3. 用户或系统策略明确授权；
+4. `IToolExecutionGuard` 权限检查；
+5. ToolCall Journal 审计和幂等处理。
+
+默认情况下，普通写作、角色创建和审核 Run 不暴露 `system.high-risk`。
+
+### 12.7 迁移顺序
+
+1. 为现有 Tool 补齐 `Group`、`RiskLevel`、`ReadOnly` 和 `RequiredPhases` 元数据；
+2. 建立 Tool Registry，但保持现有 DI 注册和 Tool 名称不变；
+3. 在 AgentRuntime 中增加 `ToolExposurePolicy`，先以“全量兼容模式”运行；
+4. 按 Agent 和 PlanStep 启用最小暴露集合，记录误调用和缺少 Tool 指标；
+5. 将图谱节点/边等低层 Tool 下沉为内部 Use Case，保留 LegacyToolAdapter；
+6. 对重复查询/写入 Tool 统一内部 Handler，外部契约继续分开；
+7. 稳定后再收紧高风险 Tool 的默认授权。
+
+### 12.8 验收标准
+
+- 现有 Tool 名称、参数 Schema、返回格式和 Guard 行为不变；
+- 任意 Run 的模型可见 Tool 数量受 `ToolExposurePolicy` 限制；
+- 未授权的写入或高风险 Tool 在 Runtime 层被拒绝；
+- Tool Schema 不再通过 Agent 长 Prompt 手工维护；
+- 图谱展示可以由关系事实重建，低层图谱 Tool 不参与普通写作决策；
+- 重试和恢复不会重复执行有副作用的 Tool；
+- 旧 API、SSE、Skill 和历史 Run 仍可通过兼容层执行。
+
 ## 参考项目
 
 - [Microsoft AutoGen](https://github.com/microsoft/autogen)

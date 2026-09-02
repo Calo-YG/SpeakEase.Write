@@ -24,6 +24,9 @@ using RuntimeAgentLoopImplementation = SpeakEase.AI.Lib.Runtime.AgentLoop;
 using RuntimeHost = SpeakEase.AI.Lib.Runtime.RuntimeHost;
 using RuntimeRunner = SpeakEase.AI.Lib.Runtime.IAgentRuntimeRunner;
 using RuntimeRunnerImplementation = SpeakEase.AI.Lib.Runtime.AgentRuntimeRunner;
+using ApplicationAgentRuntimeStore = SpeakEase.Write.Application.Abstractions.AI.IAgentRuntimeStore;
+using RuntimeEventSink = SpeakEase.AI.Lib.Runtime.IRuntimeEventSink;
+using RuntimeEventSinkImplementation = SpeakEase.Write.Infrastructure.AI.Runtime.AgentRuntimeEventSink;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -38,6 +41,8 @@ public static class NovelAIServiceCollectionExtensions
         services.AddSingleton<PlanResolver>();
         services.AddSingleton<PlanCompiler>();
         services.AddScoped<ApplicationAgentRunStore, AgentRunStore>();
+        services.AddScoped<ApplicationAgentRuntimeStore, AgentRuntimeStore>();
+        services.AddScoped<RuntimeEventSink, RuntimeEventSinkImplementation>();
         services.AddScoped<IMemoryProvider, HybridMemoryProvider>();
         services.AddScoped<ApplicationMemoryProvider>(sp => sp.GetRequiredService<IMemoryProvider>());
         services.AddSingleton<MemoryRefreshQueue>();

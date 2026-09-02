@@ -54,6 +54,7 @@ public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : 
     public DbSet<AgentRunEventEntity> AgentRunEvents => Set<AgentRunEventEntity>();
     public DbSet<AgentToolCallEntity> AgentToolCalls => Set<AgentToolCallEntity>();
     public DbSet<AgentArtifactEntity> AgentArtifacts => Set<AgentArtifactEntity>();
+    public DbSet<AgentCheckpointEntity> AgentCheckpoints => Set<AgentCheckpointEntity>();
     public DbSet<ReferenceWorkEntity> ReferenceWorks => Set<ReferenceWorkEntity>();
     public DbSet<ReferencePassageEntity> ReferencePassages => Set<ReferencePassageEntity>();
     public DbSet<InspirationRecordEntity> InspirationRecords => Set<InspirationRecordEntity>();

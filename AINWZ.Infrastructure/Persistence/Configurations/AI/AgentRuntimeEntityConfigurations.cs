@@ -74,3 +74,19 @@ internal sealed class AgentArtifactEntityConfiguration : IEntityTypeConfiguratio
         builder.HasIndex(x => new { x.RunId, x.StepId }).IsUnique();
     }
 }
+
+internal sealed class AgentCheckpointEntityConfiguration : IEntityTypeConfiguration<AgentCheckpointEntity>
+{
+    public void Configure(EntityTypeBuilder<AgentCheckpointEntity> builder)
+    {
+        builder.ToTable("ai_agent_checkpoints");
+        builder.ConfigureBaseEntity();
+        builder.Property(x => x.UserId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.RunId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.StepId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.State).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.MessagesJson).HasColumnType("text");
+        builder.Property(x => x.PendingToolCallsJson).HasColumnType("text");
+        builder.HasIndex(x => new { x.UserId, x.RunId, x.StepId }).IsUnique();
+    }
+}

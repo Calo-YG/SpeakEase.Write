@@ -13,6 +13,7 @@ public interface IAgentRuntimeDbContext
     DbSet<AgentRunEventEntity> AgentRunEvents { get; }
     DbSet<AgentToolCallEntity> AgentToolCalls { get; }
     DbSet<AgentArtifactEntity> AgentArtifacts { get; }
+    DbSet<AgentCheckpointEntity> AgentCheckpoints { get; }
 
     DatabaseFacade Database { get; }
 

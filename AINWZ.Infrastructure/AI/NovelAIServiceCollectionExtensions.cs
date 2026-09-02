@@ -16,6 +16,9 @@ using ApplicationMemoryRefreshQueue = SpeakEase.Write.Application.Abstractions.A
 using RuntimeToolRegistry = SpeakEase.AI.Lib.Runtime.IToolRegistry;
 using RuntimeToolExposurePolicy = SpeakEase.AI.Lib.Runtime.ToolExposurePolicy;
 using RuntimeLegacyToolRegistryAdapter = SpeakEase.AI.Lib.Runtime.LegacyToolRegistryAdapter;
+using RuntimePromptProfileCatalog = SpeakEase.AI.Lib.Runtime.PromptProfileCatalog;
+using RuntimePolicyProfileCatalog = SpeakEase.AI.Lib.Runtime.PolicyProfileCatalog;
+using RuntimePromptCompiler = SpeakEase.AI.Lib.Runtime.PromptCompiler;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -39,6 +42,9 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<IChatCompatible, LoggingChatCompatible>();
         services.AddScoped<RuntimeToolRegistry, RuntimeLegacyToolRegistryAdapter>();
         services.AddScoped<RuntimeToolExposurePolicy>();
+        services.AddSingleton<RuntimePromptProfileCatalog>();
+        services.AddSingleton<RuntimePolicyProfileCatalog>();
+        services.AddSingleton<RuntimePromptCompiler>();
 
         // 上下文管理与伏笔分析
         services.AddScoped<CreationOrchestrator>();

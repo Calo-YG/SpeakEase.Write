@@ -12,7 +12,7 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 public abstract class AgentBase(
     IChatCompatible llm,
     IToolCapable tools,
-    ILogger logger) : INovelAgent
+    ILogger logger) : INovelAgent, IAgentDefinition
 {
     protected readonly IChatCompatible Llm = llm;
     protected readonly IToolCapable Tools = tools;
@@ -24,6 +24,20 @@ public abstract class AgentBase(
     public abstract string Name { get; }
     public abstract string DisplayName { get; }
     public abstract string BuildPrompt();
+
+    public virtual AgentDescriptor Descriptor => new()
+    {
+        Name = Name,
+        DisplayName = DisplayName,
+        Domain = $"novel.{Name}",
+        OutputKind = Metadata.ContentType,
+        PromptProfileKey = $"novel.{Name}",
+        PolicyProfileKey = "default",
+        ToolGroups = Array.Empty<string>(),
+        MemoryScopes = Metadata.NeedsProjectMemory
+            ? new[] { "session", "project" }
+            : new[] { "session" }
+    };
 
     public virtual PromptProfile BuildPromptProfile() => new()
     {

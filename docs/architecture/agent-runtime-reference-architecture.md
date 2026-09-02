@@ -689,6 +689,112 @@ CharacterGrowthProposals
 - 同一人物的状态快照支持版本比较、并发刷新和回滚；
 - 由人物状态生成的剧情钩子必须经过 PlanCompiler 校验后才能进入执行计划。
 
+## 十一、现有实体审查与演进方案
+
+### 11.1 已确认的实体职责
+
+现有实体可以继续作为兼容基础，但不应直接重写或删除。最终职责确定为：
+
+```text
+CharacterEntity
+  = 稳定人物档案 + 旧 API 兼容投影
+
+CharacterStateEvent
+  = 人物状态变化的事实和证据来源
+
+CharacterStateSnapshot
+  = 当前已确认动态状态的唯一读取源
+
+CharacterArcEntity
+  = 面向用户的成长阶段投影
+
+CharacterRelationshipEntity
+  = 当前关系状态投影
+
+RelationshipStateEvent
+  = 关系变化的历史事实和证据来源
+
+CharacterGraphEntity / Node / Edge
+  = 可重建的关系图谱展示投影
+```
+
+### 11.2 现有实体的改进点
+
+| 实体 | 当前风险 | 演进方向 |
+|---|---|---|
+| `CharacterEntity` | `Personality`、`Motivation` 容易被当成动态状态覆盖 | 保留字段语义，Runtime 不直接覆盖；动态变化写事件/快照 |
+| `CharacterArcEntity` | 缺少章节、Run、证据、置信度和版本 | 保留旧字段，新增事件关联和状态投影能力 |
+| `CharacterRelationshipEntity` | 只有当前值，没有历史和证据；强度无范围约束 | 增加关系事件、有效区间、置信度和版本 |
+| `TimelineEventEntity` | 缺少来源 Run、Artifact、证据片段 | 作为人物状态事件的重要来源之一 |
+| `CharacterGraph*` | 与关系实体存在重复事实，可能漂移 | 关系实体为事实源，图谱按版本重建 |
+| `AICreationMessageEntity` | 缺少完整 Run/Step 关联 | 新消息通过 Runtime 关联，历史消息继续可读 |
+| 基础 `Entity` | `DateTime.Now` 与 UTC 注释不一致 | 统一由基础设施写 UTC，逐步迁移到 `DateTimeOffset` |
+
+### 11.3 新增状态模型（非破坏式）
+
+```text
+CharacterStateEvents
+  Id, WorkId, CharacterId, SourceRunId, SourceChapterId,
+  EventType, EvidenceJson, ChangesJson, Confidence, Version,
+  CreatedAt, CreateBy
+
+CharacterStateSnapshots
+  Id, WorkId, CharacterId, BasedOnEventId,
+  StateJson, Version, Status, UpdatedAt, UpdateBy
+
+CharacterGrowthProposals
+  Id, WorkId, CharacterId, SourceRunId,
+  ProposalJson, Severity, Status, ReviewedBy, ReviewedAt
+
+RelationshipStateEvents
+  Id, WorkId, SourceCharacterId, TargetCharacterId,
+  SourceRunId, SourceChapterId, ChangesJson, EvidenceJson,
+  Confidence, Version
+```
+
+这些表采用追加式迁移，不改变已有表的列含义。若某角色尚无状态快照，Runtime 首次读取时根据 `CharacterEntity` 初始化一个基线快照。
+
+### 11.4 并发和版本规则
+
+- `CharacterStateEvent` 只能追加，不能更新历史证据；
+- `CharacterStateSnapshot` 使用整数 `Version` 或并发 Token，更新时必须比较版本；
+- 旧版本分析结果完成较晚时，只能被丢弃，不能覆盖新状态；
+- `CharacterGrowthProposal` 的候选状态与已确认状态分离；
+- 重大状态确认后才允许更新 `CharacterEntity` 的兼容字段；
+- 同一角色同一来源事件使用幂等键，防止章节重试产生重复成长事件。
+
+### 11.5 关系和图谱的一致性
+
+`CharacterRelationshipEntity` 是关系事实源，至少需要在应用层校验：
+
+```text
+SourceCharacterId != TargetCharacterId
+Intensity ∈ [0, 100]
+RelationshipType 非空且属于注册类型
+同一 Work + Source + Target + Type 只有一个当前投影
+```
+
+`CharacterGraphEdgeEntity` 只保存展示所需的节点连线和布局信息。关系变化发生时先写 `RelationshipStateEvent`，再刷新关系投影和图谱版本，避免 Agent 同时写两套事实。
+
+### 11.6 迁移顺序
+
+1. 统一时间写入策略和状态/类型常量校验，不改变 API 返回值；
+2. 新增 `CharacterStateEvents`、`CharacterStateSnapshots`、`CharacterGrowthProposals`；
+3. Runtime 写入人物事件并读取最新已确认 Snapshot；
+4. 将现有 `CharacterArcEntity` 作为事件聚合后的兼容视图；
+5. 增加关系状态事件，明确关系实体为事实源；
+6. 最后再考虑将 JSON 集合字段拆为规范化关联表；旧 JSON 字段在迁移期间继续保留。
+
+### 11.7 实体层验收标准
+
+- 历史 `CharacterEntity` 数据无需回填即可被 Runtime 使用；
+- 旧 `create_character`、`update_character`、`create_character_arc` Tool 契约不变；
+- 人物每次动态变化都能追溯到章节、Artifact 或 Run；
+- 核心人格变化不会被后台任务静默覆盖；
+- 并发成长分析不会发生旧版本覆盖新版本；
+- 图谱展示可以从关系事实重新生成；
+- 现有 API、SSE、Tool 名称和数据库历史数据保持兼容。
+
 ## 参考项目
 
 - [Microsoft AutoGen](https://github.com/microsoft/autogen)

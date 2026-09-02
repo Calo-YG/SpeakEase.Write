@@ -19,6 +19,11 @@ using RuntimeLegacyToolRegistryAdapter = SpeakEase.AI.Lib.Runtime.LegacyToolRegi
 using RuntimePromptProfileCatalog = SpeakEase.AI.Lib.Runtime.PromptProfileCatalog;
 using RuntimePolicyProfileCatalog = SpeakEase.AI.Lib.Runtime.PolicyProfileCatalog;
 using RuntimePromptCompiler = SpeakEase.AI.Lib.Runtime.PromptCompiler;
+using RuntimeAgentLoop = SpeakEase.AI.Lib.Runtime.IAgentLoop;
+using RuntimeAgentLoopImplementation = SpeakEase.AI.Lib.Runtime.AgentLoop;
+using RuntimeHost = SpeakEase.AI.Lib.Runtime.RuntimeHost;
+using RuntimeRunner = SpeakEase.AI.Lib.Runtime.IAgentRuntimeRunner;
+using RuntimeRunnerImplementation = SpeakEase.AI.Lib.Runtime.AgentRuntimeRunner;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -45,6 +50,9 @@ public static class NovelAIServiceCollectionExtensions
         services.AddSingleton<RuntimePromptProfileCatalog>();
         services.AddSingleton<RuntimePolicyProfileCatalog>();
         services.AddSingleton<RuntimePromptCompiler>();
+        services.AddScoped<RuntimeAgentLoop, RuntimeAgentLoopImplementation>();
+        services.AddScoped<RuntimeHost>();
+        services.AddScoped<RuntimeRunner, RuntimeRunnerImplementation>();
 
         // 上下文管理与伏笔分析
         services.AddScoped<CreationOrchestrator>();

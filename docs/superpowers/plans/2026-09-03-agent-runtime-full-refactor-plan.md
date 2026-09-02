@@ -278,9 +278,10 @@ git commit -m "refactor: add agent runtime host"
 **Files:**
 - Create: `AINWZ.Application/Abstractions/AI/IAgentRuntimeStore.cs`
 - Create: `AINWZ.Application/Abstractions/AI/AgentCheckpointDto.cs`
+- Create: `AINWZ.Domain/Entities/AI/AgentCheckpointEntity.cs`
 - Create: `AINWZ.Infrastructure/AI/Runtime/AgentRuntimeStore.cs`
 - Create: `AINWZ.Infrastructure/AI/Runtime/AgentEventSseProjector.cs`
-- Modify: `AINWZ.Infrastructure/Persistence/Configurations/AI/AgentRuntimeEntityConfigurations.cs`
+- Modify: `AINWZ.Infrastructure/Persistence/Configurations/AI/AgentRuntimeEntityConfigurations.cs` (add `AgentCheckpointEntityConfiguration`)
 - Modify: `AINWZ.Infrastructure/Persistence/SpeakEaseDbContext.cs`
 - Modify: `AINWZ.Application/Applications/AgentApplication.cs`
 - Modify: `AINWZ.Infrastructure/AI/Orchestrator/CreationOrchestrator.cs`
@@ -312,7 +313,7 @@ Runtime 只依赖 `IAgentRuntimeStore`；EF 实现通过 `IAgentRuntimeDbContext
 
 ```powershell
 dotnet ef migrations add AddAgentRuntimeCheckpoints --project AINWZ.Infrastructure --startup-project AINWZ
-dotnet build AINWZ.slnx --no-restore
+dotnet build SpeakEase.Write.slnx --no-restore
 dotnet test AINWZ.Tests/AINWZ.Tests.csproj --filter FullyQualifiedName~AgentRuntimePersistenceTests --no-restore
 dotnet test AINWZ.Tests/AINWZ.Tests.csproj --filter FullyQualifiedName~SseProjectionTests --no-restore
 ```
@@ -564,7 +565,7 @@ git commit -m "refactor: route creation through runtime facade"
 - [ ] **Step 2: 执行端到端兼容测试**
 
 ```powershell
-dotnet build AINWZ.slnx --no-restore
+dotnet build SpeakEase.Write.slnx --no-restore
 dotnet test --no-restore
 ```
 

@@ -142,6 +142,7 @@ public sealed class CreationOrchestrator(
             includeMemory,
             filterHistory,
             llmContext.ContextWindow,
+            userMessage,
             cancellationToken);
 
         // 步骤4：按计划顺序逐个执行 Agent，并按 DependsOn 注入前置 Artifact

@@ -6,7 +6,7 @@ namespace SpeakEase.Write.Application.Applications;
 /// <summary>
 /// Chat 入口的统一输入规范化器。只接受客户端 user/assistant 历史，不允许下游自行解释输入。
 /// </summary>
-internal static class AgentInputNormalizer
+public static class AgentInputNormalizer
 {
     public static void Normalize(AgentChatRequestDto request)
     {

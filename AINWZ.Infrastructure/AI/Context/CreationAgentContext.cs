@@ -4,6 +4,7 @@ using SpeakEase.Authorization.Authorization;
 using SpeakEase.Write.Domain.Entities.Memory;
 using ApplicationMemoryProvider = SpeakEase.Write.Application.Abstractions.AI.IMemoryProvider;
 using SessionMemorySnapshot = SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
+using SpeakEase.Write.Application.Abstractions.Memory;
 using SpeakEase.Write.Application.Abstractions.Persistence;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Shared;
@@ -15,14 +16,33 @@ public sealed class CreationAgentContext(
     ApplicationMemoryProvider memory,
     IUserContext user,
     IMemoryDbContext dbContext,
-    ISnowflakeIdGenerator idGenerator) : ICreationAgentContext
+    ISnowflakeIdGenerator idGenerator,
+    LayeredContextAssembler layeredContextAssembler = null,
+    IMemoryContextProvider memoryContextProvider = null) : ICreationAgentContext
 {
     private const int FilteredHistoryTurns = 8;     // 筛选模式：仅保留最近 8 个完整轮次
     private const int FullHistoryTurns = 20;         // 全历史模式：保留最近 20 个完整轮次
-    private const int ReservedOutputTokens = 8_000;     // 为 LLM 输出预留的 token 配额
-    private const int DefaultContextWindowTokens = 32_000; // 默认上下文窗口大小
+    public Task<AgentContext> BuildContextAsync(
+        string workId,
+        string sessionId,
+        string agentName,
+        string primaryModel,
+        bool includeMemory,
+        bool filterHistory,
+        int contextWindowTokens,
+        CancellationToken cancellationToken = default)
+        => BuildContextAsync(
+            workId,
+            sessionId,
+            agentName,
+            primaryModel,
+            includeMemory,
+            filterHistory,
+            contextWindowTokens,
+            string.Empty,
+            cancellationToken);
 
-    // 核心构建方法：组装会话上下文（记忆、历史、token 预算裁剪）
+    // 核心构建方法：组装 L1-L4，并为 L0 当前输入和模型输出预留预算。
     public async Task<AgentContext> BuildContextAsync(
         string workId,
         string sessionId,
@@ -31,6 +51,7 @@ public sealed class CreationAgentContext(
         bool includeMemory,
         bool filterHistory,
         int contextWindowTokens,
+        string currentUserMessage,
         CancellationToken cancellationToken = default)
     {
         var ctx = new AgentContext
@@ -53,69 +74,54 @@ public sealed class CreationAgentContext(
         if (!ownsSession)
             return ctx;
 
-        // 根据 Agent 元数据决定是否加载会话记忆
+        var layers = includeMemory && memoryContextProvider is not null
+            ? await memoryContextProvider.LoadAsync(new MemoryContextRequest
+            {
+                UserId = user.UserId,
+                WorkId = workId,
+                SessionId = sessionId,
+                Query = currentUserMessage
+            }, cancellationToken)
+            : null;
         var memorySnapshot = includeMemory
-            ? await memory.LoadSessionMemoryAsync(user.UserId, workId, sessionId, cancellationToken)
+            ? layers?.Session ?? await memory.LoadSessionMemoryAsync(user.UserId, workId, sessionId, cancellationToken)
             : SessionMemorySnapshot.Empty;
         var projectFacts = includeMemory
-            ? await memory.LoadProjectFactsAsync(user.UserId, workId, cancellationToken)
+            ? layers?.ProjectFacts ?? await memory.LoadProjectFactsAsync(user.UserId, workId, cancellationToken)
             : Array.Empty<SpeakEase.Write.Application.Abstractions.AI.MemoryFact>();
 
-        var recentMessages = await LoadRecentMessagesAsync(
+        var recentTurns = await LoadRecentTurnsAsync(
             sessionId,
             filterHistory,
             memorySnapshot.CoveredToTurn,
             cancellationToken);
-        var messages = new List<ChatMessage>();
-
-        // 注入项目记忆为系统消息（第一个消息）
-        if (includeMemory && !string.IsNullOrWhiteSpace(memorySnapshot.Summary))
+        var recentMessages = recentTurns.SelectMany(x => x.Messages).ToList();
+        var factText = string.Join(
+            "\n",
+            projectFacts.Take(64).Select(x => $"- [{x.Category}] {x.Key}: {x.Value}"));
+        var retrievedText = layers is null
+            ? string.Empty
+            : string.Join("\n", layers.RetrievedArtifacts.Select(x =>
+                $"- artifact:{x.ArtifactId} [{x.ContentType}] {x.Summary}"));
+        var assembler = layeredContextAssembler ?? new LayeredContextAssembler();
+        var assembled = assembler.Assemble(new LayeredContextAssemblyRequest
         {
-            ctx.ProjectMemory = memorySnapshot.Summary;
-            ctx.SnapshotId = memorySnapshot.SnapshotId;
-            messages.Add(ChatMessage.System($"[Session Memory]\n{memorySnapshot.Summary}"));
-        }
+            CurrentUserMessage = currentUserMessage,
+            ProjectFacts = factText,
+            SessionMemory = memorySnapshot.Summary,
+            RetrievedContext = retrievedText,
+            ConversationTurns = recentTurns,
+            ContextWindowTokens = contextWindowTokens
+        });
 
-        if (projectFacts.Count > 0)
-        {
-            var factText = string.Join(
-                "\n",
-                projectFacts.Take(64).Select(x => $"- [{x.Category}] {x.Key}: {x.Value}"));
-            messages.Insert(0, ChatMessage.System($"[Project Facts]\n{factText}"));
-        }
-
-        messages.AddRange(recentMessages);
-
-        // 估算各部分的 token 数，计算输入预算
-        var memoryTokens = EstimateTokens(ctx.ProjectMemory);
-        var recentTokens = EstimateTokens(recentMessages);
-        var totalTokens = EstimateTokens(messages);
-        var budget = ResolveInputBudget(contextWindowTokens);
-        var wasTrimmed = false;
-
-        // 超出预算时逐条删除最早的消息（保留第一条系统消息），直到满足预算
-        while (messages.Count > 1 && totalTokens > budget)
-        {
-            var removeIndex = messages[0] is SystemMessage ? 1 : 0;
-            messages.RemoveAt(removeIndex);
-            totalTokens = EstimateTokens(messages);
-            wasTrimmed = true;
-        }
-
-        // 只有一条超长系统/记忆消息时也必须裁剪，不能因为消息数为 1 而绕过预算。
-        if (totalTokens > budget && messages.Count == 1 && messages[0] is SystemMessage systemMessage)
-        {
-            systemMessage.Content = TruncateToBudget(systemMessage.Content, budget);
-            totalTokens = EstimateTokens(messages);
-            wasTrimmed = true;
-        }
-
-        ctx.ConversationHistory = messages;
+        ctx.ProjectMemory = memorySnapshot.Summary;
+        ctx.SnapshotId = memorySnapshot.SnapshotId;
+        ctx.ConversationHistory = assembled.Messages;
         ctx.HistoryMessage = recentMessages.Select(FormatMessage).Where(x => x.Length > 0).ToList();
-        ctx.MemoryTokenCount = memoryTokens;
-        ctx.RecentContextTokenCount = recentTokens;
-        ctx.InputTokenCount = totalTokens;
-        ctx.WasTrimmed = wasTrimmed;
+        ctx.MemoryTokenCount = LayeredContextAssembler.EstimateTokens(memorySnapshot.Summary);
+        ctx.RecentContextTokenCount = LayeredContextAssembler.EstimateTokens(recentMessages);
+        ctx.InputTokenCount = assembled.InputTokenCount;
+        ctx.WasTrimmed = assembled.WasTrimmed;
 
         // 记录上下文组装日志（用于调试和分析）
         await WriteAssemblyLogAsync(
@@ -130,7 +136,7 @@ public sealed class CreationAgentContext(
     }
 
     // 加载最近的会话消息（排除工具调用消息），支持筛选/全量模式
-    private async Task<List<ChatMessage>> LoadRecentMessagesAsync(
+    private async Task<List<LayeredConversationTurn>> LoadRecentTurnsAsync(
         string sessionId,
         bool filterHistory,
         int coveredToTurn,
@@ -148,7 +154,7 @@ public sealed class CreationAgentContext(
             .ToListAsync(cancellationToken);
 
         if (turnNumbers.Count == 0)
-            return new List<ChatMessage>();
+            return new List<LayeredConversationTurn>();
 
         // 先选轮次，再加载这些轮次的完整消息，避免 Take(messageCount) 拆开一轮对话。
         var rows = await dbContext.AICreationMessages
@@ -162,8 +168,17 @@ public sealed class CreationAgentContext(
             .ToListAsync(cancellationToken);
 
         return rows
-            .Select(ToChatMessage)
-            .Where(m => m != null)
+            .GroupBy(x => x.TurnNumber)
+            .OrderBy(x => x.Key)
+            .Select(group => new LayeredConversationTurn
+            {
+                TurnNumber = group.Key,
+                Messages = group
+                    .Select(ToChatMessage)
+                    .Where(message => message is not null)
+                    .ToList()
+            })
+            .Where(turn => turn.Messages.Count > 0)
             .ToList();
     }
 
@@ -216,37 +231,6 @@ public sealed class CreationAgentContext(
         return null;
     }
 
-    // 计算可用的输入 token 预算：context window - 预留输出 tokens
-    private static int ResolveInputBudget(int contextWindowTokens)
-    {
-        var window = contextWindowTokens > 0 ? contextWindowTokens : DefaultContextWindowTokens;
-        var reservedOutput = Math.Min(ReservedOutputTokens, Math.Max(1_000, window / 4));
-        return Math.Max(1, window - reservedOutput);
-    }
-
-    // 估算消息列表的总 token 数（基于字符数近似：中文×1.5，英文×0.25）
-    private static int EstimateTokens(IEnumerable<ChatMessage> messages)
-    {
-        return messages.Sum(message => EstimateTokens(ExtractText(message)));
-    }
-
-    // 估算单段文本的 token 数：中文每字约 1.5 tokens，其他字符每字约 0.25 tokens
-    private static int EstimateTokens(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return 0;
-
-        var chineseCount = 0;
-        foreach (var c in text)
-        {
-            if (c >= 0x4E00 && c <= 0x9FFF)
-                chineseCount++;
-        }
-
-        var otherCount = text.Length - chineseCount;
-        return (int)(chineseCount * 1.5) + (int)(otherCount * 0.25);
-    }
-
     // 格式化消息为人类可读文本（日志输出用）
     private static string FormatMessage(ChatMessage message)
     {
@@ -254,19 +238,6 @@ public sealed class CreationAgentContext(
         {
             UserMessage userMessage => $"user: {ExtractUserText(userMessage)}",
             AssistantMessage assistantMessage => $"assistant: {assistantMessage.Content}",
-            _ => string.Empty
-        };
-    }
-
-    // 从 ChatMessage 中提取纯文本内容（处理多种内容格式）
-    private static string ExtractText(ChatMessage message)
-    {
-        return message switch
-        {
-            SystemMessage systemMessage => systemMessage.Content,
-            UserMessage userMessage => ExtractUserText(userMessage),
-            AssistantMessage assistantMessage => assistantMessage.Content ?? string.Empty,
-            ToolMessage toolMessage => toolMessage.Content ?? string.Empty,
             _ => string.Empty
         };
     }
@@ -284,37 +255,4 @@ public sealed class CreationAgentContext(
         };
     }
 
-    private static string TruncateText(string value, int maxCharacters)
-    {
-        if (string.IsNullOrEmpty(value) || value.Length <= maxCharacters)
-            return value ?? string.Empty;
-
-        return value[..maxCharacters] + "\n[context truncated]";
-    }
-
-    private static string TruncateToBudget(string value, int budget)
-    {
-        if (string.IsNullOrEmpty(value) || budget <= 0)
-            return string.Empty;
-
-        var low = 0;
-        var high = value.Length;
-        var best = string.Empty;
-        while (low <= high)
-        {
-            var middle = low + (high - low) / 2;
-            var candidate = TruncateText(value, middle);
-            if (EstimateTokens(candidate) <= budget)
-            {
-                best = candidate;
-                low = middle + 1;
-            }
-            else
-            {
-                high = middle - 1;
-            }
-        }
-
-        return best;
-    }
 }

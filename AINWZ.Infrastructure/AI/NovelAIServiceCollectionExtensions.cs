@@ -34,6 +34,7 @@ using ApplicationGrowthConsistencyValidator = SpeakEase.Write.Application.Abstra
 using ApplicationPlotHookGenerator = SpeakEase.Write.Application.Abstractions.Story.IPlotHookGenerator;
 using ApplicationCharacterRuntimeQueue = SpeakEase.Write.Application.Abstractions.Story.ICharacterRuntimeQueue;
 using ApplicationCharacterRuntimeProcessor = SpeakEase.Write.Application.Abstractions.Story.ICharacterRuntimeProcessor;
+using ApplicationMemoryContextProvider = SpeakEase.Write.Application.Abstractions.Memory.IMemoryContextProvider;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -52,6 +53,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<RuntimeEventSink, RuntimeEventSinkImplementation>();
         services.AddScoped<IMemoryProvider, HybridMemoryProvider>();
         services.AddScoped<ApplicationMemoryProvider>(sp => sp.GetRequiredService<IMemoryProvider>());
+        services.AddScoped<ApplicationMemoryContextProvider, MemoryContextProvider>();
         services.AddSingleton<MemoryRefreshQueue>();
         services.AddSingleton<ApplicationMemoryRefreshQueue>(sp => sp.GetRequiredService<MemoryRefreshQueue>());
         services.AddHostedService(sp => sp.GetRequiredService<MemoryRefreshQueue>());
@@ -79,6 +81,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<CreationRuntimeFacade>();
         services.AddScoped<ApplicationAgentOrchestrator>(sp => sp.GetRequiredService<CreationRuntimeFacade>());
         services.AddScoped<ICreationAgentContext, CreationAgentContext>();
+        services.AddSingleton<LayeredContextAssembler>();
         services.AddScoped<IContextCompressor, ContextCompressor>();
         services.AddScoped<IForeshadowAnalysisService, ForeshadowAnalysisService>();
 

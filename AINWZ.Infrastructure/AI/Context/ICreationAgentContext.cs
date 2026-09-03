@@ -12,4 +12,24 @@ public interface ICreationAgentContext
         bool filterHistory,
         int contextWindowTokens,
         CancellationToken cancellationToken = default);
+
+    Task<AgentContext> BuildContextAsync(
+        string workId,
+        string sessionId,
+        string agentName,
+        string primaryModel,
+        bool includeMemory,
+        bool filterHistory,
+        int contextWindowTokens,
+        string currentUserMessage,
+        CancellationToken cancellationToken = default)
+        => BuildContextAsync(
+            workId,
+            sessionId,
+            agentName,
+            primaryModel,
+            includeMemory,
+            filterHistory,
+            contextWindowTokens,
+            cancellationToken);
 }

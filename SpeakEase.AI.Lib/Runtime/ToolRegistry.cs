@@ -64,7 +64,8 @@ public sealed class ToolRegistry : IToolRegistry
 
         return _items.Values
             .Where(x => IsAllowed(x, context))
-            .OrderBy(x => x.Name, StringComparer.Ordinal)
+            .OrderBy(x => PreferredIndex(x.Name, context.PreferredTools))
+            .ThenBy(x => x.Name, StringComparer.Ordinal)
             .Take(Math.Max(1, context.MaxTools))
             .Select(x => x.Definition)
             .ToArray();
@@ -78,10 +79,23 @@ public sealed class ToolRegistry : IToolRegistry
         if (descriptor.RequiresExplicitConsent && !context.HasExplicitConsent)
             return false;
 
-        if (descriptor.RequiredPhases.Count > 0 && !descriptor.RequiredPhases.Contains(context.Phase, StringComparer.OrdinalIgnoreCase))
+        if (!string.Equals(context.Phase, "run", StringComparison.OrdinalIgnoreCase) &&
+            descriptor.RequiredPhases.Count > 0 &&
+            !descriptor.RequiredPhases.Contains(context.Phase, StringComparer.OrdinalIgnoreCase))
             return false;
 
         return descriptor.RequiredScopes.All(scope => context.GrantedScopes.Contains(scope, StringComparer.Ordinal));
+    }
+
+    private static int PreferredIndex(string name, IReadOnlyList<string> preferredTools)
+    {
+        for (var index = 0; index < preferredTools.Count; index++)
+        {
+            if (string.Equals(name, preferredTools[index], StringComparison.Ordinal))
+                return index;
+        }
+
+        return int.MaxValue;
     }
 
     private static ToolCapabilityDescriptor CreateDefaultDescriptor(ToolDefinition definition)

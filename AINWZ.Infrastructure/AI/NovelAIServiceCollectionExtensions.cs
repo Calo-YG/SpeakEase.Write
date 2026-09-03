@@ -10,6 +10,7 @@ using SpeakEase.Write.Infrastructure.AI.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Character;
 using ApplicationMemoryProvider = SpeakEase.Write.Application.Abstractions.AI.IMemoryProvider;
 using ApplicationAgentOrchestrator = SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator;
+using ApplicationCreationRuntimeFacade = SpeakEase.Write.Application.Abstractions.AI.ICreationRuntimeFacade;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 using ApplicationAgentRunStore = SpeakEase.Write.Application.Abstractions.AI.IAgentRunStore;
@@ -67,6 +68,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<RuntimeAgentLoop, RuntimeAgentLoopImplementation>();
         services.AddScoped<RuntimeHost>();
         services.AddScoped<RuntimeRunner, RuntimeRunnerImplementation>();
+        services.AddOptions<AgentRuntimeModeOptions>().BindConfiguration(AgentRuntimeModeOptions.SectionName);
         services.AddScoped<ApplicationCharacterStateStore, CharacterStateStore>();
         services.AddSingleton<ApplicationCharacterStateEvaluator, CharacterStateEvaluator>();
         services.AddSingleton<ApplicationGrowthConsistencyValidator, GrowthConsistencyValidator>();
@@ -79,6 +81,8 @@ public static class NovelAIServiceCollectionExtensions
         // 上下文管理与伏笔分析
         services.AddScoped<CreationOrchestrator>();
         services.AddScoped<CreationRuntimeFacade>();
+        services.AddScoped<ArtifactContextBuilder>();
+        services.AddScoped<ApplicationCreationRuntimeFacade>(sp => sp.GetRequiredService<CreationRuntimeFacade>());
         services.AddScoped<ApplicationAgentOrchestrator>(sp => sp.GetRequiredService<CreationRuntimeFacade>());
         services.AddScoped<ICreationAgentContext, CreationAgentContext>();
         services.AddSingleton<LayeredContextAssembler>();

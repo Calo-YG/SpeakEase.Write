@@ -104,6 +104,88 @@ public abstract class AgentBase(
         }
     }
 
+    public async IAsyncEnumerable<AgentStreamChunk> ExecuteRuntimeStreamAsync(
+        AgentRequest request,
+        IAgentRuntimeRunner runner,
+        bool enableDynamicToolExposure,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(runner);
+        var validationError = ValidateRequest(request);
+        if (validationError is not null)
+        {
+            yield return new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = new AgentResponse { Content = string.Empty, StopReason = "invalid_request" }
+            };
+            yield break;
+        }
+
+        RegisterTools(Tools);
+        var exposedTools = enableDynamicToolExposure ? SelectExposedTools() : Tools;
+        await foreach (var runtimeEvent in runner.RunAsync(new RuntimeRunRequest
+        {
+            PublishEvents = false,
+            LoopRequest = new AgentLoopRequest
+            {
+                RunId = request.RunId,
+                StepId = request.StepId,
+                AgentName = Name,
+                Llm = Llm,
+                Tools = exposedTools,
+                Journal = request.Journal,
+                Request = request
+            }
+        }, cancellationToken))
+        {
+            if (runtimeEvent.Chunk is not null)
+                yield return runtimeEvent.Chunk;
+        }
+    }
+
+    private IToolCapable SelectExposedTools()
+    {
+        var registry = new ToolRegistry();
+        foreach (var tool in Tools.Tools)
+            registry.Register(tool);
+
+        var selected = new ToolExposurePolicy(registry).Select(new ToolExposureContext
+        {
+            AgentName = Name,
+            Phase = "run",
+            AllowedGroups = Descriptor.ToolGroups,
+            PreferredTools = GetPreferredToolNames(Name),
+            HasExplicitConsent = false,
+            MaxTools = 12
+        });
+        return new ExposedToolCapable(Tools, selected);
+    }
+
+    private static IReadOnlyList<string> GetPreferredToolNames(string agentName)
+        => agentName switch
+        {
+            "write" => new[]
+            {
+                "get_work_info", "get_outline", "get_recent_chapters", "get_writing_rules",
+                "get_character", "get_world_setting", "get_foreshadowing", "get_timeline_events",
+                "get_relationships", "save_chapter_content", "update_chapter_summary", "create_timeline_event"
+            },
+            "world" => new[]
+            {
+                "get_work_info", "get_world_setting", "search_world_setting", "get_power_system",
+                "get_world_rules", "get_factions", "get_geography", "get_historical_events",
+                "save_world_setting", "create_power_system", "create_world_rule", "create_historical_event"
+            },
+            "outline" => new[]
+            {
+                "get_work_info", "get_outline", "search_outline", "get_character_list",
+                "get_world_setting", "get_foreshadowing", "get_timeline_events", "create_outline",
+                "create_outline_node", "create_chapter_outline", "create_foreshadowing", "create_timeline_event"
+            },
+            _ => Array.Empty<string>()
+        };
+
     private static string ValidateRequest(AgentRequest request)
     {
         if (request is null)

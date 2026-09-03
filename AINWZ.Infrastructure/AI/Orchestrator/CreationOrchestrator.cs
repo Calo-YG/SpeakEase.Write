@@ -8,6 +8,8 @@ using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
+using SpeakEase.Write.Infrastructure.AI.Agents;
+using SpeakEase.Write.Infrastructure.AI.Runtime;
 using SpeakEase.Write.Infrastructure.Shared;
 
 namespace SpeakEase.Write.Infrastructure.AI.Orchestrator;
@@ -21,10 +23,13 @@ public sealed class CreationOrchestrator(
     IEnumerable<INovelAgent> agents,
     ILogger<CreationOrchestrator> logger,
     IAgentRunStore runStore = null,
-    PlanCompiler planCompiler = null) : IAgentOrchestrator
+    PlanCompiler planCompiler = null,
+    IAgentRuntimeRunner runtimeRunner = null,
+    ArtifactContextBuilder artifactContextBuilder = null) : IAgentOrchestrator
 {
     private readonly PromptComposer _promptComposer = new();
     private readonly PlanCompiler _planCompiler = planCompiler ?? new PlanCompiler();
+    private readonly ArtifactContextBuilder _artifactContextBuilder = artifactContextBuilder ?? new ArtifactContextBuilder();
     // 执行完整的 Agent 管线：LLM 意图路由 → 逐个 Agent 执行 → 流式返回 chunk
     public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
@@ -47,8 +52,21 @@ public sealed class CreationOrchestrator(
         }, cancellationToken);
     }
 
-    public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+    public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         AgentRuntimeRequest runtimeRequest,
+        CancellationToken cancellationToken = default)
+        => ExecuteCoreAsync(runtimeRequest, false, false, cancellationToken);
+
+    public IAsyncEnumerable<AgentStreamChunk> ExecuteRuntimeAsync(
+        AgentRuntimeRequest runtimeRequest,
+        bool enableDynamicToolExposure,
+        CancellationToken cancellationToken = default)
+        => ExecuteCoreAsync(runtimeRequest, true, enableDynamicToolExposure, cancellationToken);
+
+    private async IAsyncEnumerable<AgentStreamChunk> ExecuteCoreAsync(
+        AgentRuntimeRequest runtimeRequest,
+        bool useAgentRuntime,
+        bool enableDynamicToolExposure,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(runtimeRequest);
@@ -204,7 +222,7 @@ public sealed class CreationOrchestrator(
             var dependencyTokenBudget = Math.Max(
                 0,
                 llmContext.ContextWindow - resolvedMaxTokens - fixedRequestTokens - 8);
-            var chainMessage = BuildDependencyMessage(
+            var chainMessage = _artifactContextBuilder.Build(
                 userMessage,
                 dependencyArtifacts,
                 dependencyTokenBudget);
@@ -237,7 +255,10 @@ public sealed class CreationOrchestrator(
             AgentResponse finalResponse = null;
             var hadError = false;
 
-            await foreach (var chunk in StreamAgentChunks(agent, request, cancellationToken))
+            var agentChunks = useAgentRuntime && runtimeRunner is not null && agent is AgentBase runtimeAgent
+                ? runtimeAgent.ExecuteRuntimeStreamAsync(request, runtimeRunner, enableDynamicToolExposure, cancellationToken)
+                : agent.ExecuteStreamAsync(request, cancellationToken);
+            await foreach (var chunk in StreamAgentChunks(agent.Name, agentChunks, cancellationToken))
             {
                 if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
                 {
@@ -330,12 +351,11 @@ public sealed class CreationOrchestrator(
 
     // 包裹 Agent 的 IAsyncEnumerable，捕获 MoveNextAsync 异常并转为 error chunk
     private async IAsyncEnumerable<AgentStreamChunk> StreamAgentChunks(
-        INovelAgent agent,
-        AgentRequest request,
+        string agentName,
+        IAsyncEnumerable<AgentStreamChunk> chunks,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var enumerator = agent.ExecuteStreamAsync(request, cancellationToken)
-            .GetAsyncEnumerator(cancellationToken);
+        var enumerator = chunks.GetAsyncEnumerator(cancellationToken);
 
         try
         {
@@ -359,7 +379,7 @@ public sealed class CreationOrchestrator(
 
                 if (moveNextException is not null)
                 {
-                    logger.LogError(moveNextException, "Agent [{Agent}] stream failed.", agent.Name);
+                    logger.LogError(moveNextException, "Agent [{Agent}] stream failed.", agentName);
                     yield return new AgentStreamChunk
                     {
                         Type = "error",
@@ -403,92 +423,6 @@ public sealed class CreationOrchestrator(
         return candidates.Count == 0 ? 2048 : candidates.Min();
     }
 
-    private static string BuildDependencyMessage(
-        string userMessage,
-        IReadOnlyList<AgentArtifact> dependencies,
-        int dependencyTokenBudget)
-    {
-        if (dependencies.Count == 0)
-            return userMessage;
-
-        var aggregateBudget = ResolveDependencyArtifactBudget(dependencyTokenBudget);
-        if (aggregateBudget <= 0)
-            return userMessage;
-
-        if (dependencies.Count == 1)
-        {
-            // 预算足够时保持线性管线的历史兼容格式和 12k 单 Artifact 上限。
-            const string prefix = "\n\n[Previous agent result]\n";
-            var totalBudget = (int)Math.Floor(dependencyTokenBudget / 1.5);
-            if (totalBudget <= prefix.Length)
-                return userMessage;
-
-            var content = TruncateArtifactContent(
-                dependencies[0].Content,
-                Math.Min(12_000, totalBudget - prefix.Length));
-            return $"{userMessage}{prefix}{content}";
-        }
-
-        var metadata = dependencies
-            .Select(dependency => new
-            {
-                Artifact = dependency,
-                Prefix = $"\n\n[Dependency artifact: {dependency.StepId}]\nSummary: "
-            })
-            .ToList();
-        var builder = new System.Text.StringBuilder(userMessage);
-        var remainingBudget = aggregateBudget;
-        var remainingDependencies = metadata.Count;
-        foreach (var item in metadata)
-        {
-            if (remainingBudget < item.Prefix.Length)
-            {
-                remainingBudget = 0;
-                break;
-            }
-
-            // 保留每个依赖的标签；摘要按剩余元数据预算平均分配，避免中文等多字节文本撑爆小窗口。
-            builder.Append(item.Prefix);
-            remainingBudget -= item.Prefix.Length;
-            var summaryBudget = Math.Max(0, remainingBudget / remainingDependencies);
-            var summary = TruncateArtifactContent(item.Artifact.Summary, summaryBudget);
-            builder.Append(summary);
-            remainingBudget -= summary.Length;
-            remainingDependencies--;
-        }
-
-        var remainingContentBudget = Math.Max(0, remainingBudget);
-        foreach (var item in metadata)
-        {
-            if (remainingContentBudget <= 0 || string.IsNullOrWhiteSpace(item.Artifact.Content))
-                continue;
-
-            const string contentLabel = "\nContent:\n";
-            if (remainingContentBudget <= contentLabel.Length)
-                break;
-
-            var content = TruncateArtifactContent(
-                item.Artifact.Content,
-                remainingContentBudget - contentLabel.Length);
-            if (content.Length == 0)
-                continue;
-
-            builder.Append(contentLabel).Append(content);
-            remainingContentBudget -= contentLabel.Length + content.Length;
-        }
-
-        return builder.ToString();
-    }
-
-    private static int ResolveDependencyArtifactBudget(int dependencyTokenBudget)
-    {
-        if (dependencyTokenBudget <= 0)
-            return 0;
-
-        // 这是完整请求预算扣除后的 Artifact 子预算，按最坏 1.5 token/char 保守换算。
-        return Math.Min(12_000, (int)Math.Floor(dependencyTokenBudget / 1.5));
-    }
-
     // 这里不追求 tokenizer 精度，而是以 ASCII/中文统一 1.5 token/char 的最坏情况估算。
     private static int EstimateConservativeTokens(IEnumerable<ChatMessage> messages)
     {
@@ -510,14 +444,6 @@ public sealed class CreationOrchestrator(
             ToolMessage tool => tool.Content ?? string.Empty,
             _ => string.Empty
         };
-    }
-
-    private static string TruncateArtifactContent(string content, int maxChars)
-    {
-        if (string.IsNullOrEmpty(content))
-            return string.Empty;
-
-        return content.Length > maxChars ? content[..maxChars] : content;
     }
 
     // 从共享管线上下文派生 Agent 专属会话历史：

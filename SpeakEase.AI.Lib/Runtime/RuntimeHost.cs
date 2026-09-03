@@ -10,6 +10,7 @@ public sealed class RuntimeHost(
     private readonly IAgentLoop _agentLoop = agentLoop ?? throw new ArgumentNullException(nameof(agentLoop));
     private readonly IRuntimeEventSink _eventSink = eventSink;
     private long _sequence;
+    private bool _publishEvents;
 
     public RuntimeState State { get; private set; } = RuntimeState.Created;
 
@@ -20,6 +21,7 @@ public sealed class RuntimeHost(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(request.LoopRequest);
         _sequence = 0;
+        _publishEvents = request.PublishEvents;
         State = RuntimeState.Running;
 
         await foreach (var runtimeEvent in EmitLifecycleAsync(
@@ -92,7 +94,7 @@ public sealed class RuntimeHost(
 
     private async Task PublishAsync(RuntimeEvent runtimeEvent, CancellationToken cancellationToken)
     {
-        if (_eventSink is not null)
+        if (_publishEvents && _eventSink is not null)
             await _eventSink.PublishAsync(runtimeEvent, cancellationToken);
     }
 

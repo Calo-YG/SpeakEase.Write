@@ -67,6 +67,23 @@ public sealed class RuntimeHostTests
         Assert.Equal(RuntimeState.MaxIterationsReached, host.State);
     }
 
+    [Fact]
+    public async Task RunAsync_CanSuppressNestedEventPersistence()
+    {
+        var sink = new CapturingEventSink();
+        var host = new RuntimeHost(new FakeAgentLoop(Array.Empty<AgentEvent>()), sink);
+        var request = CreateRequest();
+        request = new RuntimeRunRequest
+        {
+            LoopRequest = request.LoopRequest,
+            PublishEvents = false
+        };
+
+        await CollectAsync(host.RunAsync(request));
+
+        Assert.Empty(sink.Events);
+    }
+
     private static RuntimeRunRequest CreateRequest()
     {
         return new RuntimeRunRequest

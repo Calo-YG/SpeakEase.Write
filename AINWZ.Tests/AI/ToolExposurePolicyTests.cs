@@ -70,6 +70,26 @@ public sealed class ToolExposurePolicyTests
         }));
     }
 
+    [Fact]
+    public void Select_RunPhase_PrioritizesProfileAndBoundsVisibleTools()
+    {
+        var registry = new ToolRegistry();
+        for (var i = 0; i < 20; i++)
+            registry.Register(CreateDefinition($"get_tool_{i:00}"));
+        registry.Register(CreateDefinition("save_chapter_content"));
+
+        var selected = new ToolExposurePolicy(registry).Select(new ToolExposureContext
+        {
+            AgentName = "write",
+            Phase = "run",
+            PreferredTools = new[] { "save_chapter_content" },
+            MaxTools = 12
+        });
+
+        Assert.Equal(12, selected.Count);
+        Assert.Equal("save_chapter_content", selected[0].Function.Name);
+    }
+
     private static ToolDefinition CreateDefinition(string name)
     {
         return new ToolDefinition

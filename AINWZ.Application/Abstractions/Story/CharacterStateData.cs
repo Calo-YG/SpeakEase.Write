@@ -2,6 +2,7 @@ namespace SpeakEase.Write.Application.Abstractions.Story;
 
 public sealed class CharacterStateEventData
 {
+    public string UserId { get; init; } = string.Empty;
     public string WorkId { get; init; } = string.Empty;
     public string CharacterId { get; init; } = string.Empty;
     public string SourceRunId { get; init; } = string.Empty;
@@ -16,6 +17,7 @@ public sealed class CharacterStateEventData
 
 public sealed class CharacterStateSnapshotData
 {
+    public string UserId { get; init; } = string.Empty;
     public string Id { get; init; } = string.Empty;
     public string WorkId { get; init; } = string.Empty;
     public string CharacterId { get; init; } = string.Empty;
@@ -27,6 +29,7 @@ public sealed class CharacterStateSnapshotData
 
 public sealed class CharacterGrowthProposalData
 {
+    public string UserId { get; init; } = string.Empty;
     public string WorkId { get; init; } = string.Empty;
     public string CharacterId { get; init; } = string.Empty;
     public string SourceRunId { get; init; } = string.Empty;
@@ -42,7 +45,19 @@ public interface ICharacterStateStore
         string characterId,
         CancellationToken cancellationToken = default);
 
+    Task<CharacterStateSnapshotData> EnsureBaselineAsync(
+        string userId,
+        string workId,
+        string characterId,
+        CancellationToken cancellationToken = default);
+
     Task<CharacterStateSnapshotData> GetLatestSnapshotAsync(
+        string workId,
+        string characterId,
+        CancellationToken cancellationToken = default);
+
+    Task<CharacterStateSnapshotData> GetLatestSnapshotAsync(
+        string userId,
         string workId,
         string characterId,
         CancellationToken cancellationToken = default);

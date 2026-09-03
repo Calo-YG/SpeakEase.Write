@@ -18,13 +18,20 @@ public sealed class CharacterStateStore(
     private readonly ISnowflakeIdGenerator _idGenerator = idGenerator ?? throw new ArgumentNullException(nameof(idGenerator));
 
     public async Task<CharacterStateSnapshotData> EnsureBaselineAsync(string workId, string characterId, CancellationToken cancellationToken = default)
+        => await EnsureBaselineAsync(_userContext.UserId, workId, characterId, cancellationToken);
+
+    public async Task<CharacterStateSnapshotData> EnsureBaselineAsync(
+        string userId,
+        string workId,
+        string characterId,
+        CancellationToken cancellationToken = default)
     {
-        var existing = await GetLatestSnapshotAsync(workId, characterId, cancellationToken);
+        var existing = await GetLatestSnapshotAsync(userId, workId, characterId, cancellationToken);
         if (existing is not null)
             return existing;
 
         var character = await _db.Characters.AsNoTracking().FirstOrDefaultAsync(x =>
-            x.WorkId == workId && x.Id == characterId && x.OwnerId == _userContext.UserId,
+            x.WorkId == workId && x.Id == characterId && x.OwnerId == userId,
             cancellationToken);
         if (character is null)
             return null;
@@ -42,6 +49,7 @@ public sealed class CharacterStateStore(
         });
         var baseline = new CharacterStateSnapshotData
         {
+            UserId = userId,
             WorkId = workId,
             CharacterId = characterId,
             StateJson = state,
@@ -49,13 +57,20 @@ public sealed class CharacterStateStore(
             Version = 0
         };
         await SaveSnapshotAsync(baseline, cancellationToken);
-        return await GetLatestSnapshotAsync(workId, characterId, cancellationToken);
+        return await GetLatestSnapshotAsync(userId, workId, characterId, cancellationToken);
     }
 
     public async Task<CharacterStateSnapshotData> GetLatestSnapshotAsync(string workId, string characterId, CancellationToken cancellationToken = default)
+        => await GetLatestSnapshotAsync(_userContext.UserId, workId, characterId, cancellationToken);
+
+    public async Task<CharacterStateSnapshotData> GetLatestSnapshotAsync(
+        string userId,
+        string workId,
+        string characterId,
+        CancellationToken cancellationToken = default)
     {
         var entity = await _db.CharacterStateSnapshots.AsNoTracking().FirstOrDefaultAsync(x =>
-            x.WorkId == workId && x.CharacterId == characterId && x.UserId == _userContext.UserId,
+            x.WorkId == workId && x.CharacterId == characterId && x.UserId == userId,
             cancellationToken);
         return entity is null ? null : ToSnapshotData(entity);
     }
@@ -63,7 +78,7 @@ public sealed class CharacterStateStore(
     public async Task SaveSnapshotAsync(CharacterStateSnapshotData snapshot, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        var userId = _userContext.UserId;
+        var userId = ResolveUserId(snapshot.UserId);
         var entity = await _db.CharacterStateSnapshots.FirstOrDefaultAsync(x =>
             x.WorkId == snapshot.WorkId && x.CharacterId == snapshot.CharacterId && x.UserId == userId,
             cancellationToken);
@@ -97,7 +112,7 @@ public sealed class CharacterStateStore(
     public async Task<string> AppendEventAsync(CharacterStateEventData stateEvent, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(stateEvent);
-        var userId = _userContext.UserId;
+        var userId = ResolveUserId(stateEvent.UserId);
         var existing = await _db.CharacterStateEvents.FirstOrDefaultAsync(x =>
             x.UserId == userId && x.WorkId == stateEvent.WorkId && x.CharacterId == stateEvent.CharacterId &&
             x.SourceRunId == stateEvent.SourceRunId && x.SourceEventKey == stateEvent.SourceEventKey,
@@ -133,7 +148,7 @@ public sealed class CharacterStateStore(
     public async Task SaveGrowthProposalAsync(CharacterGrowthProposalData proposal, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(proposal);
-        var userId = _userContext.UserId;
+        var userId = ResolveUserId(proposal.UserId);
         var entity = new CharacterGrowthProposalEntity
         {
             Id = _idGenerator.NextIdString(),
@@ -156,6 +171,7 @@ public sealed class CharacterStateStore(
     private static CharacterStateSnapshotData ToSnapshotData(CharacterStateSnapshotEntity entity)
         => new()
         {
+            UserId = entity.UserId,
             Id = entity.Id,
             WorkId = entity.WorkId,
             CharacterId = entity.CharacterId,
@@ -164,4 +180,7 @@ public sealed class CharacterStateStore(
             Version = entity.Version,
             Status = entity.Status
         };
+
+    private string ResolveUserId(string userId)
+        => string.IsNullOrWhiteSpace(userId) ? _userContext.UserId : userId;
 }

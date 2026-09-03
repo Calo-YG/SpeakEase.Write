@@ -29,6 +29,11 @@ using ApplicationAgentRuntimeStore = SpeakEase.Write.Application.Abstractions.AI
 using RuntimeEventSink = SpeakEase.AI.Lib.Runtime.IRuntimeEventSink;
 using RuntimeEventSinkImplementation = SpeakEase.Write.Infrastructure.AI.Runtime.AgentRuntimeEventSink;
 using ApplicationCharacterStateStore = SpeakEase.Write.Application.Abstractions.Story.ICharacterStateStore;
+using ApplicationCharacterStateEvaluator = SpeakEase.Write.Application.Abstractions.Story.ICharacterStateEvaluator;
+using ApplicationGrowthConsistencyValidator = SpeakEase.Write.Application.Abstractions.Story.IGrowthConsistencyValidator;
+using ApplicationPlotHookGenerator = SpeakEase.Write.Application.Abstractions.Story.IPlotHookGenerator;
+using ApplicationCharacterRuntimeQueue = SpeakEase.Write.Application.Abstractions.Story.ICharacterRuntimeQueue;
+using ApplicationCharacterRuntimeProcessor = SpeakEase.Write.Application.Abstractions.Story.ICharacterRuntimeProcessor;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -61,6 +66,13 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<RuntimeHost>();
         services.AddScoped<RuntimeRunner, RuntimeRunnerImplementation>();
         services.AddScoped<ApplicationCharacterStateStore, CharacterStateStore>();
+        services.AddSingleton<ApplicationCharacterStateEvaluator, CharacterStateEvaluator>();
+        services.AddSingleton<ApplicationGrowthConsistencyValidator, GrowthConsistencyValidator>();
+        services.AddSingleton<ApplicationPlotHookGenerator, PlotHookGenerator>();
+        services.AddScoped<ApplicationCharacterRuntimeProcessor, CharacterRuntimeProcessor>();
+        services.AddSingleton<CharacterRuntimeWorker>();
+        services.AddSingleton<ApplicationCharacterRuntimeQueue>(sp => sp.GetRequiredService<CharacterRuntimeWorker>());
+        services.AddHostedService(sp => sp.GetRequiredService<CharacterRuntimeWorker>());
 
         // 上下文管理与伏笔分析
         services.AddScoped<CreationOrchestrator>();

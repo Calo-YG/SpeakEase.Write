@@ -14,6 +14,10 @@ public interface ICharacterDbContext
     DbSet<CharacterGraphEntity> CharacterGraphs { get; }
     DbSet<CharacterGraphNodeEntity> CharacterGraphNodes { get; }
     DbSet<CharacterGraphEdgeEntity> CharacterGraphEdges { get; }
+    DbSet<CharacterStateEventEntity> CharacterStateEvents { get; }
+    DbSet<CharacterStateSnapshotEntity> CharacterStateSnapshots { get; }
+    DbSet<CharacterGrowthProposalEntity> CharacterGrowthProposals { get; }
+    DbSet<RelationshipStateEventEntity> RelationshipStateEvents { get; }
 
     void Detach(object entity);
 

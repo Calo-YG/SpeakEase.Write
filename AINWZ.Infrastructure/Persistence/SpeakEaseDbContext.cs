@@ -29,6 +29,10 @@ public class SpeakEaseDbContext(DbContextOptions<SpeakEaseDbContext> options) : 
     public DbSet<CharacterGraphEntity> CharacterGraphs => Set<CharacterGraphEntity>();
     public DbSet<CharacterGraphNodeEntity> CharacterGraphNodes => Set<CharacterGraphNodeEntity>();
     public DbSet<CharacterGraphEdgeEntity> CharacterGraphEdges => Set<CharacterGraphEdgeEntity>();
+    public DbSet<CharacterStateEventEntity> CharacterStateEvents => Set<CharacterStateEventEntity>();
+    public DbSet<CharacterStateSnapshotEntity> CharacterStateSnapshots => Set<CharacterStateSnapshotEntity>();
+    public DbSet<CharacterGrowthProposalEntity> CharacterGrowthProposals => Set<CharacterGrowthProposalEntity>();
+    public DbSet<RelationshipStateEventEntity> RelationshipStateEvents => Set<RelationshipStateEventEntity>();
     public DbSet<OutlineEntity> Outlines => Set<OutlineEntity>();
     public DbSet<OutlineNodeEntity> OutlineNodes => Set<OutlineNodeEntity>();
     public DbSet<ForeshadowingEntity> Foreshadowings => Set<ForeshadowingEntity>();

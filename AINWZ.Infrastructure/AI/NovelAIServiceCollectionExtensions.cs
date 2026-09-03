@@ -7,6 +7,7 @@ using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Memory;
 using SpeakEase.Write.Infrastructure.AI.Runtime;
+using SpeakEase.Write.Infrastructure.AI.Character;
 using ApplicationMemoryProvider = SpeakEase.Write.Application.Abstractions.AI.IMemoryProvider;
 using ApplicationAgentOrchestrator = SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator;
 using SpeakEase.Write.Infrastructure.AI.Orchestrator;
@@ -27,6 +28,7 @@ using RuntimeRunnerImplementation = SpeakEase.AI.Lib.Runtime.AgentRuntimeRunner;
 using ApplicationAgentRuntimeStore = SpeakEase.Write.Application.Abstractions.AI.IAgentRuntimeStore;
 using RuntimeEventSink = SpeakEase.AI.Lib.Runtime.IRuntimeEventSink;
 using RuntimeEventSinkImplementation = SpeakEase.Write.Infrastructure.AI.Runtime.AgentRuntimeEventSink;
+using ApplicationCharacterStateStore = SpeakEase.Write.Application.Abstractions.Story.ICharacterStateStore;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -58,6 +60,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddScoped<RuntimeAgentLoop, RuntimeAgentLoopImplementation>();
         services.AddScoped<RuntimeHost>();
         services.AddScoped<RuntimeRunner, RuntimeRunnerImplementation>();
+        services.AddScoped<ApplicationCharacterStateStore, CharacterStateStore>();
 
         // 上下文管理与伏笔分析
         services.AddScoped<CreationOrchestrator>();

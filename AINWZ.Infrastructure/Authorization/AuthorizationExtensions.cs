@@ -1,4 +1,6 @@
 using SpeakEase.Write.Infrastructure.Authorization;
+using SpeakEase.Write.Application.Abstractions.Authorization;
+using ApplicationUserContext = SpeakEase.Write.Application.Abstractions.Identity.IUserContext;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Configuration;
@@ -39,14 +41,19 @@ public static class AuthorizationExtensions
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = issuer,
                     ValidAudience = audience,
-                    ClockSkew = TimeSpan.FromSeconds(expire),
+                    // 时钟偏移与令牌生命周期解耦，避免 ExpMinutes 配置错误时放大过期窗口。
+                    ClockSkew = TimeSpan.FromMinutes(5),
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret))
                 };
             });
 
             services.AddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizeResultHandle>();
-            services.AddScoped<IUserContext, UserContext>();
-            services.AddScoped<ITokenManager,TokenManager>();
+            services.AddScoped<UserContext>();
+            services.AddScoped<IUserContext>(sp => sp.GetRequiredService<UserContext>());
+            services.AddScoped<ApplicationUserContext>(sp => sp.GetRequiredService<UserContext>());
+            services.AddScoped<IWorkAccessChecker, WorkAccessChecker>();
+            services.AddScoped<SpeakEase.Authorization.Authorization.ITokenManager, TokenManager>();
+            services.AddScoped<SpeakEase.Write.Application.Abstractions.Authorization.ITokenManager>(sp => sp.GetRequiredService<SpeakEase.Authorization.Authorization.ITokenManager>());
             return services;
       }
 }

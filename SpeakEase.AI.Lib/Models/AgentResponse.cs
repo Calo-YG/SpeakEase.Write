@@ -35,6 +35,11 @@ public sealed class AgentResponse
     /// 停止原因：completed / llm_error / max_iterations_reached
     /// </summary>
     public string StopReason { get; set; }
+
+    /// <summary>
+    /// Application 层映射后的运行状态：completed / failed / cancelled 等。
+    /// </summary>
+    public string RunStatus { get; set; }
     /// <summary>
     /// 全流程累计 Token 用量
     /// </summary>

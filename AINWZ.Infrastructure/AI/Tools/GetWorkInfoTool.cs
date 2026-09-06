@@ -1,11 +1,12 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -41,22 +42,29 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
 
         var work = await db.Works.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == args.WorkId, ct);
+            .Where(x => x.Id == args.WorkId)
+            .Select(x => new
+            {
+                x.Title,
+                x.Summary,
+                x.Genre,
+                x.Perspective,
+                x.StyleTags,
+                x.CreationMode,
+                x.Status,
+                x.TotalWordCount,
+                x.WritingRules,
+                ChapterCount = db.Chapters.Count(chapter => chapter.WorkId == x.Id),
+                VolumeCount = db.Volumes.Count(volume => volume.WorkId == x.Id),
+                CharacterCount = db.Characters.Count(character => character.WorkId == x.Id)
+            })
+            .FirstOrDefaultAsync(ct);
 
         if (work == null)
             return ToolResult.Fail($"未找到作品 {args.WorkId}", "not_found");
-
-        var chapterCount = await db.Chapters.AsNoTracking()
-            .CountAsync(x => x.WorkId == args.WorkId, ct);
-
-        var volumeCount = await db.Volumes.AsNoTracking()
-            .CountAsync(x => x.WorkId == args.WorkId, ct);
-
-        var characterCount = await db.Characters.AsNoTracking()
-            .CountAsync(x => x.WorkId == args.WorkId, ct);
 
         return ToolResult.Ok(JsonSerializer.Serialize(new
         {
@@ -69,14 +77,15 @@ public sealed class GetWorkInfoTool(IServiceScopeFactory scopeFactory, IOptionsS
             work.Status,
             work.TotalWordCount,
             work.WritingRules,
-            chapterCount,
-            volumeCount,
-            characterCount
+            chapterCount = work.ChapterCount,
+            volumeCount = work.VolumeCount,
+            characterCount = work.CharacterCount
         }, snapshot.Value));
     }
 
     private sealed record Args
     {
+        [JsonPropertyName("work_id")]
         public string WorkId { get; init; }
 
         public ToolResult Validate()

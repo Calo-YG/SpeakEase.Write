@@ -28,7 +28,15 @@ namespace SpeakEase.AI.Lib
 
             // 注册工具/技能能力实现
             services.AddTransient<IToolCapable, ToolCapable>();
-            services.AddScoped<ISkilCapable, SkillCapable>();
+            services.AddScoped<ISkilCapable>(serviceProvider =>
+            {
+                var skills = new SkillCapable();
+                var environment = serviceProvider.GetRequiredService<Microsoft.Extensions.Hosting.IHostEnvironment>();
+                SkillCatalogLoader.RegisterFromDirectory(
+                    skills,
+                    Path.Combine(environment.ContentRootPath, "wwwroot", "skills"));
+                return skills;
+            });
             // OpenAI 兼容实现：同时注册为具体类和接口，调用方可注入 IChatCompatible
             services.AddScoped<OpenAICompatible>();
             services.AddScoped<IChatCompatible, OpenAICompatible>();

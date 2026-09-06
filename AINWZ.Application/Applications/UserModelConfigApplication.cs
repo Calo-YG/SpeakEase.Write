@@ -1,13 +1,14 @@
 using SpeakEase.Write.Application.Contracts.Users;
 using SpeakEase.Write.Application.Contracts.Users.Dto;
 using SpeakEase.Write.Domain.Entities.Users;
-using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Ids;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
-using SpeakEase.Authorization.Authorization;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.Identity;
+using SpeakEase.Write.Application.Shared;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;

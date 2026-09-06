@@ -4,134 +4,152 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
 using SpeakEase.Write.Application.Contracts.Creation;
-using SpeakEase.Write.Infrastructure.AI.Orchestrator;
-using SpeakEase.Write.Infrastructure.Exceptions;
+using SpeakEase.Write.Application.Abstractions.AI;
+using CreationOrchestrator = SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator;
+using SpeakEase.Write.Application.Exceptions;
 
 namespace SpeakEase.Write.Application.Applications;
 
 // AI创作助手应用服务：处理与AI编排器的对话交互，支持同步和流式两种响应模式
 public sealed class AgentApplication(
     CreationOrchestrator orchestrator,
-    ICreationSessionManager sessionManager) : IAgentApplication
+    ICreationSessionManager sessionManager,
+    IAgentRunStore runStore = null) : IAgentApplication
 {
     private readonly CreationOrchestrator _orchestrator = orchestrator;
     private readonly ICreationSessionManager _sessionManager = sessionManager;
+    private readonly IAgentRunStore _runStore = runStore;
 
-    // 同步聊天：收集AI编排器返回的所有内容片段后，一次性返回完整响应
-    public async Task<AgentResponse> ChatAsync(AgentChatRequestDto request, CancellationToken cancellationToken = default)
+    public async Task<AgentResponse> ChatAsync(
+        AgentChatRequestDto request,
+        CancellationToken cancellationToken = default)
     {
-        // 参数校验：检查WorkId、Messages等必填项
-        ValidateRequest(request);
-
-        var workId = request.WorkId.Trim();
-        // 提取最新一条用户消息作为AI输入
-        var userMessage = ExtractLatestUserMessage(request.Messages);
-        // 确保有活跃的创作会话（不存在则自动创建）
-        var sessionId = await EnsureActiveSessionAsync(workId);
-        var contentParts = new List<string>();
-        var errorMessage = string.Empty;
-
-        // 通过AI编排器执行对话，收集返回的内容块
-        await foreach (var chunk in _orchestrator.ExecuteAsync(
-            workId,
-            sessionId,
-            userMessage,
-            request.MaxIterations,
-            request.MaxTokens,
-            request.Temperature,
-            cancellationToken))
+        var state = new ChatExecutionState();
+        await foreach (var _ in ExecuteSharedAsync(request, state, cancellationToken))
         {
-            if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
-                contentParts.Add(chunk.Content);
-
-            if (chunk.Type == "error" && !string.IsNullOrWhiteSpace(chunk.Content))
-                errorMessage = chunk.Content;
         }
 
-        // 如果AI编排器返回错误，直接抛出业务异常
-        if (!string.IsNullOrWhiteSpace(errorMessage))
-            BusinessThrow.ThrowException(errorMessage);
+        if (state.ReplayResponse is not null)
+            return state.ReplayResponse;
+        if (!string.IsNullOrWhiteSpace(state.ErrorMessage))
+            BusinessThrow.ThrowException(state.ErrorMessage);
 
-        // 拼接所有内容片段为完整响应文本
-        var aiContent = string.Join(string.Empty, contentParts);
-        // 将本轮对话（用户消息+AI回复）追加到会话记录
-        var appendResult = await _sessionManager.AppendTurnAsync(
-            sessionId,
-            userMessage,
-            aiContent,
-            cancellationToken: cancellationToken);
-
-        if (!appendResult.Successed || appendResult.Data is null)
-            BusinessThrow.ThrowException(appendResult.Message ?? "Failed to record conversation turn.");
-
-        return new AgentResponse
-        {
-            Content = aiContent,
-            StopReason = "completed"
-        };
+        EnsureSuccessfulRun(state.FinalResponse);
+        return state.Response;
     }
 
-    // 流式聊天：实时yield返回AI编排器的内容块（SSE），完成后记录对话历史
     public async IAsyncEnumerable<AgentStreamChunk> StreamChatAsync(
         AgentChatRequestDto request,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        // 参数校验：检查WorkId、Messages等必填项
-        ValidateRequest(request);
-
-        var workId = request.WorkId.Trim();
-        // 提取最新一条用户消息作为AI输入
-        var userMessage = ExtractLatestUserMessage(request.Messages);
-        // 确保有活跃的创作会话（不存在则自动创建）
-        var sessionId = await EnsureActiveSessionAsync(workId);
-        var accumulatedContent = new StringBuilder();
-        // 收集工具调用结果用于记录会话历史
-        var toolResults = new List<(string ToolName, bool Success, string Content)>();
-        var hadError = false;
-
-        // 流式执行AI编排器，实时yield内容块给调用方
-        await foreach (var chunk in _orchestrator.ExecuteAsync(
-            workId,
-            sessionId,
-            userMessage,
-            request.MaxIterations,
-            request.MaxTokens,
-            request.Temperature,
-            cancellationToken))
-        {
-            if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
-                accumulatedContent.Append(chunk.Content);
-
-            if (chunk.Type == "error")
-                hadError = true;
-
-            // 截断过长的工具结果内容（超过500字符），避免存储过大
-            if (chunk.Type == "tool_result" && chunk.ToolResult is { } result)
-            {
-                var truncated = result.Content?.Length > 500
-                    ? result.Content[..500]
-                    : result.Content ?? string.Empty;
-
-                toolResults.Add((result.ToolName ?? "tool", result.Success, truncated));
-            }
-
+        var state = new ChatExecutionState();
+        await foreach (var chunk in ExecuteSharedAsync(request, state, cancellationToken))
             yield return chunk;
-        }
 
-        // 如果流式过程中发生错误，不再记录会话历史
-        if (hadError)
+        if (state.ReplayResponse is not null || !string.IsNullOrWhiteSpace(state.ErrorMessage))
             yield break;
 
-        // 流式完成后，将本轮对话追加到会话记录（含工具调用结果）
+        EnsureSuccessfulRun(state.FinalResponse);
+    }
+
+    private async IAsyncEnumerable<AgentStreamChunk> ExecuteSharedAsync(
+        AgentChatRequestDto request,
+        ChatExecutionState state,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        var normalized = NormalizeRequest(request);
+        var sessionId = await EnsureActiveSessionAsync(normalized.WorkId);
+        var run = await StartRunAsync(request, normalized.WorkId, sessionId, cancellationToken);
+        if (run.IsReplay)
+        {
+            state.ReplayResponse = run.ExistingResponse;
+            yield return new AgentStreamChunk { Type = "done", FinalResponse = run.ExistingResponse };
+            yield break;
+        }
+        if (run.IsInProgress)
+            BusinessThrow.ThrowException("The same request is already running.");
+
+        var content = new StringBuilder();
+        var toolResults = new List<(string ToolName, bool Success, string Content)>();
+        var eventSequence = run.LastEventSequence;
+        var streamCompleted = false;
+        try
+        {
+            await foreach (var chunk in _orchestrator.ExecuteAsync(ToRuntimeRequest(normalized, run.RunId, sessionId), cancellationToken))
+            {
+                AlignRunEventMetadata(run.RunId, chunk, ++eventSequence);
+                await AppendRunEventAsync(run.RunId, chunk, eventSequence, cancellationToken);
+                CaptureChunk(chunk, content, toolResults, state);
+                yield return chunk;
+            }
+            streamCompleted = true;
+        }
+        finally
+        {
+            if (!streamCompleted)
+            {
+                await CompleteRunAsync(
+                    run.RunId,
+                    CreateCancellationResponse(cancellationToken),
+                    CancellationToken.None);
+            }
+        }
+
+        if (state.FinalResponse is null)
+        {
+            state.ErrorMessage = string.IsNullOrWhiteSpace(state.ErrorMessage)
+                ? "AI execution ended without a terminal response."
+                : state.ErrorMessage;
+            state.FinalResponse = new AgentResponse
+            {
+                Content = string.Empty,
+                StopReason = "llm_error"
+            };
+            var terminal = new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = state.FinalResponse
+            };
+            AlignRunEventMetadata(run.RunId, terminal, ++eventSequence);
+            await AppendRunEventAsync(run.RunId, terminal, eventSequence, CancellationToken.None);
+            yield return terminal;
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ErrorMessage))
+        {
+            await CompleteRunAsync(run.RunId, state.FinalResponse, CancellationToken.None);
+            yield break;
+        }
+
+        if (state.FinalResponse is not null && state.FinalResponse.StopReason != "completed")
+        {
+            await CompleteRunAsync(run.RunId, state.FinalResponse, CancellationToken.None);
+            yield break;
+        }
+
+        var persistedContent = state.FinalResponse?.StopReason == "completed" &&
+                               !string.IsNullOrWhiteSpace(state.FinalResponse.Content)
+            ? state.FinalResponse.Content
+            : content.ToString();
         var appendResult = await _sessionManager.AppendTurnAsync(
             sessionId,
-            userMessage,
-            accumulatedContent.ToString(),
+            normalized.UserMessage,
+            persistedContent,
             toolResults.Count > 0 ? toolResults : null,
             cancellationToken);
-
         if (!appendResult.Successed || appendResult.Data is null)
             BusinessThrow.ThrowException(appendResult.Message ?? "Failed to record conversation turn.");
+
+        var runResult = BuildRunResult(state.FinalResponse, persistedContent);
+        state.Response = new AgentResponse
+        {
+            Content = persistedContent,
+            StopReason = runResult.StopReason,
+            RunStatus = runResult.Status.ToString().ToLowerInvariant(),
+            Model = state.FinalResponse?.Model,
+            TotalUsage = state.FinalResponse?.TotalUsage
+        };
+        await CompleteRunAsync(run.RunId, state.Response, CancellationToken.None);
     }
 
     // 确保作品有活跃的AI创作会话：先查已有会话，没有则创建新会话
@@ -148,20 +166,70 @@ public sealed class AgentApplication(
         return startResult.Data.SessionId;
     }
 
+    private static AgentChatRuntimeRequest NormalizeRequest(AgentChatRequestDto request)
+    {
+        ValidateRequest(request);
+        return new AgentChatRuntimeRequest
+        {
+            WorkId = request.WorkId.Trim(),
+            UserMessage = ExtractLatestUserMessage(request.Messages),
+            ClientMessageId = request.ClientMessageId ?? string.Empty,
+            IdempotencyKey = request.IdempotencyKey ?? string.Empty,
+            SkillName = request.SkillName ?? string.Empty,
+            MaxIterations = request.MaxIterations,
+            MaxTokens = request.MaxTokens,
+            Temperature = request.Temperature,
+            EnableAutoToolDispatch = request.EnableAutoToolDispatch
+        };
+    }
+
+    private static AgentRuntimeRequest ToRuntimeRequest(
+        AgentChatRuntimeRequest request,
+        string runId,
+        string sessionId)
+        => new()
+        {
+            RunId = runId,
+            WorkId = request.WorkId,
+            SessionId = sessionId,
+            UserMessage = request.UserMessage,
+            ClientMessageId = request.ClientMessageId,
+            IdempotencyKey = request.IdempotencyKey,
+            SkillName = request.SkillName,
+            MaxIterations = request.MaxIterations,
+            MaxTokens = request.MaxTokens,
+            Temperature = request.Temperature,
+            EnableAutoToolDispatch = request.EnableAutoToolDispatch
+        };
+
+    private static void CaptureChunk(
+        AgentStreamChunk chunk,
+        StringBuilder content,
+        List<(string ToolName, bool Success, string Content)> toolResults,
+        ChatExecutionState state)
+    {
+        if (chunk.Type == "content" && !string.IsNullOrEmpty(chunk.Content))
+            content.Append(chunk.Content);
+
+        if (chunk.Type == "error")
+            state.ErrorMessage = string.IsNullOrWhiteSpace(chunk.Content) ? "AI execution failed." : chunk.Content;
+
+        if (chunk.Type == "done" && chunk.FinalResponse is not null)
+            state.FinalResponse = chunk.FinalResponse;
+
+        if (chunk.Type != "tool_result" || chunk.ToolResult is not { } result)
+            return;
+
+        var truncated = result.Content?.Length > 500
+            ? result.Content[..500]
+            : result.Content ?? string.Empty;
+        toolResults.Add((result.ToolName ?? "tool", result.Success, truncated));
+    }
+
     // 校验聊天请求参数：WorkId和Messages（含至少一条user消息）不能为空
     private static void ValidateRequest(AgentChatRequestDto request)
     {
-        if (request is null)
-            BusinessThrow.ThrowException("Request cannot be empty.");
-
-        if (string.IsNullOrWhiteSpace(request.WorkId))
-            BusinessThrow.ThrowException("WorkId cannot be empty.");
-
-        if (request.Messages == null || request.Messages.Count == 0)
-            BusinessThrow.ThrowException("Messages cannot be empty.");
-
-        if (!request.Messages.Any(m => m.Role == "user" && !string.IsNullOrWhiteSpace(m.Content)))
-            BusinessThrow.ThrowException("User message cannot be empty.");
+        AgentInputNormalizer.Normalize(request);
     }
 
     // 从消息列表中提取最新一条role为"user"的消息内容
@@ -175,4 +243,123 @@ public sealed class AgentApplication(
             ? messages[lastUserIndex].Content
             : string.Empty;
     }
+
+    private static void EnsureSuccessfulRun(AgentResponse finalResponse)
+    {
+        var stopReason = finalResponse?.StopReason;
+        if (string.IsNullOrWhiteSpace(stopReason) || stopReason == "completed")
+            return;
+
+        var message = stopReason switch
+        {
+            "max_iterations_reached" => "AI 执行达到最大迭代次数，未生成完整回复。",
+            "cancelled" => "AI 执行已取消。",
+            "timed_out" => "AI 执行超时。",
+            "invalid_request" => "AI 执行请求无效。",
+            "tool_dispatch_disabled" => "当前运行未启用工具调度。",
+            _ => "AI 执行未正常完成。"
+        };
+
+        BusinessThrow.ThrowException(message);
+    }
+
+    private static AgentResponse CreateCancellationResponse(CancellationToken cancellationToken)
+    {
+        var stopReason = cancellationToken.IsCancellationRequested ? "cancelled" : "timed_out";
+        return new AgentResponse
+        {
+            Content = string.Empty,
+            StopReason = stopReason,
+            RunStatus = stopReason
+        };
+    }
+
+    private static AgentRunResult BuildRunResult(AgentResponse finalResponse, string content)
+    {
+        var stopReason = finalResponse?.StopReason ?? "completed";
+        var status = stopReason switch
+        {
+            "completed" => AgentRunStatus.Completed,
+            "cancelled" => AgentRunStatus.Cancelled,
+            "timed_out" => AgentRunStatus.TimedOut,
+            "max_iterations_reached" => AgentRunStatus.MaxIterationsReached,
+            "invalid_request" => AgentRunStatus.InvalidRequest,
+            _ => AgentRunStatus.Failed
+        };
+
+        return new AgentRunResult
+        {
+            Status = status,
+            StopReason = stopReason,
+            Content = content ?? string.Empty
+        };
+    }
+
+    private async Task<AgentRunStartResult> StartRunAsync(
+        AgentChatRequestDto request,
+        string workId,
+        string sessionId,
+        CancellationToken cancellationToken)
+    {
+        var deduplicationKey = !string.IsNullOrWhiteSpace(request.IdempotencyKey)
+            ? request.IdempotencyKey.Trim()
+            : !string.IsNullOrWhiteSpace(request.ClientMessageId)
+                ? request.ClientMessageId.Trim()
+                : Guid.NewGuid().ToString("N");
+
+        if (_runStore is not null)
+        {
+            return await _runStore.StartAsync(
+                workId,
+                sessionId,
+                deduplicationKey,
+                request.ClientMessageId ?? string.Empty,
+                cancellationToken);
+        }
+
+        return new AgentRunStartResult { RunId = deduplicationKey };
+    }
+
+    private Task CompleteRunAsync(
+        string runId,
+        AgentResponse response,
+        CancellationToken cancellationToken)
+    {
+        return _runStore?.CompleteAsync(runId, response, cancellationToken) ?? Task.CompletedTask;
+    }
+
+    private Task AppendRunEventAsync(
+        string runId,
+        AgentStreamChunk chunk,
+        long sequence,
+        CancellationToken cancellationToken)
+    {
+        return _runStore?.AppendEventAsync(
+            runId,
+            chunk.StepId ?? string.Empty,
+            sequence,
+            chunk.Type ?? string.Empty,
+            chunk,
+            cancellationToken) ?? Task.CompletedTask;
+    }
+
+    private static void AlignRunEventMetadata(
+        string runId,
+        AgentStreamChunk chunk,
+        long sequence)
+    {
+        chunk.RunId = runId;
+        chunk.Sequence = sequence;
+        if (string.IsNullOrWhiteSpace(chunk.StepId))
+            chunk.StepId = "runtime";
+    }
+
+    private sealed class ChatExecutionState
+    {
+        public AgentResponse ReplayResponse { get; set; }
+        public AgentResponse FinalResponse { get; set; }
+        public AgentResponse Response { get; set; }
+        public string ErrorMessage { get; set; } = string.Empty;
+    }
+
 }

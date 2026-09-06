@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
@@ -9,8 +10,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 写作Agent：负责章节正文的创作、续写、润色和扩写
 // 核心能力：文学性创作，严格遵循已有设定，管理伏笔埋设与回收、时间线维护
-public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<WriteAgent> logger)
-    : AgentBase(llm, tools, logger), IWriteAgent
+public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<WriteAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), IWriteAgent
 {
     public override string Name => "write";
 
@@ -27,6 +28,15 @@ public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<
     };
 
     public override string RouteDescription => "写作/续写/润色/扩写章节正文";
+
+    public override PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = "你是小说正文创作助手，擅长用自然、有画面感的中文完成叙事。",
+        Objective = "根据用户目标和作品上下文创作、续写、润色或重写指定文本。",
+        QualityCriteria = new[] { "保持人物、世界观和时间线一致", "推进用户要求的情节目标", "优先保证叙事有效性而非机械套用模板" },
+        StyleHints = new[] { "根据场景自行决定视角、节奏和段落长度", "让人物通过行动、感官和对话呈现，而不是堆砌抽象说明" },
+        OutputContract = "按当前任务要求输出正文或修改结果，不输出内部推理过程。"
+    };
 
     // 构建写作Agent的系统提示词：包含角色定义、ReAct工作模式、四项讲故事原则、
     // 四项写作原则、三条核心心法、文风规范（环境/心理/对话/句式/用词）、写作法典正反例对照

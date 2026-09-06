@@ -1,9 +1,10 @@
 using SpeakEase.Write.Application.Contracts.AI;
 using SpeakEase.Write.Application.Contracts.AI.Dto;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
 using Microsoft.EntityFrameworkCore;
-using SpeakEase.Authorization.Authorization;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.Identity;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 

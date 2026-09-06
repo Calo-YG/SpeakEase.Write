@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -42,7 +42,7 @@ public sealed class GetWorldRulesTool(IServiceScopeFactory scopeFactory) : ITool
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IWriteDbContext>();
 
         var query = db.WorldRules.AsNoTracking().Where(r => r.WorkId == args.WorkId);
 

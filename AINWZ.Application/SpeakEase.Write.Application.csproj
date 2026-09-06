@@ -7,8 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\AINWZ.Infrastructure\SpeakEase.Write.Infrastructure.csproj" />
     <ProjectReference Include="..\SpeakEase.AI.Lib\SpeakEase.AI.Lib.csproj" />
+    <ProjectReference Include="..\AINWZ.Domain\SpeakEase.Write.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.6" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.6" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,4 +1,4 @@
-using SpeakEase.Write.Application.Repositories;
+using SpeakEase.Write.Domain.Repositories;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Learning;
 using SpeakEase.Write.Domain.Entities.Memory;
@@ -7,7 +7,6 @@ using SpeakEase.Write.Domain.Entities.Users;
 using SpeakEase.Write.Domain.Entities.Works;
 using SpeakEase.Write.Domain.Entities.World;
 using SpeakEase.Write.Infrastructure.Persistence;
-using SpeakEase.Write.Domain.Repositories;
 using SpeakEase.Write.Infrastructure.Repositories;
 
 namespace SpeakEase.Write.Infrastructure.Repositories;

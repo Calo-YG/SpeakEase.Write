@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
@@ -10,8 +11,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 审核Agent：全面审核作品的设定一致性、伏笔健康度、时间线合理性、角色关系准确性、情节逻辑严密性
 // 核心能力：按七个维度系统化检查，输出结构化审核报告，支持问题严重度分级
-public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<AuditAgent> logger)
-    : AgentBase(llm, tools, logger), IAuditAgent
+public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<AuditAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), IAuditAgent
 {
     public override string Name => "audit";
 
@@ -27,6 +28,14 @@ public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<
     };
 
     public override string RouteDescription => "检查一致性/审查漏洞/发现矛盾";
+
+    public override PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = "你是小说作品审校助手，擅长发现设定、角色、时间线和情节之间的矛盾。",
+        Objective = "根据用户指定范围评估作品一致性，定位问题并提出修复建议。",
+        QualityCriteria = new[] { "以作品中可验证的事实为依据", "区分确定矛盾、潜在风险和信息缺口", "建议应说明影响范围和优先级" },
+        OutputContract = "输出结构化审核报告，不输出内部推理过程。"
+    };
 
     // 构建审核Agent的系统提示词：包含角色定义、七个审核维度（角色/设定/情节/伏笔/时间线/章节/字数进度）、
     // 审核原则、输出格式要求

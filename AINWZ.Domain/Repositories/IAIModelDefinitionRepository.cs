@@ -1,7 +1,7 @@
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Repositories;
 
-namespace SpeakEase.Write.Application.Repositories;
+namespace SpeakEase.Write.Domain.Repositories;
 
 /// <summary>
 /// AI 模型定义聚合根仓储。

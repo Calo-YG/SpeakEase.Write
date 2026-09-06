@@ -6,7 +6,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -68,7 +68,7 @@ public sealed class CreateOutlineTool(IServiceScopeFactory scopeFactory) : ITool
             return ToolResult.Fail($"无效的结构模板: {args.StructureTemplate}，有效值: three_act/four_act/hero_journey/freeform");
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<IStoryDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var existingPrimary = await db.Outlines

@@ -13,8 +13,10 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
         ILogger<MultiCacheService> logger) : IMultiCacheService
     {
 
-        // 每个key一个锁，防止缓存击穿
-        private static readonly ConcurrentDictionary<string, SemaphoreSlim> locks = new();
+        // 每个 key 一个进程内闸门，统一串行化回源、刷新和删除，避免删除后被旧值回填。
+        // 闸门在没有等待者时移除，避免按用户/作品动态生成 key 导致静态字典无限增长。
+        private static readonly ConcurrentDictionary<string, CacheGate> gates = new();
+        private static readonly object gateRegistryLock = new();
 
         public async Task<TCache> GetOrSetAsync<TCache>(
             string key,
@@ -31,8 +33,7 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
                 return value;
             }
 
-            var semaphore = locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-            await semaphore.WaitAsync();
+            using var gate = await EnterAsync(key);
 
             try
             {
@@ -78,10 +79,6 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
                 error?.Invoke();
                 throw;
             }
-            finally
-            {
-                semaphore.Release();
-            }
         }
 
         /// <summary>
@@ -106,9 +103,7 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
             TimeSpan? redisExpiry = null,
             int jitterSeconds = 30)
         {
-            var semaphore = locks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
-
-            await semaphore.WaitAsync();
+            using var gate = await EnterAsync(key);
 
             try
             {
@@ -122,11 +117,6 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
                     logger.LogWarning(ex, "Redis删除失败: {Key}", key);
                 }
 
-                if (memoryCache.TryGetValue(key, out TCache value) && value is not null)
-                {
-                    logger.LogDebug("刷新时命中内存缓存(其他线程已刷新): {Key}", key);
-                }
-
                 logger.LogDebug("强制刷新回源: {Key}", key);
 
                 await SetCacheAsync(key, cache, memoryExpiry, redisExpiry, jitterSeconds);
@@ -137,10 +127,6 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
 
                 throw;
             }
-            finally
-            {
-                semaphore.Release();
-            }
         }
 
         /// <summary>
@@ -148,6 +134,7 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
         /// </summary>
         public async Task RemoveAsync(string key)
         {
+            using var gate = await EnterAsync(key);
             memoryCache.Remove(key);
 
             try
@@ -158,6 +145,39 @@ namespace SpeakEase.Write.Infrastructure.MutilCache
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Redis删除失败: {Key}", key);
+            }
+        }
+
+        private static async Task<CacheGateLease> EnterAsync(string key)
+        {
+            CacheGate gate;
+            lock (gateRegistryLock)
+            {
+                gate = gates.GetOrAdd(key, _ => new CacheGate());
+                gate.References++;
+            }
+
+            await gate.Semaphore.WaitAsync();
+            return new CacheGateLease(key, gate);
+        }
+
+        private sealed class CacheGate
+        {
+            public SemaphoreSlim Semaphore { get; } = new(1, 1);
+            public int References;
+        }
+
+        private sealed class CacheGateLease(string key, CacheGate gate) : IDisposable
+        {
+            public void Dispose()
+            {
+                gate.Semaphore.Release();
+                lock (gateRegistryLock)
+                {
+                    gate.References--;
+                    if (gate.References == 0)
+                        gates.TryRemove(new KeyValuePair<string, CacheGate>(key, gate));
+                }
             }
         }
 

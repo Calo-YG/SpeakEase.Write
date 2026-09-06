@@ -6,7 +6,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -50,7 +50,7 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var graph = await db.CharacterGraphs.AsNoTracking()
@@ -60,16 +60,28 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
 
         CharacterGraphNodeEntity existingNode = null;
         if (!string.IsNullOrEmpty(args.Id))
-            existingNode = await db.CharacterGraphNodes.FindAsync(args.Id, ct);
+            existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(
+                n => n.Id == args.Id &&
+                     n.WorkId == args.WorkId &&
+                     n.GraphId == args.GraphId,
+                ct);
 
         if (existingNode == null && !string.IsNullOrEmpty(args.CharacterId))
-            existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.CharacterId == args.CharacterId, ct);
+            existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(
+                n => n.WorkId == args.WorkId &&
+                     n.GraphId == args.GraphId &&
+                     n.CharacterId == args.CharacterId,
+                ct);
 
         if (existingNode == null && !string.IsNullOrEmpty(args.CharacterName))
         {
             var ch = await db.Characters.AsNoTracking().FirstOrDefaultAsync(c => c.WorkId == args.WorkId && c.Name == args.CharacterName, ct);
             if (ch != null)
-                existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.CharacterId == ch.Id, ct);
+                existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(
+                    n => n.WorkId == args.WorkId &&
+                         n.GraphId == args.GraphId &&
+                         n.CharacterId == ch.Id,
+                    ct);
         }
 
         if (existingNode != null)
@@ -112,7 +124,27 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
         };
 
         await db.CharacterGraphNodes.AddAsync(node, ct);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            db.Detach(node);
+            existingNode = await db.CharacterGraphNodes.FirstOrDefaultAsync(
+                n => n.WorkId == args.WorkId &&
+                     n.GraphId == args.GraphId &&
+                     n.CharacterId == character.Id,
+                ct);
+            if (existingNode == null)
+                throw;
+
+            if (!string.IsNullOrEmpty(args.NodeType)) existingNode.NodeType = args.NodeType;
+            if (args.Importance > 0) existingNode.Importance = args.Importance;
+            if (args.StyleJson != null) existingNode.StyleJson = args.StyleJson ?? string.Empty;
+            await db.SaveChangesAsync(ct);
+            return ToolResult.Ok($"角色节点「{existingNode.DisplayName}」已更新，类型: {existingNode.NodeType}，重要度: {existingNode.Importance}");
+        }
 
         return ToolResult.Ok($"角色节点「{node.DisplayName}」已添加到图谱，节点ID: {node.Id}，类型: {node.NodeType}，重要度: {node.Importance}");
     }
@@ -126,7 +158,7 @@ public sealed class CreateCharacterGraphNodeTool(IServiceScopeFactory scopeFacto
         public string CharacterId { get; init; }
         public string NodeType { get; init; }
         public int Importance { get; init; }
-        public string? StyleJson { get; init; }
+        public string StyleJson { get; init; }
 
         public ToolResult Validate()
         {

@@ -6,6 +6,16 @@ namespace SpeakEase.Write.Application.Contracts.AI.Dto;
 public sealed class AgentChatRequestDto
 {
     /// <summary>
+    /// 客户端消息唯一标识，用于客户端重试幂等。
+    /// </summary>
+    public string ClientMessageId { get; set; }
+
+    /// <summary>
+    /// 请求幂等键。为空时由上层按 ClientMessageId 或请求上下文生成。
+    /// </summary>
+    public string IdempotencyKey { get; set; }
+
+    /// <summary>
     /// 所属作品标识（创作 Agent 必填）
     /// </summary>
     public string WorkId { get; set; }

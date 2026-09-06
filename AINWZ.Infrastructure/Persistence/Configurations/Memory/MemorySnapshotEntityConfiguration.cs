@@ -19,6 +19,9 @@ internal sealed class MemorySnapshotEntityConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.Summary).HasColumnType("text");
         builder.Property(x => x.SnapshotJson).HasColumnType("text");
         builder.Property(x => x.VersionId).HasMaxLength(64);
-        builder.HasIndex(x => new { x.UserId, x.WorkId, x.SessionId, x.SnapshotType });
+        builder.Property(x => x.MemoryStatus).HasMaxLength(32).IsRequired();
+        builder.HasIndex(x => new
+            { x.UserId, x.WorkId, x.SessionId, x.SnapshotType, x.MemoryGeneration })
+            .IsUnique();
     }
 }

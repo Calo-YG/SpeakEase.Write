@@ -7,12 +7,12 @@ using SpeakEase.Write.Application.Contracts.Auth;
 using SpeakEase.Write.Application.Contracts.Auth.Dto;
 using SpeakEase.Write.Application.Shared;
 using SpeakEase.Write.Domain.Entities.Users;
-using SpeakEase.Write.Infrastructure.Authorization;
-using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
-using SpeakEase.Authorization.Authorization;
-using SpeakEase.Write.Infrastructure.MutilCache;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.Authorization;
+using SpeakEase.Write.Application.Abstractions.Caching;
+using SpeakEase.Write.Application.Abstractions.Identity;
+using SpeakEase.Write.Application.Abstractions.Ids;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
 
 namespace SpeakEase.Write.Application.Applications;
 

@@ -70,21 +70,42 @@ namespace SpeakEase.AI.Lib
 
             try
             {
+                var guard = scope.ServiceProvider.GetService<IToolExecutionGuard>();
+                if (guard is not null)
+                {
+                    var authorization = await guard.AuthorizeAsync(
+                        toolName,
+                        toolCall.Function.Arguments,
+                        cancellationToken);
+
+                    if (!authorization.Success)
+                    {
+                        authorization.ToolCallId ??= toolCall.Id;
+                        authorization.ToolName ??= toolName;
+                        return authorization;
+                    }
+                }
+
                 // 执行工具调用，将结果回填 ToolCallId 和 ToolName
                 var result = await executor.ExecuteAsync(toolCall.Function.Arguments, cancellationToken);
                 result.ToolCallId ??= toolCall.Id;
                 result.ToolName ??= toolName;
                 return result;
             }
-            catch (Exception ex)
+            catch (OperationCanceledException)
             {
-                // 捕获工具执行异常，返回统一错误格式，避免单个工具异常导致整个流程崩溃
+                throw;
+            }
+            catch (Exception)
+            {
+                // 捕获工具执行异常，返回统一错误格式，避免单个工具异常导致整个流程崩溃；
+                // 不能透传数据库、文件路径或第三方响应中的内部细节。
                 return new ToolResult
                 {
                     ToolCallId = toolCall.Id,
                     ToolName = toolName,
                     Success = false,
-                    Content = $"Tool execution failed: {ex.Message}",
+                    Content = "Tool execution failed. Please try again later.",
                     ErrorCode = "execution_error"
                 };
             }

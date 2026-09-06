@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -42,7 +42,7 @@ public sealed class GetCharacterTool(IServiceScopeFactory scopeFactory) : IToolE
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
 
         var character = await db.Characters.AsNoTracking()
             .Where(c => c.WorkId == args.WorkId && c.Name != null && c.Name.Contains(args.Name))

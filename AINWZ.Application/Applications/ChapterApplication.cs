@@ -1,12 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Abstractions.Identity;
 using SpeakEase.Write.Application.Contracts.Story;
 using SpeakEase.Write.Application.Contracts.Story.Dto;
 using SpeakEase.Write.Domain.Entities.Works;
-using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.Ids;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 

@@ -104,6 +104,9 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                     b.Property<DateTime>("LastActivityAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<long>("MemoryGeneration")
+                        .HasColumnType("bigint");
+
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -132,9 +135,19 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("LastActivityAt");
+
+                    b.HasIndex("WorkId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 'active'");
 
                     b.HasIndex("WorkId", "Status");
 
@@ -321,6 +334,324 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("ai_model_definitions", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.AI.AgentArtifactEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("EstimatedTokens")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StepId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Summary")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "StepId")
+                        .IsUnique();
+
+                    b.ToTable("ai_agent_artifacts", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.AI.AgentCheckpointEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("Iteration")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("MessagesJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PendingToolCallsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StepId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "RunId", "StepId")
+                        .IsUnique();
+
+                    b.ToTable("ai_agent_checkpoints", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.AI.AgentRunEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ClientMessageId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Content")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("DeduplicationKey")
+                        .IsRequired()
+                        .HasMaxLength(160)
+                        .HasColumnType("character varying(160)");
+
+                    b.Property<string>("Model")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("StartedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("StopReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("TurnNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("WorkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "StartedAt");
+
+                    b.HasIndex("UserId", "WorkId", "SessionId", "DeduplicationKey")
+                        .IsUnique();
+
+                    b.ToTable("ai_agent_runs", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.AI.AgentRunEventEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("PayloadJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Sequence")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("StepId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("ai_agent_run_events", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.AI.AgentToolCallEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ArgumentsHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ResultJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("StepId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ToolCallId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("ToolName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RunId", "StepId", "ToolCallId")
+                        .IsUnique();
+
+                    b.ToTable("ai_agent_tool_calls", (string)null);
                 });
 
             modelBuilder.Entity("SpeakEase.Write.Domain.Entities.AI.ChapterAnalysisResultEntity", b =>
@@ -809,6 +1140,79 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                     b.ToTable("context_assembly_logs", (string)null);
                 });
 
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Memory.MemoryFactEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<double>("Confidence")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Key")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<long>("MemoryGeneration")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("SessionId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<int>("SourceTurn")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Value")
+                        .HasColumnType("text");
+
+                    b.Property<int>("VersionTurn")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("WorkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "WorkId", "IsCurrent");
+
+                    b.HasIndex("UserId", "WorkId", "SessionId", "MemoryGeneration", "Category", "Key")
+                        .IsUnique();
+
+                    b.ToTable("memory_facts", (string)null);
+                });
+
             modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Memory.MemorySnapshotEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -818,6 +1222,12 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                     b.Property<string>("ChapterId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
+
+                    b.Property<int>("CoveredFromTurn")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CoveredToTurn")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime>("CreateAt")
                         .HasColumnType("timestamp with time zone");
@@ -829,6 +1239,14 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                     b.Property<string>("FilePath")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<long>("MemoryGeneration")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("MemoryStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("SessionId")
                         .IsRequired()
@@ -869,7 +1287,8 @@ namespace SpeakEase.Write.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "WorkId", "SessionId", "SnapshotType");
+                    b.HasIndex("UserId", "WorkId", "SessionId", "SnapshotType", "MemoryGeneration")
+                        .IsUnique();
 
                     b.ToTable("memory_snapshots", (string)null);
                 });
@@ -1080,6 +1499,9 @@ namespace SpeakEase.Write.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("WorkId", "GraphId", "SourceNodeId", "TargetNodeId")
+                        .IsUnique();
+
                     b.ToTable("character_graph_edges", (string)null);
                 });
 
@@ -1207,7 +1629,81 @@ namespace SpeakEase.Write.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("WorkId", "GraphId", "CharacterId")
+                        .IsUnique();
+
                     b.ToTable("character_graph_nodes", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Story.CharacterGrowthProposalEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CharacterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ProposalJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReviewedBy")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("SourceRunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("WorkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "SourceRunId");
+
+                    b.HasIndex("UserId", "WorkId", "CharacterId", "Status");
+
+                    b.ToTable("character_growth_proposals", (string)null);
                 });
 
             modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Story.CharacterRelationshipEntity", b =>
@@ -1264,6 +1760,146 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("character_relationships", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Story.CharacterStateEventEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ChangesJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CharacterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<double>("Confidence")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("EvidenceJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceChapterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceEventKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<string>("SourceRunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WorkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkId", "CharacterId", "Version");
+
+                    b.HasIndex("UserId", "WorkId", "CharacterId", "SourceRunId", "SourceEventKey")
+                        .IsUnique();
+
+                    b.ToTable("character_state_events", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Story.CharacterStateSnapshotEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("BasedOnEventId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("CharacterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("StateJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WorkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "WorkId", "CharacterId")
+                        .IsUnique();
+
+                    b.HasIndex("WorkId", "CharacterId", "Version");
+
+                    b.ToTable("character_state_snapshots", (string)null);
                 });
 
             modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Story.ForeshadowingEntity", b =>
@@ -1440,6 +2076,77 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("outline_nodes", (string)null);
+                });
+
+            modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Story.RelationshipStateEventEntity", b =>
+                {
+                    b.Property<string>("Id")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("ChangesJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<double>("Confidence")
+                        .HasColumnType("double precision");
+
+                    b.Property<DateTime>("CreateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("EvidenceJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SourceChapterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceCharacterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("SourceRunId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("TargetCharacterId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<DateTime>("UpdateAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UpdateBy")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("WorkId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "WorkId", "SourceCharacterId", "TargetCharacterId", "SourceRunId");
+
+                    b.ToTable("relationship_state_events", (string)null);
                 });
 
             modelBuilder.Entity("SpeakEase.Write.Domain.Entities.Story.TimelineEventEntity", b =>
@@ -1992,6 +2699,8 @@ namespace SpeakEase.Write.Infrastructure.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("UserId", "UpdateAt");
 
                     b.ToTable("works", (string)null);
                 });

@@ -1,12 +1,13 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Abstractions.Identity;
 using SpeakEase.Write.Application.Contracts.Works;
 using SpeakEase.Write.Application.Contracts.Works.Dto;
 using SpeakEase.Write.Domain.Entities.Works;
-using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.Ids;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
@@ -37,31 +38,27 @@ public class WorkApplication(
 
         var total = await query.CountAsync(cancellationToken);
 
-        var workIds = await query
+        var works = await query
             .OrderByDescending(x => x.UpdateAt)
             .Skip((pageIndex - 1) * pageSize)
             .Take(pageSize)
-            .Select(x => x.Id)
+            .Select(x => new
+            {
+                x.Id,
+                x.Title,
+                x.Genre,
+                x.StyleTags,
+                x.Perspective,
+                x.Summary,
+                x.CoverUrl,
+                x.TotalWordCount,
+                x.Status,
+                x.CreateAt,
+                x.UpdateAt,
+                ChapterCount = dbContext.Chapters.Count(chapter => chapter.WorkId == x.Id),
+                VolumeCount = dbContext.Volumes.Count(volume => volume.WorkId == x.Id)
+            })
             .ToListAsync(cancellationToken);
-
-        var works = await query
-            .Where(x => workIds.Contains(x.Id))
-            .OrderByDescending(x => x.UpdateAt)
-            .Select(x => new { x.Id, x.Title, x.Genre, x.StyleTags, x.Perspective, x.Summary, x.CoverUrl, x.TotalWordCount, x.Status, x.CreateAt, x.UpdateAt })
-            .ToListAsync(cancellationToken);
-
-        // 批量查询章节数和卷数
-        var chapterCounts = await dbContext.Chapters.AsNoTracking()
-            .Where(x => workIds.Contains(x.WorkId))
-            .GroupBy(x => x.WorkId)
-            .Select(g => new { WorkId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.WorkId, x => x.Count, cancellationToken);
-
-        var volumeCounts = await dbContext.Volumes.AsNoTracking()
-            .Where(x => workIds.Contains(x.WorkId))
-            .GroupBy(x => x.WorkId)
-            .Select(g => new { WorkId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.WorkId, x => x.Count, cancellationToken);
 
         var items = works.Select(w => new WorkItemResponse
         {
@@ -73,8 +70,8 @@ public class WorkApplication(
             Description = w.Summary,
             CoverUrl = w.CoverUrl,
             TotalWordCount = w.TotalWordCount,
-            ChapterCount = chapterCounts.GetValueOrDefault(w.Id, 0),
-            VolumeCount = volumeCounts.GetValueOrDefault(w.Id, 0),
+            ChapterCount = w.ChapterCount,
+            VolumeCount = w.VolumeCount,
             Status = w.Status,
             CreatedAt = w.CreateAt,
             UpdatedAt = w.UpdateAt
@@ -90,14 +87,26 @@ public class WorkApplication(
         var userId = userContext.UserId;
         var work = await dbContext.Works.AsNoTracking()
             .Where(x => x.Id == id && x.UserId == userId)
-            .Select(x => new { x.Id, x.Title, x.Genre, x.StyleTags, x.Perspective, x.Summary, x.CoverUrl, x.TotalWordCount, x.Status, x.CreateAt, x.UpdateAt })
+            .Select(x => new
+            {
+                x.Id,
+                x.Title,
+                x.Genre,
+                x.StyleTags,
+                x.Perspective,
+                x.Summary,
+                x.CoverUrl,
+                x.TotalWordCount,
+                x.Status,
+                x.CreateAt,
+                x.UpdateAt,
+                ChapterCount = dbContext.Chapters.Count(chapter => chapter.WorkId == x.Id),
+                VolumeCount = dbContext.Volumes.Count(volume => volume.WorkId == x.Id)
+            })
             .FirstOrDefaultAsync(cancellationToken);
 
         if (work is null)
             return new ApiResult<WorkItemResponse>($"未找到标识为 {id} 的作品。", 404);
-
-        var chapterCount = await dbContext.Chapters.CountAsync(x => x.WorkId == id, cancellationToken);
-        var volumeCount = await dbContext.Volumes.CountAsync(x => x.WorkId == id, cancellationToken);
 
         return new ApiResult<WorkItemResponse>(new WorkItemResponse
         {
@@ -109,8 +118,8 @@ public class WorkApplication(
             Description = work.Summary,
             CoverUrl = work.CoverUrl,
             TotalWordCount = work.TotalWordCount,
-            ChapterCount = chapterCount,
-            VolumeCount = volumeCount,
+            ChapterCount = work.ChapterCount,
+            VolumeCount = work.VolumeCount,
             Status = work.Status,
             CreatedAt = work.CreateAt,
             UpdatedAt = work.UpdateAt
@@ -185,8 +194,14 @@ public class WorkApplication(
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var chapterCount = await dbContext.Chapters.CountAsync(x => x.WorkId == id, cancellationToken);
-        var volumeCount = await dbContext.Volumes.CountAsync(x => x.WorkId == id, cancellationToken);
+        var counts = await dbContext.Works.AsNoTracking()
+            .Where(x => x.Id == id && x.UserId == userId)
+            .Select(x => new
+            {
+                ChapterCount = dbContext.Chapters.Count(chapter => chapter.WorkId == x.Id),
+                VolumeCount = dbContext.Volumes.Count(volume => volume.WorkId == x.Id)
+            })
+            .FirstAsync(cancellationToken);
 
         return new ApiResult<WorkItemResponse>(new WorkItemResponse
         {
@@ -198,8 +213,8 @@ public class WorkApplication(
             Description = entity.Summary,
             CoverUrl = entity.CoverUrl,
             TotalWordCount = entity.TotalWordCount,
-            ChapterCount = chapterCount,
-            VolumeCount = volumeCount,
+            ChapterCount = counts.ChapterCount,
+            VolumeCount = counts.VolumeCount,
             Status = entity.Status,
             CreatedAt = entity.CreateAt,
             UpdatedAt = entity.UpdateAt
@@ -256,8 +271,32 @@ public class WorkApplication(
             await dbContext.WorldSettings.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
 
             // AI 相关数据
+            var sessionIds = await dbContext.AICreationSessions
+                .Where(x => x.WorkId == id)
+                .Select(x => x.Id)
+                .ToListAsync(cancellationToken);
+            if (sessionIds.Count > 0)
+            {
+                await dbContext.AICreationMessages
+                    .Where(x => sessionIds.Contains(x.SessionId))
+                    .ExecuteDeleteAsync(cancellationToken);
+            }
             await dbContext.AICreationSessions.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            var agentRunIds = dbContext.AgentRuns
+                .Where(x => x.WorkId == id)
+                .Select(x => x.Id);
+            await dbContext.AgentRunEvents
+                .Where(x => agentRunIds.Contains(x.RunId))
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.AgentToolCalls
+                .Where(x => agentRunIds.Contains(x.RunId))
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.AgentArtifacts
+                .Where(x => agentRunIds.Contains(x.RunId))
+                .ExecuteDeleteAsync(cancellationToken);
+            await dbContext.AgentRuns.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.MemorySnapshots.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
+            await dbContext.MemoryFacts.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.ContextAssemblyLogs.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.AIGenerationTasks.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);
             await dbContext.ChapterAnalysisResults.Where(x => x.WorkId == id).ExecuteDeleteAsync(cancellationToken);

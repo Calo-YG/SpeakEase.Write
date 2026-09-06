@@ -22,5 +22,6 @@ internal sealed class CharacterGraphEdgeEntityConfiguration : IEntityTypeConfigu
         builder.Property(x => x.StyleJson).HasColumnType("text");
         builder.Property(x => x.Metadata).HasColumnType("text");
         builder.Property(x => x.Metadata).ConfigureStringDictionaryProperty<CharacterGraphEdgeEntity>();
+        builder.HasIndex(x => new { x.WorkId, x.GraphId, x.SourceNodeId, x.TargetNodeId }).IsUnique();
     }
 }

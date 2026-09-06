@@ -20,5 +20,6 @@ internal sealed class WorkEntityConfiguration : IEntityTypeConfiguration<WorkEnt
         builder.Property(x => x.Status).HasMaxLength(32);
         builder.Property(x => x.CoverUrl).HasMaxLength(500);
         builder.Property(x => x.WritingRules).HasColumnType("text");
+        builder.HasIndex(x => new { x.UserId, x.UpdateAt });
     }
 }

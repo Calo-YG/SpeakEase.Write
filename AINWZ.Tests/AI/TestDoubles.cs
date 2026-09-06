@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using SpeakEase.AI.Lib.Contract;
+using SpeakEase.Write.Application.Abstractions.AI;
 using SpeakEase.Authorization.Authorization;
-using SpeakEase.Write.Infrastructure.AI.Memory;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.MutilCache;
 using SpeakEase.Write.Infrastructure.Persistence;
@@ -91,7 +91,33 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
 {
     public List<(string UserId, string WorkId, string SessionId, int TurnNumber)> Refreshes { get; } = new();
     public List<(string UserId, string WorkId, string SessionId)> Invalidations { get; } = new();
+    public List<(string UserId, string WorkId, string SessionId, int TargetTurn)> Prunes { get; } = new();
     public SessionMemorySnapshot Snapshot { get; set; } = SessionMemorySnapshot.Empty;
+    public IReadOnlyList<MemoryFact> Facts { get; set; } = Array.Empty<MemoryFact>();
+    public bool ThrowOnRefresh { get; set; }
+    public bool BlockFirstRefresh { get; set; }
+    public TaskCompletionSource RefreshStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource RefreshRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _refreshCount;
+
+    public void ReleaseFirstRefresh() => RefreshRelease.TrySetResult();
+
+    public Task<IReadOnlyList<MemoryFact>> LoadProjectFactsAsync(
+        string userId,
+        string workId,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(Facts);
+    }
+
+    public Task UpsertProjectFactAsync(
+        string userId,
+        string workId,
+        MemoryFact fact,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.CompletedTask;
+    }
 
     public Task<SessionMemorySnapshot> LoadSessionMemoryAsync(
         string userId,
@@ -102,15 +128,23 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
         return Task.FromResult(Snapshot);
     }
 
-    public Task RefreshAfterTurnAsync(
+    public async Task RefreshAfterTurnAsync(
         string userId,
         string workId,
         string sessionId,
         int turnNumber,
         CancellationToken cancellationToken = default)
     {
+        if (ThrowOnRefresh)
+            throw new InvalidOperationException("Simulated memory refresh failure.");
+
+        if (BlockFirstRefresh && Interlocked.Increment(ref _refreshCount) == 1)
+        {
+            RefreshStarted.TrySetResult();
+            await RefreshRelease.Task;
+        }
+
         Refreshes.Add((userId, workId, sessionId, turnNumber));
-        return Task.CompletedTask;
     }
 
     public Task InvalidateSessionAsync(
@@ -120,6 +154,17 @@ internal sealed class FakeMemoryProvider : IMemoryProvider
         CancellationToken cancellationToken = default)
     {
         Invalidations.Add((userId, workId, sessionId));
+        return Task.CompletedTask;
+    }
+
+    public Task PruneSessionFactsAfterTurnAsync(
+        string userId,
+        string workId,
+        string sessionId,
+        int targetTurn,
+        CancellationToken cancellationToken = default)
+    {
+        Prunes.Add((userId, workId, sessionId, targetTurn));
         return Task.CompletedTask;
     }
 

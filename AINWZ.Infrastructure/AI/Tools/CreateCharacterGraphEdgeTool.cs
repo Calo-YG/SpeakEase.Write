@@ -6,7 +6,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -53,7 +53,7 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         var graph = await db.CharacterGraphs.AsNoTracking()
@@ -63,7 +63,11 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
 
         if (!string.IsNullOrEmpty(args.Id))
         {
-            var existing = await db.CharacterGraphEdges.FindAsync(args.Id, ct);
+            var existing = await db.CharacterGraphEdges.FirstOrDefaultAsync(
+                e => e.Id == args.Id &&
+                     e.WorkId == args.WorkId &&
+                     e.GraphId == args.GraphId,
+                ct);
             if (existing == null)
                 return ToolResult.Fail($"未找到边 {args.Id}", "edge_not_found");
 
@@ -79,9 +83,17 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         if (!string.IsNullOrEmpty(args.SourceNodeId) && !string.IsNullOrEmpty(args.TargetNodeId))
         {
             var srcNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.Id == args.SourceNodeId && n.GraphId == args.GraphId, ct);
+                .FirstOrDefaultAsync(
+                    n => n.Id == args.SourceNodeId &&
+                         n.WorkId == args.WorkId &&
+                         n.GraphId == args.GraphId,
+                    ct);
             var tgtNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.Id == args.TargetNodeId && n.GraphId == args.GraphId, ct);
+                .FirstOrDefaultAsync(
+                    n => n.Id == args.TargetNodeId &&
+                         n.WorkId == args.WorkId &&
+                         n.GraphId == args.GraphId,
+                    ct);
             if (srcNode == null) return ToolResult.Fail($"未找到源节点 {args.SourceNodeId}", "source_node_not_found");
             if (tgtNode == null) return ToolResult.Fail($"未找到目标节点 {args.TargetNodeId}", "target_node_not_found");
             return await CreateOrUpdateEdge(db, idGen, args.GraphId, args.WorkId, srcNode.Id, tgtNode.Id, args.RelationType ?? "unknown", args.Label ?? args.RelationType ?? "unknown", args.Weight > 0 ? args.Weight : 5, args.Direction ?? "directed", args.RelationshipId, srcNode.DisplayName, tgtNode.DisplayName, ct);
@@ -90,9 +102,17 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         if (!string.IsNullOrEmpty(args.SourceCharacterName) && !string.IsNullOrEmpty(args.TargetCharacterName))
         {
             var srcNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.DisplayName == args.SourceCharacterName, ct);
+                .FirstOrDefaultAsync(
+                    n => n.WorkId == args.WorkId &&
+                         n.GraphId == args.GraphId &&
+                         n.DisplayName == args.SourceCharacterName,
+                    ct);
             var tgtNode = await db.CharacterGraphNodes.AsNoTracking()
-                .FirstOrDefaultAsync(n => n.GraphId == args.GraphId && n.DisplayName == args.TargetCharacterName, ct);
+                .FirstOrDefaultAsync(
+                    n => n.WorkId == args.WorkId &&
+                         n.GraphId == args.GraphId &&
+                         n.DisplayName == args.TargetCharacterName,
+                    ct);
             if (srcNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{args.SourceCharacterName}」", "source_not_in_graph");
             if (tgtNode == null) return ToolResult.Fail($"图谱中未找到角色节点「{args.TargetCharacterName}」", "target_not_in_graph");
             return await CreateOrUpdateEdge(db, idGen, args.GraphId, args.WorkId, srcNode.Id, tgtNode.Id, args.RelationType ?? "unknown", args.Label ?? args.RelationType ?? "unknown", args.Weight > 0 ? args.Weight : 5, args.Direction ?? "directed", args.RelationshipId, args.SourceCharacterName, args.TargetCharacterName, ct);
@@ -102,7 +122,7 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
     }
 
     private static async Task<ToolResult> CreateOrUpdateEdge(
-        SpeakEaseDbContext db, ISnowflakeIdGenerator idGen,
+        ICharacterDbContext db, ISnowflakeIdGenerator idGen,
         string graphId, string workId,
         string sourceNodeId, string targetNodeId,
         string relationType, string label, int weight, string direction,
@@ -111,7 +131,8 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         CancellationToken ct)
     {
         var existing = await db.CharacterGraphEdges
-            .FirstOrDefaultAsync(e => e.GraphId == graphId &&
+            .FirstOrDefaultAsync(e => e.WorkId == workId &&
+                                      e.GraphId == graphId &&
                                       e.SourceNodeId == sourceNodeId &&
                                       e.TargetNodeId == targetNodeId, ct);
 
@@ -141,7 +162,30 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         };
 
         await db.CharacterGraphEdges.AddAsync(edge, ct);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            db.Detach(edge);
+            existing = await db.CharacterGraphEdges.FirstOrDefaultAsync(
+                e => e.WorkId == workId &&
+                     e.GraphId == graphId &&
+                     e.SourceNodeId == sourceNodeId &&
+                     e.TargetNodeId == targetNodeId,
+                ct);
+            if (existing == null)
+                throw;
+
+            existing.RelationType = relationType;
+            existing.Label = label;
+            existing.Weight = weight;
+            if (!string.IsNullOrEmpty(direction)) existing.Direction = direction;
+            if (!string.IsNullOrEmpty(relationshipId)) existing.RelationshipId = relationshipId;
+            await db.SaveChangesAsync(ct);
+            return ToolResult.Ok($"边已更新: {sourceName} →[{relationType}]→ {targetName}，权重: {weight}");
+        }
 
         return ToolResult.Ok($"边已创建: {sourceName} →[{relationType}]→ {targetName}，边ID: {edge.Id}，权重: {weight}");
     }
@@ -156,10 +200,10 @@ public sealed class CreateCharacterGraphEdgeTool(IServiceScopeFactory scopeFacto
         public string SourceCharacterName { get; init; }
         public string TargetCharacterName { get; init; }
         public string RelationType { get; init; }
-        public string? Label { get; init; }
+        public string Label { get; init; }
         public int Weight { get; init; }
-        public string? Direction { get; init; }
-        public string? RelationshipId { get; init; }
+        public string Direction { get; init; }
+        public string RelationshipId { get; init; }
 
         public ToolResult Validate()
         {

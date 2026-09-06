@@ -11,6 +11,8 @@ public class AICreationSessionEntity : AggregateRootEntity, IOwner
 
     public int TurnCount { get; set; }
 
+    public long MemoryGeneration { get; set; }
+
     /// <summary>已采纳的内容列表 JSON</summary>
     public string AdoptedContentJson { get; set; } = string.Empty;
 

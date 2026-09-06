@@ -6,7 +6,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Domain.Entities.Story;
 using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
+using SpeakEase.Write.Application.Abstractions.Persistence;
 
 namespace SpeakEase.Write.Infrastructure.AI.Tools;
 
@@ -46,7 +46,7 @@ public sealed class CreateCharacterGraphTool(IServiceScopeFactory scopeFactory) 
         if (validationError != null) return validationError;
 
         using var scope = _scopeFactory.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SpeakEaseDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<ICharacterDbContext>();
         var idGen = scope.ServiceProvider.GetRequiredService<ISnowflakeIdGenerator>();
 
         CharacterGraphEntity graph = null;
@@ -87,7 +87,7 @@ public sealed class CreateCharacterGraphTool(IServiceScopeFactory scopeFactory) 
         public string Id { get; init; }
         public string Name { get; init; }
         public string Description { get; init; }
-        public string? LayoutJson { get; init; }
+        public string LayoutJson { get; init; }
 
         public ToolResult Validate()
         {

@@ -1,12 +1,15 @@
 namespace SpeakEase.AI.Lib.Models;
 
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 
 /// <summary>
 /// Agent 执行请求：包含模型配置、提示词、对话历史、生成参数等。
 /// </summary>
 public sealed class AgentRequest
 {
+    public string RunId { get; set; } = string.Empty;
+    public string StepId { get; set; } = string.Empty;
     /// <summary>
     /// 指定使用的 LLM 模型名称，为空时使用默认模型
     /// </summary>
@@ -31,6 +34,10 @@ public sealed class AgentRequest
     /// 单次响应最大 Token 数
     /// </summary>
     public int? MaxTokens { get; set; }
+    /// <summary>
+    /// 模型上下文窗口大小。0 表示使用 AgentLoopOptions 的默认值。
+    /// </summary>
+    public int ContextWindowTokens { get; set; }
     public double? TopP { get; set; }
     public double? FrequencyPenalty { get; set; }
     public double? PresencePenalty { get; set; }
@@ -48,8 +55,16 @@ public sealed class AgentRequest
     /// </summary>
     public string WorkId { get; set; }
 
+    public string SessionId { get; set; } = string.Empty;
+
     /// <summary>
     /// 发起请求的用户标识
     /// </summary>
     public string UserId { get; set; }
+
+    /// <summary>
+    /// 是否允许本次运行自动执行模型返回的工具调用。
+    /// </summary>
+    public bool EnableAutoToolDispatch { get; set; } = true;
+    public IToolExecutionJournal Journal { get; set; }
 }

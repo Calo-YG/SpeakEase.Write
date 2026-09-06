@@ -1,13 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using SpeakEase.Authorization.Authorization;
+using SpeakEase.Write.Application.Abstractions.Identity;
 using SpeakEase.Write.Application.Contracts.Story.Dto;
 using SpeakEase.Write.Application.Contracts.Version;
 using SpeakEase.Write.Application.Contracts.Version.Dto;
 using SpeakEase.Write.Domain.Entities.Works;
-using SpeakEase.Write.Infrastructure.Ids;
-using SpeakEase.Write.Infrastructure.Persistence;
-using SpeakEase.Write.Infrastructure.Shared;
+using SpeakEase.Write.Application.Abstractions.Ids;
+using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEaseDbContext = SpeakEase.Write.Application.Abstractions.Persistence.IWriteDbContext;
+using SpeakEase.Write.Application.Shared;
 
 namespace SpeakEase.Write.Application.Applications;
 
@@ -83,8 +84,23 @@ public sealed class ChapterVersionManager : IChapterVersionManager
     }
 
     // 列出章节的所有版本，按版本号倒序
-    public async Task<ApiResult<List<ChapterVersionDto>>> ListVersionsAsync(string chapterId)
+    public async Task<ApiResult<List<ChapterVersionDto>>> ListVersionsAsync(
+        string workId,
+        string chapterId,
+        CancellationToken cancellationToken = default)
     {
+        var ownsChapter = await _db.Chapters
+            .AsNoTracking()
+            .Where(c => c.Id == chapterId && c.WorkId == workId)
+            .Join(_db.Works.AsNoTracking().Where(w => w.UserId == _user.UserId),
+                chapter => chapter.WorkId,
+                work => work.Id,
+                (_, _) => true)
+            .AnyAsync(cancellationToken);
+
+        if (!ownsChapter)
+            return new ApiResult<List<ChapterVersionDto>>("章节不存在或无权访问", 404);
+
         var versions = await _db.ChapterVersions
             .AsNoTracking()
             .Where(v => v.ChapterId == chapterId)
@@ -99,7 +115,7 @@ public sealed class ChapterVersionManager : IChapterVersionManager
                 ModelId = v.ModelId,
                 CreatedAt = v.CreateAt
             })
-            .ToListAsync();
+            .ToListAsync(cancellationToken);
 
         return new ApiResult<List<ChapterVersionDto>>(versions);
     }

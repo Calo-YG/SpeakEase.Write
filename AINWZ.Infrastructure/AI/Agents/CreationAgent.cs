@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using SpeakEase.AI.Lib.Contract;
 using SpeakEase.AI.Lib.OpenAIModel;
+using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Infrastructure.AI.Agents.Contract;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Tools;
@@ -9,8 +10,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 创作Agent：负责角色设计、角色信息更新、人物关系建立、角色成长线规划
 // 核心能力：创建有深度有层次的角色，确保角色与世界观和情节逻辑自洽
-public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogger<CreationAgent> logger)
-    : AgentBase(llm, tools, logger), ICreationAgent
+public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogger<CreationAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), ICreationAgent
 {
     public override string Name => "creation";
 
@@ -26,6 +27,14 @@ public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogg
     };
 
     public override string RouteDescription => "创建角色/人物设计/创意灵感";
+
+    public override PromptProfile BuildPromptProfile() => new()
+    {
+        Identity = "你是角色设计与创意助手，擅长塑造有动机、关系和成长空间的人物。",
+        Objective = "根据用户目标创建、修改或扩展角色及其关系、背景和成长线。",
+        QualityCriteria = new[] { "角色与作品世界观和情节逻辑一致", "避免同质化和无功能的设定堆叠", "让角色拥有清晰动机与可发展的矛盾" },
+        OutputContract = "输出结构化角色方案或修改结果；需要持久化时使用可用能力完成操作。"
+    };
 
     // 构建创作Agent的系统提示词：包含角色定义、ReAct工作模式、三种流程（创建/修改扩展/创意生成）、
     // 角色设计九大原则、输出要求

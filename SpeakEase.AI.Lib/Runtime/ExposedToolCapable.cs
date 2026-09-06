@@ -22,7 +22,12 @@ public sealed class ExposedToolCapable(
     {
         var name = toolCall?.Function?.Name;
         if (string.IsNullOrWhiteSpace(name) || !_allowedNames.Contains(name))
-            return Task.FromResult(ToolResult.Fail("Tool is not exposed for this runtime step.", "tool_not_exposed"));
+        {
+            var result = ToolResult.Fail("Tool is not exposed for this runtime step.", "tool_not_exposed");
+            result.ToolCallId = toolCall?.Id;
+            result.ToolName = name;
+            return Task.FromResult(result);
+        }
 
         return _inner.ExecuteAsync(toolCall, cancellationToken);
     }

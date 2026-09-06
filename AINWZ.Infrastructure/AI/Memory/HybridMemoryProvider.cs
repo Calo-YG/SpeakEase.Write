@@ -4,6 +4,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
+using SpeakEase.Write.Application.Abstractions.AI;
 using SessionMemorySnapshot = SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Domain.Entities.Memory;
@@ -18,7 +19,7 @@ public sealed class HybridMemoryProvider(
     IMemoryDbContext db,
     IMultiCacheService cache,
     ISnowflakeIdGenerator idGenerator,
-    ILogger<HybridMemoryProvider> logger) : IMemoryProvider
+    ILogger<HybridMemoryProvider> logger) : IMemoryProvider, IMemoryRefreshFailureHandler
 {
     private const string SnapshotType = "session-turn-summary";
     private const int MaxSnapshotMessages = 80;
@@ -128,7 +129,7 @@ public sealed class HybridMemoryProvider(
              entity.VersionTurn == fact.VersionTurn && entity.Confidence > fact.Confidence))
             return;
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         if (entity is null)
         {
             entity = new MemoryFactEntity
@@ -179,12 +180,16 @@ public sealed class HybridMemoryProvider(
             .Where(m => m.SessionId == sessionId && m.Role != "tool")
             .OrderByDescending(m => m.TurnNumber)
             .ThenByDescending(m => m.CreatedAt)
+            .ThenByDescending(m => m.Role == "assistant" ? 1 : 0)
+            .ThenByDescending(m => m.Id)
             .Take(MaxSnapshotMessages)
             .ToListAsync(cancellationToken);
 
         messages = messages
             .OrderBy(m => m.TurnNumber)
             .ThenBy(m => m.CreatedAt)
+            .ThenBy(m => m.Role == "user" ? 0 : 1)
+            .ThenBy(m => m.Id)
             .ToList();
 
         if (messages.Count == 0)
@@ -204,7 +209,7 @@ public sealed class HybridMemoryProvider(
         // 以数据库实际剩余消息的最大轮次为准，避免回滚后旧队列任务携带高版本号重建过期摘要。
         var effectiveTurnNumber = messages.Max(m => m.TurnNumber);
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var coveredToTurn = effectiveTurnNumber <= 4
             ? effectiveTurnNumber
             : effectiveTurnNumber - 4;
@@ -341,6 +346,55 @@ public sealed class HybridMemoryProvider(
             userId, workId, sessionId, cancellationToken);
         await cache.RemoveAsync(CacheKey(userId, workId, sessionId, memoryGeneration));
         await cache.RemoveAsync(LegacySessionCacheKey(userId, workId, sessionId));
+    }
+
+    public async Task MarkStaleAsync(
+        MemoryRefreshRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var memoryGeneration = await LoadMemoryGenerationAsync(
+            request.UserId,
+            request.WorkId,
+            request.SessionId,
+            cancellationToken);
+        var entity = await db.MemorySnapshots.FirstOrDefaultAsync(x =>
+            x.UserId == request.UserId &&
+            x.WorkId == request.WorkId &&
+            x.SessionId == request.SessionId &&
+            x.SnapshotType == SnapshotType &&
+            x.MemoryGeneration == memoryGeneration,
+            cancellationToken);
+        if (entity is not null && GetSnapshotTurn(entity) >= request.TurnNumber && entity.MemoryStatus == "fresh")
+            return;
+
+        var now = DateTime.UtcNow;
+        if (entity is null)
+        {
+            entity = new MemorySnapshotEntity
+            {
+                Id = idGenerator.NextIdString(),
+                UserId = request.UserId,
+                WorkId = request.WorkId,
+                SessionId = request.SessionId,
+                SnapshotType = SnapshotType,
+                MemoryGeneration = memoryGeneration,
+                VersionId = "0",
+                CreateBy = request.UserId,
+                CreateAt = now
+            };
+            db.MemorySnapshots.Add(entity);
+        }
+
+        entity.MemoryStatus = "stale";
+        entity.UpdateBy = request.UserId;
+        entity.UpdateAt = now;
+        await db.SaveChangesAsync(cancellationToken);
+        await cache.RemoveAsync(CacheKey(
+            request.UserId,
+            request.WorkId,
+            request.SessionId,
+            memoryGeneration));
     }
 
     public async Task PruneSessionFactsAfterTurnAsync(
@@ -606,7 +660,10 @@ public sealed class HybridMemoryProvider(
         {
             sb.AppendLine($"Turn {group.Key}:");
 
-            foreach (var message in group.OrderBy(m => m.CreatedAt))
+            foreach (var message in group
+                         .OrderBy(m => m.CreatedAt)
+                         .ThenBy(m => m.Role == "user" ? 0 : 1)
+                         .ThenBy(m => m.Id))
             {
                 var role = message.Role == "assistant" ? "Assistant" : "User";
                 sb.Append("- ");

@@ -17,7 +17,7 @@ public sealed class ToolRegistry : IToolRegistry
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("Tool definition must have a function name.", nameof(definition));
 
-        var metadata = descriptor ?? CreateDefaultDescriptor(definition);
+        var metadata = descriptor ?? Describe(definition);
         if (!string.Equals(metadata.Name, name, StringComparison.Ordinal))
         {
             metadata = new ToolCapabilityDescriptor
@@ -62,11 +62,16 @@ public sealed class ToolRegistry : IToolRegistry
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // Dynamic exposure is opt-in. An agent that declares no capability groups,
+        // or a caller that grants a zero-sized budget, must not inherit every tool.
+        if (context.MaxTools <= 0 || context.AllowedGroups.Count == 0)
+            return Array.Empty<ToolDefinition>();
+
         return _items.Values
             .Where(x => IsAllowed(x, context))
             .OrderBy(x => PreferredIndex(x.Name, context.PreferredTools))
             .ThenBy(x => x.Name, StringComparer.Ordinal)
-            .Take(Math.Max(1, context.MaxTools))
+            .Take(context.MaxTools)
             .Select(x => x.Definition)
             .ToArray();
     }
@@ -98,8 +103,10 @@ public sealed class ToolRegistry : IToolRegistry
         return int.MaxValue;
     }
 
-    private static ToolCapabilityDescriptor CreateDefaultDescriptor(ToolDefinition definition)
+    public static ToolCapabilityDescriptor Describe(ToolDefinition definition)
     {
+        ArgumentNullException.ThrowIfNull(definition);
+        ArgumentNullException.ThrowIfNull(definition.Function);
         var name = definition.Function.Name;
         var isHighRisk = name is "run_powershell" or "web_search" or "find_skill";
         var isGraph = name.StartsWith("create_character_graph", StringComparison.Ordinal);

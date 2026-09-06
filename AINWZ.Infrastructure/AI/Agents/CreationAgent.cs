@@ -10,8 +10,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 创作Agent：负责角色设计、角色信息更新、人物关系建立、角色成长线规划
 // 核心能力：创建有深度有层次的角色，确保角色与世界观和情节逻辑自洽
-public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogger<CreationAgent> logger)
-    : AgentBase(llm, tools, logger), ICreationAgent
+public sealed class CreationAgent(IChatCompatible llm, IToolCapable tools, ILogger<CreationAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), ICreationAgent
 {
     public override string Name => "creation";
 

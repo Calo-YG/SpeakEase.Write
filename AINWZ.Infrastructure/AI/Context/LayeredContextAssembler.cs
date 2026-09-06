@@ -12,45 +12,56 @@ public sealed class LayeredContextAssembler
         ArgumentNullException.ThrowIfNull(request);
         var inputBudget = ResolveInputBudget(request.ContextWindowTokens);
         var historyBudget = Math.Max(0, inputBudget - EstimateTokens(request.CurrentUserMessage));
-        var l3 = CreateSystem("[Project Facts]", request.ProjectFacts);
+        var projectFacts = CreateSystem("[Project Facts]", request.ProjectFacts);
+        var characterRuntime = CreateSystem("[Character Runtime]", request.CharacterRuntime);
         var l2 = CreateSystem("[Session Memory]", request.SessionMemory);
         var l4 = CreateSystem("[Retrieved Context]", request.RetrievedContext);
         var turns = request.ConversationTurns.ToList();
         var wasTrimmed = false;
 
-        var messages = BuildMessages(l3, l2, l4, turns);
+        var messages = BuildMessages(projectFacts, characterRuntime, l2, l4, turns);
         if (EstimateTokens(messages) > historyBudget && l4 is not null)
         {
             l4 = null;
             wasTrimmed = true;
-            messages = BuildMessages(l3, l2, l4, turns);
+            messages = BuildMessages(projectFacts, characterRuntime, l2, l4, turns);
         }
 
         if (EstimateTokens(messages) > historyBudget && l2 is not null)
         {
-            var otherTokens = EstimateTokens(BuildMessages(l3, null, null, turns));
+            var otherTokens = EstimateTokens(BuildMessages(projectFacts, characterRuntime, null, null, turns));
             l2.Content = TruncateToBudget(l2.Content, Math.Max(0, historyBudget - otherTokens));
             if (string.IsNullOrWhiteSpace(l2.Content))
                 l2 = null;
             wasTrimmed = true;
-            messages = BuildMessages(l3, l2, null, turns);
+            messages = BuildMessages(projectFacts, characterRuntime, l2, null, turns);
         }
 
         while (turns.Count > 0 && EstimateTokens(messages) > historyBudget)
         {
             turns.RemoveAt(0);
             wasTrimmed = true;
-            messages = BuildMessages(l3, l2, null, turns);
+            messages = BuildMessages(projectFacts, characterRuntime, l2, null, turns);
         }
 
-        if (EstimateTokens(messages) > historyBudget && l3 is not null)
+        if (EstimateTokens(messages) > historyBudget && projectFacts is not null)
         {
-            var memoryTokens = l2 is null ? 0 : EstimateTokens(l2.Content);
-            l3.Content = TruncateToBudget(l3.Content, Math.Max(0, historyBudget - memoryTokens));
-            if (string.IsNullOrWhiteSpace(l3.Content))
-                l3 = null;
+            var otherTokens = EstimateTokens(BuildMessages(null, characterRuntime, l2, null, turns));
+            projectFacts.Content = TruncateToBudget(projectFacts.Content, Math.Max(0, historyBudget - otherTokens));
+            if (string.IsNullOrWhiteSpace(projectFacts.Content))
+                projectFacts = null;
             wasTrimmed = true;
-            messages = BuildMessages(l3, l2, null, turns);
+            messages = BuildMessages(projectFacts, characterRuntime, l2, null, turns);
+        }
+
+        if (EstimateTokens(messages) > historyBudget && characterRuntime is not null)
+        {
+            var otherTokens = EstimateTokens(BuildMessages(projectFacts, null, l2, null, turns));
+            characterRuntime.Content = TruncateToBudget(characterRuntime.Content, Math.Max(0, historyBudget - otherTokens));
+            if (string.IsNullOrWhiteSpace(characterRuntime.Content))
+                characterRuntime = null;
+            wasTrimmed = true;
+            messages = BuildMessages(projectFacts, characterRuntime, l2, null, turns);
         }
 
         return new LayeredContextAssemblyResult
@@ -75,14 +86,17 @@ public sealed class LayeredContextAssembler
     }
 
     private static List<ChatMessage> BuildMessages(
-        SystemMessage l3,
+        SystemMessage projectFacts,
+        SystemMessage characterRuntime,
         SystemMessage l2,
         SystemMessage l4,
         IReadOnlyList<LayeredConversationTurn> turns)
     {
         var messages = new List<ChatMessage>();
-        if (l3 is not null)
-            messages.Add(l3);
+        if (projectFacts is not null)
+            messages.Add(projectFacts);
+        if (characterRuntime is not null)
+            messages.Add(characterRuntime);
         if (l2 is not null)
             messages.Add(l2);
         if (l4 is not null)
@@ -142,6 +156,7 @@ public sealed class LayeredContextAssemblyRequest
 {
     public string CurrentUserMessage { get; init; } = string.Empty;
     public string ProjectFacts { get; init; } = string.Empty;
+    public string CharacterRuntime { get; init; } = string.Empty;
     public string SessionMemory { get; init; } = string.Empty;
     public string RetrievedContext { get; init; } = string.Empty;
     public IReadOnlyList<LayeredConversationTurn> ConversationTurns { get; init; } = Array.Empty<LayeredConversationTurn>();

@@ -45,6 +45,7 @@ public static class AgentRoute
                     "reasoning" => "reasoning",
                     "tool_call" => "tool_call",
                     "tool_result" => "tool_result",
+                    "error" => "error",
                     "done" => "done",
                     _ => "content"
                 };

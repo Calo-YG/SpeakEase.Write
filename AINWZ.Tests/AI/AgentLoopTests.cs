@@ -456,6 +456,37 @@ public sealed class AgentLoopTests
     }
 
     [Fact]
+    public async Task RunAsync_TrimsRetrievalLayerBeforeCompleteHistoryTurn()
+    {
+        var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "done" });
+        await CollectAsync(new AgentLoop().RunAsync(new AgentLoopRequest
+        {
+            Llm = llm,
+            Tools = new RecordingToolCapable(),
+            Request = new AgentRequest
+            {
+                ContextWindowTokens = 1_000,
+                MaxTokens = 100,
+                SystemPrompt = "system",
+                UserMessage = "current",
+                ConversationHistory = new List<ChatMessage>
+                {
+                    ChatMessage.System("[Project Facts]\nimportant"),
+                    ChatMessage.System("[Retrieved Context]\n" + new string('检', 2_000)),
+                    ChatMessage.User("recent-user"),
+                    ChatMessage.Assistant("recent-assistant")
+                }
+            }
+        }));
+
+        var sent = Assert.Single(llm.Requests);
+        Assert.DoesNotContain(sent, x => GetMessageText(x).Contains("[Retrieved Context]"));
+        Assert.Contains(sent, x => GetMessageText(x).Contains("[Project Facts]"));
+        Assert.Contains(sent, x => GetMessageText(x) == "recent-user");
+        Assert.Contains(sent, x => GetMessageText(x) == "recent-assistant");
+    }
+
+    [Fact]
     public async Task RunAsync_CountsContentPartTextWhenTrimmingHistory()
     {
         var llm = new ScriptedChatCompatible(_ => new LLMTurnResult { Success = true, Content = "done" });

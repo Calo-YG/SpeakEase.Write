@@ -10,8 +10,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 通用助手Agent：处理通用问答、闲聊和非写作类问题，具备互联网搜索能力和写作规则保存功能
 // 与其他专业Agent不同，此Agent不涉及小说创作相关工具
-public sealed class GeneralAgent(IChatCompatible llm, IToolCapable tools, ILogger<GeneralAgent> logger)
-    : AgentBase(llm, tools, logger), INovelAgent
+public sealed class GeneralAgent(IChatCompatible llm, IToolCapable tools, ILogger<GeneralAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), INovelAgent
 {
     public override string Name => "general";
 

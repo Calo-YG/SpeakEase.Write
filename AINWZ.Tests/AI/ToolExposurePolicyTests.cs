@@ -82,12 +82,47 @@ public sealed class ToolExposurePolicyTests
         {
             AgentName = "write",
             Phase = "run",
+            AllowedGroups = new[] { "system.legacy.read", "chapter.write" },
             PreferredTools = new[] { "save_chapter_content" },
             MaxTools = 12
         });
 
         Assert.Equal(12, selected.Count);
         Assert.Equal("save_chapter_content", selected[0].Function.Name);
+    }
+
+    [Fact]
+    public void Select_EmptyCapabilityGroups_FailsClosed()
+    {
+        var registry = new ToolRegistry();
+        registry.Register(CreateDefinition("save_chapter_content"));
+
+        var selected = new ToolExposurePolicy(registry).Select(new ToolExposureContext
+        {
+            AgentName = "write",
+            Phase = "run",
+            AllowedGroups = Array.Empty<string>(),
+            MaxTools = 12
+        });
+
+        Assert.Empty(selected);
+    }
+
+    [Fact]
+    public void Select_ZeroToolBudget_ExposesNothing()
+    {
+        var registry = new ToolRegistry();
+        registry.Register(CreateDefinition("get_character"));
+
+        var selected = new ToolExposurePolicy(registry).Select(new ToolExposureContext
+        {
+            AgentName = "creation",
+            Phase = "run",
+            AllowedGroups = new[] { "system.legacy.read" },
+            MaxTools = 0
+        });
+
+        Assert.Empty(selected);
     }
 
     private static ToolDefinition CreateDefinition(string name)

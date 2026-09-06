@@ -15,6 +15,7 @@ using SpeakEase.Write.Infrastructure.AI.Orchestrator;
 using SpeakEase.Write.Infrastructure.AI.Tools;
 using ApplicationAgentRunStore = SpeakEase.Write.Application.Abstractions.AI.IAgentRunStore;
 using ApplicationMemoryRefreshQueue = SpeakEase.Write.Application.Abstractions.AI.IMemoryRefreshQueue;
+using ApplicationMemoryRefreshFailureHandler = SpeakEase.Write.Application.Abstractions.AI.IMemoryRefreshFailureHandler;
 using RuntimeToolRegistry = SpeakEase.AI.Lib.Runtime.IToolRegistry;
 using RuntimeToolExposurePolicy = SpeakEase.AI.Lib.Runtime.ToolExposurePolicy;
 using RuntimeLegacyToolRegistryAdapter = SpeakEase.AI.Lib.Runtime.LegacyToolRegistryAdapter;
@@ -26,6 +27,9 @@ using RuntimeAgentLoopImplementation = SpeakEase.AI.Lib.Runtime.AgentLoop;
 using RuntimeHost = SpeakEase.AI.Lib.Runtime.RuntimeHost;
 using RuntimeRunner = SpeakEase.AI.Lib.Runtime.IAgentRuntimeRunner;
 using RuntimeRunnerImplementation = SpeakEase.AI.Lib.Runtime.AgentRuntimeRunner;
+using RuntimeStepScheduler = SpeakEase.AI.Lib.Runtime.IStepScheduler;
+using RuntimeLinearStepScheduler = SpeakEase.AI.Lib.Runtime.LinearStepScheduler;
+using RuntimeStateStore = SpeakEase.AI.Lib.Runtime.IRuntimeStateStore;
 using ApplicationAgentRuntimeStore = SpeakEase.Write.Application.Abstractions.AI.IAgentRuntimeStore;
 using RuntimeEventSink = SpeakEase.AI.Lib.Runtime.IRuntimeEventSink;
 using RuntimeEventSinkImplementation = SpeakEase.Write.Infrastructure.AI.Runtime.AgentRuntimeEventSink;
@@ -35,6 +39,7 @@ using ApplicationGrowthConsistencyValidator = SpeakEase.Write.Application.Abstra
 using ApplicationPlotHookGenerator = SpeakEase.Write.Application.Abstractions.Story.IPlotHookGenerator;
 using ApplicationCharacterRuntimeQueue = SpeakEase.Write.Application.Abstractions.Story.ICharacterRuntimeQueue;
 using ApplicationCharacterRuntimeProcessor = SpeakEase.Write.Application.Abstractions.Story.ICharacterRuntimeProcessor;
+using ApplicationCharacterStateProposalExtractor = SpeakEase.Write.Application.Abstractions.Story.ICharacterStateProposalExtractor;
 using ApplicationMemoryContextProvider = SpeakEase.Write.Application.Abstractions.Memory.IMemoryContextProvider;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -51,9 +56,13 @@ public static class NovelAIServiceCollectionExtensions
         services.AddSingleton<PlanCompiler>();
         services.AddScoped<ApplicationAgentRunStore, AgentRunStore>();
         services.AddScoped<ApplicationAgentRuntimeStore, AgentRuntimeStore>();
+        services.AddScoped<RuntimeStateStore>(sp =>
+            (RuntimeStateStore)sp.GetRequiredService<ApplicationAgentRuntimeStore>());
         services.AddScoped<RuntimeEventSink, RuntimeEventSinkImplementation>();
         services.AddScoped<IMemoryProvider, HybridMemoryProvider>();
         services.AddScoped<ApplicationMemoryProvider>(sp => sp.GetRequiredService<IMemoryProvider>());
+        services.AddScoped<ApplicationMemoryRefreshFailureHandler>(sp =>
+            (ApplicationMemoryRefreshFailureHandler)sp.GetRequiredService<IMemoryProvider>());
         services.AddScoped<ApplicationMemoryContextProvider, MemoryContextProvider>();
         services.AddSingleton<MemoryRefreshQueue>();
         services.AddSingleton<ApplicationMemoryRefreshQueue>(sp => sp.GetRequiredService<MemoryRefreshQueue>());
@@ -67,6 +76,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddSingleton<RuntimePromptCompiler>();
         services.AddScoped<RuntimeAgentLoop, RuntimeAgentLoopImplementation>();
         services.AddScoped<RuntimeHost>();
+        services.AddSingleton<RuntimeStepScheduler, RuntimeLinearStepScheduler>();
         services.AddScoped<RuntimeRunner, RuntimeRunnerImplementation>();
         services.AddOptions<AgentRuntimeModeOptions>().BindConfiguration(AgentRuntimeModeOptions.SectionName);
         services.AddScoped<ApplicationCharacterStateStore, CharacterStateStore>();
@@ -74,6 +84,7 @@ public static class NovelAIServiceCollectionExtensions
         services.AddSingleton<ApplicationGrowthConsistencyValidator, GrowthConsistencyValidator>();
         services.AddSingleton<ApplicationPlotHookGenerator, PlotHookGenerator>();
         services.AddScoped<ApplicationCharacterRuntimeProcessor, CharacterRuntimeProcessor>();
+        services.AddScoped<ApplicationCharacterStateProposalExtractor, CharacterStateProposalExtractor>();
         services.AddSingleton<CharacterRuntimeWorker>();
         services.AddSingleton<ApplicationCharacterRuntimeQueue>(sp => sp.GetRequiredService<CharacterRuntimeWorker>());
         services.AddHostedService(sp => sp.GetRequiredService<CharacterRuntimeWorker>());

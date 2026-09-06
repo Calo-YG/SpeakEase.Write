@@ -10,8 +10,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 世界观Agent：管理小说世界观的六维架构（世界规则/力量体系/天道法则/地理文明/势力格局/历史编年）
 // 核心能力：从宏观到微观构建层次分明、逻辑自洽的世界设定
-public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<WorldAgent> logger)
-    : AgentBase(llm, tools, logger), IWorldAgent
+public sealed class WorldAgent(IChatCompatible llm, IToolCapable tools, ILogger<WorldAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), IWorldAgent
 {
     public override string Name => "world";
 

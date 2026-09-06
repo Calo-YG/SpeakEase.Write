@@ -11,7 +11,7 @@ public sealed class PromptCompiler(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var profile = _profiles.Get(request.ProfileKey) ?? new PromptProfile();
+        var profile = _profiles.Get(request.ProfileKey) ?? request.FallbackProfile ?? new PromptProfile();
         var effectiveProfile = string.IsNullOrWhiteSpace(request.OutputContract)
             ? profile
             : new PromptProfile

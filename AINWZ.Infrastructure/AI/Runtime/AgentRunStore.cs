@@ -34,7 +34,7 @@ public sealed class AgentRunStore(
 
         if (existing is null)
         {
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
             var entity = new AgentRunEntity
             {
                 Id = idGenerator.NextIdString(),
@@ -74,7 +74,7 @@ public sealed class AgentRunStore(
                 .Where(x => x.RunId == existing.Id)
                 .Select(x => (long?)x.Sequence)
                 .MaxAsync(cancellationToken) ?? 0;
-            var now = DateTime.Now;
+            var now = DateTime.UtcNow;
             int recovered;
             if (db.Database.IsRelational())
             {
@@ -153,7 +153,7 @@ public sealed class AgentRunStore(
         if (entity is null)
             return;
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         entity.StopReason = response?.StopReason ?? "failed";
         entity.Status = entity.StopReason switch
         {
@@ -190,9 +190,9 @@ public sealed class AgentRunStore(
             Type = type ?? string.Empty,
             PayloadJson = JsonSerializer.Serialize(payload),
             CreateBy = userId,
-            CreateAt = DateTime.Now,
+            CreateAt = DateTime.UtcNow,
             UpdateBy = userId,
-            UpdateAt = DateTime.Now
+            UpdateAt = DateTime.UtcNow
         });
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -209,7 +209,7 @@ public sealed class AgentRunStore(
         var userId = userContext.UserId;
         var entity = await db.AgentArtifacts.FirstOrDefaultAsync(x =>
             x.RunId == runId && x.StepId == stepId, cancellationToken);
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         if (entity is null)
         {
             entity = new AgentArtifactEntity
@@ -243,8 +243,9 @@ public sealed class AgentRunStore(
 
         var userId = userContext.UserId;
         var entity = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
-            x.RunId == runId && x.ToolCallId == toolCall.Id, cancellationToken);
-        var now = DateTime.Now;
+            x.RunId == runId && x.StepId == (stepId ?? string.Empty) && x.ToolCallId == toolCall.Id,
+            cancellationToken);
+        var now = DateTime.UtcNow;
         if (entity is null)
         {
             entity = new AgentToolCallEntity
@@ -278,7 +279,8 @@ public sealed class AgentRunStore(
             System.Text.Encoding.UTF8.GetBytes(toolCall.Function?.Arguments ?? string.Empty)));
         var toolName = toolCall.Function?.Name ?? string.Empty;
         var existing = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
-            x.UserId == userId && x.RunId == runId && x.ToolCallId == executionKey,
+            x.UserId == userId && x.RunId == runId && x.StepId == (stepId ?? string.Empty) &&
+            x.ToolCallId == executionKey,
             cancellationToken);
 
         if (existing is not null)
@@ -308,7 +310,7 @@ public sealed class AgentRunStore(
                 "tool_call_in_progress"));
         }
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var entity = new AgentToolCallEntity
         {
             Id = idGenerator.NextIdString(),
@@ -334,7 +336,8 @@ public sealed class AgentRunStore(
         {
             db.Detach(entity);
             var concurrent = await db.AgentToolCalls.AsNoTracking().FirstOrDefaultAsync(x =>
-                x.UserId == userId && x.RunId == runId && x.ToolCallId == executionKey,
+                x.UserId == userId && x.RunId == runId && x.StepId == (stepId ?? string.Empty) &&
+                x.ToolCallId == executionKey,
                 cancellationToken);
             if (concurrent is null)
                 throw;
@@ -354,7 +357,8 @@ public sealed class AgentRunStore(
         CancellationToken cancellationToken = default)
     {
         var entity = await db.AgentToolCalls.FirstOrDefaultAsync(x =>
-            x.UserId == userContext.UserId && x.RunId == runId && x.ToolCallId == executionKey,
+            x.UserId == userContext.UserId && x.RunId == runId && x.StepId == (stepId ?? string.Empty) &&
+            x.ToolCallId == executionKey,
             cancellationToken);
         if (entity is null)
             return;
@@ -362,7 +366,7 @@ public sealed class AgentRunStore(
         entity.Status = result?.Success == true ? "completed" : "failed";
         entity.ResultJson = JsonSerializer.Serialize(result);
         entity.UpdateBy = userContext.UserId;
-        entity.UpdateAt = DateTime.Now;
+        entity.UpdateAt = DateTime.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
     }
 

@@ -7,20 +7,29 @@ namespace SpeakEase.AI.Lib.Runtime;
 /// </summary>
 public sealed class LegacySkillResolverAdapter(ISkilCapable skills) : ISkillResolver
 {
-    public Task<SkillContent> ResolveAsync(
+    public async Task<SkillContent> ResolveAsync(
         string skillName,
         CancellationToken cancellationToken = default)
     {
         var definition = skills.Skills.FirstOrDefault(x =>
             string.Equals(x.Name, skillName, StringComparison.OrdinalIgnoreCase));
 
-        return Task.FromResult(definition is null
-            ? new SkillContent { SkillName = skillName ?? string.Empty }
-            : new SkillContent
-            {
-                SkillName = definition.Name,
-                Path = definition.Path,
-                Content = definition.Description ?? string.Empty
-            });
+        if (definition is null)
+            return new SkillContent { SkillName = skillName ?? string.Empty };
+
+        var content = definition.Description ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(definition.Path))
+        {
+            var path = Path.GetFullPath(definition.Path);
+            if (File.Exists(path))
+                content = await File.ReadAllTextAsync(path, cancellationToken);
+        }
+
+        return new SkillContent
+        {
+            SkillName = definition.Name,
+            Path = definition.Path,
+            Content = content
+        };
     }
 }

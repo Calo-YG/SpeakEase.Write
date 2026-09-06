@@ -10,8 +10,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 大纲Agent：负责故事结构与情节规划，从全书总纲到卷大纲再到章节大纲逐级生成
 // 核心能力：三幕式/英雄之旅等叙事框架设计，字数规划与节奏控制
-public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogger<OutlineAgent> logger)
-    : AgentBase(llm, tools, logger), IOutlineAgent
+public sealed class OutlineAgent(IChatCompatible llm, IToolCapable tools, ILogger<OutlineAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), IOutlineAgent
 {
     public override string Name => "outline";
 

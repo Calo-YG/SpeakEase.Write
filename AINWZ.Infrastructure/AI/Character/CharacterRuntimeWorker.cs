@@ -3,15 +3,22 @@ using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 using SpeakEase.Write.Application.Abstractions.Story;
+using SpeakEase.Write.Infrastructure.AI.Runtime;
 
 namespace SpeakEase.Write.Infrastructure.AI.Character;
 
 public sealed class CharacterRuntimeWorker(
     IServiceScopeFactory scopeFactory,
-    ILogger<CharacterRuntimeWorker> logger) : BackgroundService, ICharacterRuntimeQueue
+    ILogger<CharacterRuntimeWorker> logger,
+    IOptions<AgentRuntimeModeOptions> options = null) : BackgroundService, ICharacterRuntimeQueue
 {
+    private readonly AgentRuntimeModeOptions _options = options?.Value ?? new AgentRuntimeModeOptions
+    {
+        EnableCharacterSelfGrowth = true
+    };
     private readonly Channel<CharacterStateRefreshRequest> _queue = Channel.CreateBounded<CharacterStateRefreshRequest>(
         new BoundedChannelOptions(256)
         {
@@ -32,6 +39,9 @@ public sealed class CharacterRuntimeWorker(
     {
         await foreach (var request in _queue.Reader.ReadAllAsync(stoppingToken))
         {
+            if (!_options.EnableCharacterSelfGrowth)
+                continue;
+
             for (var attempt = 1; attempt <= 3; attempt++)
             {
                 try
@@ -52,9 +62,9 @@ public sealed class CharacterRuntimeWorker(
                         "Character state refresh attempt failed: Attempt={Attempt}, UserId={UserId}, WorkId={WorkId}, CharacterId={CharacterId}, RunId={RunId}",
                         attempt,
                         request.UserId,
-                        request.Proposal?.WorkId,
-                        request.Proposal?.CharacterId,
-                        request.Proposal?.SourceRunId);
+                        request.WorkId,
+                        request.Proposal?.CharacterId ?? string.Empty,
+                        request.SourceRunId);
                 }
                 catch (Exception ex)
                 {
@@ -62,9 +72,9 @@ public sealed class CharacterRuntimeWorker(
                         ex,
                         "Character state refresh failed after retries: UserId={UserId}, WorkId={WorkId}, CharacterId={CharacterId}, RunId={RunId}",
                         request.UserId,
-                        request.Proposal?.WorkId,
-                        request.Proposal?.CharacterId,
-                        request.Proposal?.SourceRunId);
+                        request.WorkId,
+                        request.Proposal?.CharacterId ?? string.Empty,
+                        request.SourceRunId);
                 }
             }
         }

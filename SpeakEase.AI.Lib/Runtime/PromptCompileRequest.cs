@@ -8,4 +8,5 @@ public sealed class PromptCompileRequest
     public string ContextSummary { get; init; } = string.Empty;
     public IReadOnlyList<string> Capabilities { get; init; } = Array.Empty<string>();
     public string OutputContract { get; init; } = string.Empty;
+    public PromptProfile FallbackProfile { get; init; }
 }

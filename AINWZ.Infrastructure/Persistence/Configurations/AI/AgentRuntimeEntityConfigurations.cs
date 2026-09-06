@@ -55,7 +55,7 @@ internal sealed class AgentToolCallEntityConfiguration : IEntityTypeConfiguratio
         builder.Property(x => x.ArgumentsHash).HasMaxLength(128).IsRequired();
         builder.Property(x => x.Status).HasMaxLength(32).IsRequired();
         builder.Property(x => x.ResultJson).HasColumnType("text");
-        builder.HasIndex(x => new { x.RunId, x.ToolCallId }).IsUnique();
+        builder.HasIndex(x => new { x.RunId, x.StepId, x.ToolCallId }).IsUnique();
     }
 }
 
@@ -87,6 +87,7 @@ internal sealed class AgentCheckpointEntityConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.State).HasMaxLength(64).IsRequired();
         builder.Property(x => x.MessagesJson).HasColumnType("text");
         builder.Property(x => x.PendingToolCallsJson).HasColumnType("text");
+        builder.Property(x => x.Version).IsConcurrencyToken();
         builder.HasIndex(x => new { x.UserId, x.RunId, x.StepId }).IsUnique();
     }
 }

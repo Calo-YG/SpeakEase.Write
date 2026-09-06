@@ -6,6 +6,7 @@ using ApplicationMemoryProvider = SpeakEase.Write.Application.Abstractions.AI.IM
 using SessionMemorySnapshot = SpeakEase.Write.Application.Abstractions.AI.SessionMemorySnapshot;
 using SpeakEase.Write.Application.Abstractions.Memory;
 using SpeakEase.Write.Application.Abstractions.Persistence;
+using SpeakEase.Write.Application.Abstractions.Story;
 using SpeakEase.Write.Infrastructure.Ids;
 using SpeakEase.Write.Infrastructure.Shared;
 
@@ -18,7 +19,8 @@ public sealed class CreationAgentContext(
     IMemoryDbContext dbContext,
     ISnowflakeIdGenerator idGenerator,
     LayeredContextAssembler layeredContextAssembler = null,
-    IMemoryContextProvider memoryContextProvider = null) : ICreationAgentContext
+    IMemoryContextProvider memoryContextProvider = null,
+    ICharacterStateStore characterStateStore = null) : ICreationAgentContext
 {
     private const int FilteredHistoryTurns = 8;     // 筛选模式：仅保留最近 8 个完整轮次
     private const int FullHistoryTurns = 20;         // 全历史模式：保留最近 20 个完整轮次
@@ -89,6 +91,9 @@ public sealed class CreationAgentContext(
         var projectFacts = includeMemory
             ? layers?.ProjectFacts ?? await memory.LoadProjectFactsAsync(user.UserId, workId, cancellationToken)
             : Array.Empty<SpeakEase.Write.Application.Abstractions.AI.MemoryFact>();
+        var characterSnapshots = includeMemory && characterStateStore is not null
+            ? await characterStateStore.GetWorkSnapshotsAsync(user.UserId, workId, cancellationToken)
+            : Array.Empty<CharacterStateSnapshotData>();
 
         var recentTurns = await LoadRecentTurnsAsync(
             sessionId,
@@ -103,11 +108,16 @@ public sealed class CreationAgentContext(
             ? string.Empty
             : string.Join("\n", layers.RetrievedArtifacts.Select(x =>
                 $"- artifact:{x.ArtifactId} [{x.ContentType}] {x.Summary}"));
+        var characterRuntimeText = string.Join(
+            "\n",
+            characterSnapshots.Select(x =>
+                $"- character:{x.CharacterId} version:{x.Version} state:{x.StateJson}"));
         var assembler = layeredContextAssembler ?? new LayeredContextAssembler();
         var assembled = assembler.Assemble(new LayeredContextAssemblyRequest
         {
             CurrentUserMessage = currentUserMessage,
             ProjectFacts = factText,
+            CharacterRuntime = characterRuntimeText,
             SessionMemory = memorySnapshot.Summary,
             RetrievedContext = retrievedText,
             ConversationTurns = recentTurns,
@@ -165,6 +175,8 @@ public sealed class CreationAgentContext(
                         turnNumbers.Contains(m.TurnNumber))
             .OrderBy(m => m.TurnNumber)
             .ThenBy(m => m.CreatedAt)
+            .ThenBy(m => m.Role == "user" ? 0 : 1)
+            .ThenBy(m => m.Id)
             .ToListAsync(cancellationToken);
 
         return rows
@@ -191,7 +203,7 @@ public sealed class CreationAgentContext(
         AgentContext context,
         CancellationToken cancellationToken)
     {
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         dbContext.ContextAssemblyLogs.Add(new ContextAssemblyLogEntity
         {
             Id = idGenerator.NextIdString(),

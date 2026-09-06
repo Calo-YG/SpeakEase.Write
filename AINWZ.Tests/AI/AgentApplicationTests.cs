@@ -80,6 +80,21 @@ public sealed class AgentApplicationTests
     }
 
     [Fact]
+    public async Task StreamChatAsync_AddsFailedDoneWhenOrchestratorEndsAfterError()
+    {
+        var sessionManager = new CapturingSessionManager();
+        var application = new AgentApplication(new ErrorWithoutDoneOrchestrator(), sessionManager);
+        var chunks = new List<AgentStreamChunk>();
+
+        await foreach (var chunk in application.StreamChatAsync(CreateRequest("error-terminal")))
+            chunks.Add(chunk);
+
+        Assert.Equal(new[] { "error", "done" }, chunks.Select(x => x.Type));
+        Assert.Equal("llm_error", chunks[^1].FinalResponse.StopReason);
+        Assert.Null(sessionManager.AppendedUserMessage);
+    }
+
+    [Fact]
     public async Task ChatAsync_RejectsClientSystemMessages()
     {
         var application = new AgentApplication(new MaxIterationOrchestrator(), new CapturingSessionManager());
@@ -552,6 +567,35 @@ public sealed class AgentApplicationTests
                 }
             };
         }
+    }
+
+    private sealed class ErrorWithoutDoneOrchestrator : SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator
+    {
+        public async IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            SpeakEase.Write.Application.Abstractions.AI.AgentRuntimeRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            yield return new AgentStreamChunk { Type = "error", Content = "failed" };
+        }
+
+        public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
+            string workId,
+            string sessionId,
+            string userMessage,
+            int maxIterations = 10,
+            int? requestedMaxTokens = null,
+            double? requestedTemperature = null,
+            CancellationToken cancellationToken = default)
+            => ExecuteAsync(new SpeakEase.Write.Application.Abstractions.AI.AgentRuntimeRequest
+            {
+                WorkId = workId,
+                SessionId = sessionId,
+                UserMessage = userMessage,
+                MaxIterations = maxIterations,
+                MaxTokens = requestedMaxTokens,
+                Temperature = requestedTemperature
+            }, cancellationToken);
     }
 
     private sealed class CancellingOrchestrator(Action cancel) : SpeakEase.Write.Application.Abstractions.AI.IAgentOrchestrator

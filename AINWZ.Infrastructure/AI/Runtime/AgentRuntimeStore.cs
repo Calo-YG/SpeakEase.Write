@@ -14,7 +14,7 @@ public sealed class AgentRuntimeStore(
     IAgentRunStore runStore,
     IAgentRuntimeDbContext db,
     IUserContext userContext,
-    ISnowflakeIdGenerator idGenerator) : IAgentRuntimeStore
+    ISnowflakeIdGenerator idGenerator) : IAgentRuntimeStore, IRuntimeStateStore
 {
     private readonly IAgentRunStore _runStore = runStore ?? throw new ArgumentNullException(nameof(runStore));
     private readonly IAgentRuntimeDbContext _db = db ?? throw new ArgumentNullException(nameof(db));
@@ -49,35 +49,53 @@ public sealed class AgentRuntimeStore(
             throw new ArgumentException("Checkpoint RunId and StepId are required.", nameof(checkpoint));
 
         var userId = _userContext.UserId;
-        var existing = await _db.AgentCheckpoints.FirstOrDefaultAsync(x =>
-            x.UserId == userId && x.RunId == checkpoint.RunId && x.StepId == checkpoint.StepId,
-            cancellationToken);
-        if (existing is not null && existing.Version >= checkpoint.Version)
-            return;
-
-        var now = DateTime.Now;
-        if (existing is null)
+        for (var attempt = 1; attempt <= 5; attempt++)
         {
-            existing = new AgentCheckpointEntity
+            var existing = await _db.AgentCheckpoints.FirstOrDefaultAsync(x =>
+                x.UserId == userId && x.RunId == checkpoint.RunId && x.StepId == checkpoint.StepId,
+                cancellationToken);
+            if (existing is not null && existing.Version >= checkpoint.Version)
+                return;
+
+            var now = DateTime.UtcNow;
+            if (existing is null)
             {
-                Id = string.IsNullOrWhiteSpace(checkpoint.Id) ? _idGenerator.NextIdString() : checkpoint.Id,
-                UserId = userId,
-                RunId = checkpoint.RunId,
-                StepId = checkpoint.StepId,
-                CreateBy = userId,
-                CreateAt = now
-            };
-            _db.AgentCheckpoints.Add(existing);
+                existing = new AgentCheckpointEntity
+                {
+                    Id = string.IsNullOrWhiteSpace(checkpoint.Id) ? _idGenerator.NextIdString() : checkpoint.Id,
+                    UserId = userId,
+                    RunId = checkpoint.RunId,
+                    StepId = checkpoint.StepId,
+                    CreateBy = userId,
+                    CreateAt = now
+                };
+                _db.AgentCheckpoints.Add(existing);
+            }
+
+            existing.State = checkpoint.State ?? string.Empty;
+            existing.MessagesJson = checkpoint.MessagesJson ?? string.Empty;
+            existing.Iteration = checkpoint.Iteration;
+            existing.PendingToolCallsJson = checkpoint.PendingToolCallsJson ?? string.Empty;
+            existing.Version = checkpoint.Version;
+            existing.UpdateBy = userId;
+            existing.UpdateAt = now;
+            try
+            {
+                await _db.SaveChangesAsync(cancellationToken);
+                return;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _db.Detach(existing);
+            }
+            catch (DbUpdateException) when (attempt < 5)
+            {
+                _db.Detach(existing);
+            }
         }
 
-        existing.State = checkpoint.State ?? string.Empty;
-        existing.MessagesJson = checkpoint.MessagesJson ?? string.Empty;
-        existing.Iteration = checkpoint.Iteration;
-        existing.PendingToolCallsJson = checkpoint.PendingToolCallsJson ?? string.Empty;
-        existing.Version = checkpoint.Version;
-        existing.UpdateBy = userId;
-        existing.UpdateAt = now;
-        await _db.SaveChangesAsync(cancellationToken);
+        throw new DbUpdateConcurrencyException(
+            $"Checkpoint update exceeded concurrency retries: RunId={checkpoint.RunId}, StepId={checkpoint.StepId}, Version={checkpoint.Version}.");
     }
 
     public async Task<AgentCheckpointDto> LoadCheckpointAsync(string runId, string stepId, CancellationToken cancellationToken = default)
@@ -100,4 +118,30 @@ public sealed class AgentRuntimeStore(
             Version = entity.Version
         };
     }
+
+    Task IRuntimeStateStore.SaveCheckpointAsync(
+        RuntimeCheckpoint checkpoint,
+        CancellationToken cancellationToken)
+        => SaveCheckpointAsync(new AgentCheckpointDto
+        {
+            RunId = checkpoint.RunId,
+            StepId = checkpoint.StepId,
+            State = checkpoint.State,
+            MessagesJson = checkpoint.MessagesJson,
+            Iteration = checkpoint.Iteration,
+            PendingToolCallsJson = checkpoint.PendingToolCallsJson,
+            Version = checkpoint.Version
+        }, cancellationToken);
+
+    Task IRuntimeStateStore.SaveArtifactAsync(
+        RuntimeArtifact artifact,
+        CancellationToken cancellationToken)
+        => _runStore.SaveArtifactAsync(
+            artifact.RunId,
+            artifact.StepId,
+            artifact.ContentType,
+            artifact.Summary,
+            artifact.Content,
+            artifact.EstimatedTokens,
+            cancellationToken);
 }

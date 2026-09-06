@@ -46,6 +46,22 @@ public sealed class LayeredContextAssemblerTests
         Assert.InRange(result.InputTokenCount, 1, 1_000);
     }
 
+    [Fact]
+    public void Assemble_AddsCharacterRuntimeAsDedicatedProjectLayer()
+    {
+        var assembler = new LayeredContextAssembler();
+
+        var result = assembler.Assemble(new LayeredContextAssemblyRequest
+        {
+            ProjectFacts = "类型=悬疑",
+            CharacterRuntime = "character-1 v4: {\"plotHooks\":[\"隐瞒旧伤\"]}",
+            ContextWindowTokens = 32_000
+        });
+
+        Assert.Contains(result.Messages.OfType<SystemMessage>(),
+            x => x.Content.StartsWith("[Character Runtime]") && x.Content.Contains("隐瞒旧伤"));
+    }
+
     private static LayeredConversationTurn Turn(int number, string content)
         => new()
         {

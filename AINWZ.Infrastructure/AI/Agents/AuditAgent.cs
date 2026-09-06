@@ -11,8 +11,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 审核Agent：全面审核作品的设定一致性、伏笔健康度、时间线合理性、角色关系准确性、情节逻辑严密性
 // 核心能力：按七个维度系统化检查，输出结构化审核报告，支持问题严重度分级
-public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<AuditAgent> logger)
-    : AgentBase(llm, tools, logger), IAuditAgent
+public sealed class AuditAgent(IChatCompatible llm, IToolCapable tools, ILogger<AuditAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), IAuditAgent
 {
     public override string Name => "audit";
 

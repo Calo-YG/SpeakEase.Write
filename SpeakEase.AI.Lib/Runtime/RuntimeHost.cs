@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using SpeakEase.AI.Lib.Models;
 
 namespace SpeakEase.AI.Lib.Runtime;
@@ -11,8 +12,10 @@ public sealed class RuntimeHost(
     private readonly IRuntimeEventSink _eventSink = eventSink;
     private long _sequence;
     private bool _publishEvents;
+    private readonly List<RuntimeTransition> _transitions = new();
 
     public RuntimeState State { get; private set; } = RuntimeState.Created;
+    public IReadOnlyList<RuntimeTransition> Transitions => _transitions;
 
     public async IAsyncEnumerable<RuntimeEvent> RunAsync(
         RuntimeRunRequest request,
@@ -22,7 +25,9 @@ public sealed class RuntimeHost(
         ArgumentNullException.ThrowIfNull(request.LoopRequest);
         _sequence = 0;
         _publishEvents = request.PublishEvents;
-        State = RuntimeState.Running;
+        _transitions.Clear();
+        State = RuntimeState.Created;
+        TransitionTo(RuntimeState.Running, "run_started");
 
         await foreach (var runtimeEvent in EmitLifecycleAsync(
             request.LoopRequest,
@@ -34,17 +39,65 @@ public sealed class RuntimeHost(
         }
 
         AgentResponse finalResponse = null;
-        await foreach (var eventItem in _agentLoop.RunAsync(request.LoopRequest, cancellationToken))
+        OperationCanceledException cancellation = null;
+        await using (var enumerator = _agentLoop.RunAsync(request.LoopRequest, cancellationToken)
+                         .GetAsyncEnumerator(cancellationToken))
         {
-            var projected = CreateEvent(request.LoopRequest, eventItem.Type, eventItem.Chunk ?? eventItem.Payload);
-            if (projected.Chunk?.Type == "done")
-                finalResponse = projected.Chunk.FinalResponse;
+            while (true)
+            {
+                AgentEvent eventItem = null;
+                var hasNext = false;
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync();
+                    if (hasNext)
+                        eventItem = enumerator.Current;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    cancellation = ex;
+                }
 
-            await PublishAsync(projected, cancellationToken);
-            yield return projected;
+                if (cancellation is not null || !hasNext)
+                    break;
+
+                var projected = CreateEvent(request.LoopRequest, eventItem.Type, eventItem.Chunk ?? eventItem.Payload);
+                if (projected.Chunk?.Type == "tool_call")
+                    TransitionTo(RuntimeState.WaitingTool, "tool_call");
+                else if (projected.Chunk?.Type == "tool_result")
+                    TransitionTo(RuntimeState.Running, "tool_result");
+                if (projected.Chunk?.Type == "done")
+                    finalResponse = projected.Chunk.FinalResponse;
+
+                await PublishAsync(projected, cancellationToken);
+                yield return projected;
+            }
         }
 
-        State = MapState(finalResponse?.StopReason);
+        if (cancellation is not null)
+        {
+            var cancelledByCaller = cancellationToken.IsCancellationRequested;
+            var stopReason = cancelledByCaller ? "cancelled" : "timed_out";
+            TransitionTo(cancelledByCaller ? RuntimeState.Cancelled : RuntimeState.TimedOut, stopReason);
+            finalResponse = new AgentResponse
+            {
+                Content = string.Empty,
+                StopReason = stopReason,
+                RunStatus = stopReason
+            };
+            var cancellationTerminal = CreateEvent(
+                request.LoopRequest,
+                cancelledByCaller ? "run_cancelled" : "run_timed_out",
+                finalResponse);
+            await PublishAsync(cancellationTerminal, CancellationToken.None);
+            if (cancelledByCaller)
+                ExceptionDispatchInfo.Capture(cancellation).Throw();
+
+            yield return cancellationTerminal;
+            yield break;
+        }
+
+        TransitionTo(MapState(finalResponse?.StopReason), finalResponse?.StopReason ?? "missing_terminal_response");
         var terminalType = State == RuntimeState.Completed ? "run_completed" : "run_failed";
         var terminal = await EmitSingleLifecycleAsync(request.LoopRequest, terminalType, finalResponse);
         yield return terminal;
@@ -109,5 +162,19 @@ public sealed class RuntimeHost(
             _ when string.IsNullOrWhiteSpace(stopReason) => RuntimeState.Failed,
             _ => RuntimeState.Failed
         };
+    }
+
+    private void TransitionTo(RuntimeState next, string reason)
+    {
+        if (State == next)
+            return;
+
+        _transitions.Add(new RuntimeTransition
+        {
+            From = State,
+            To = next,
+            Reason = reason ?? string.Empty
+        });
+        State = next;
     }
 }

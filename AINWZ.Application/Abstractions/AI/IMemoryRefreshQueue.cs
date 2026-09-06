@@ -7,6 +7,13 @@ public interface IMemoryRefreshQueue
         CancellationToken cancellationToken = default);
 }
 
+public interface IMemoryRefreshFailureHandler
+{
+    Task MarkStaleAsync(
+        MemoryRefreshRequest request,
+        CancellationToken cancellationToken = default);
+}
+
 public sealed class MemoryRefreshRequest
 {
     public string UserId { get; init; } = string.Empty;

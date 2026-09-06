@@ -55,6 +55,8 @@ public sealed class AgentRequest
     /// </summary>
     public string WorkId { get; set; }
 
+    public string SessionId { get; set; } = string.Empty;
+
     /// <summary>
     /// 发起请求的用户标识
     /// </summary>

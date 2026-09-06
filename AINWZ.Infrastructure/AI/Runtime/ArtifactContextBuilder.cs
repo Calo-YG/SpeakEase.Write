@@ -34,17 +34,25 @@ public sealed class ArtifactContextBuilder
             Artifact = dependency,
             Prefix = $"\n\n[Dependency artifact: {dependency.StepId}]\nSummary: "
         }).ToList();
+        var requiredPrefixLength = metadata.Sum(x => x.Prefix.Length);
+        if (aggregateBudget < requiredPrefixLength)
+            return userMessage;
+
         var builder = new StringBuilder(userMessage);
         var remainingBudget = aggregateBudget;
         var remainingDependencies = metadata.Count;
-        foreach (var item in metadata)
+        for (var index = 0; index < metadata.Count; index++)
         {
-            if (remainingBudget < item.Prefix.Length)
-                break;
+            var item = metadata[index];
 
             builder.Append(item.Prefix);
             remainingBudget -= item.Prefix.Length;
-            var summaryBudget = Math.Max(0, remainingBudget / remainingDependencies);
+            var futurePrefixLength = metadata
+                .Skip(index + 1)
+                .Sum(x => x.Prefix.Length);
+            var summaryBudget = Math.Max(
+                0,
+                (remainingBudget - futurePrefixLength) / remainingDependencies);
             var summary = Truncate(item.Artifact.Summary, summaryBudget);
             builder.Append(summary);
             remainingBudget -= summary.Length;

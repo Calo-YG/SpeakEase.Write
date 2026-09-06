@@ -6,6 +6,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Application.Abstractions.AI;
+using SpeakEase.Write.Application.Abstractions.Story;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Contract;
 using SpeakEase.Write.Infrastructure.AI.Agents;
@@ -25,11 +26,13 @@ public sealed class CreationOrchestrator(
     IAgentRunStore runStore = null,
     PlanCompiler planCompiler = null,
     IAgentRuntimeRunner runtimeRunner = null,
-    ArtifactContextBuilder artifactContextBuilder = null) : IAgentOrchestrator
+    ArtifactContextBuilder artifactContextBuilder = null,
+    PromptCompiler promptCompiler = null,
+    ICharacterRuntimeQueue characterRuntimeQueue = null) : IAgentOrchestrator
 {
-    private readonly PromptComposer _promptComposer = new();
     private readonly PlanCompiler _planCompiler = planCompiler ?? new PlanCompiler();
     private readonly ArtifactContextBuilder _artifactContextBuilder = artifactContextBuilder ?? new ArtifactContextBuilder();
+    private readonly PromptCompiler _promptCompiler = promptCompiler ?? new PromptCompiler(new PromptProfileCatalog());
     // 执行完整的 Agent 管线：LLM 意图路由 → 逐个 Agent 执行 → 流式返回 chunk
     public IAsyncEnumerable<AgentStreamChunk> ExecuteAsync(
         string workId,
@@ -163,6 +166,100 @@ public sealed class CreationOrchestrator(
             userMessage,
             cancellationToken);
 
+        if (useAgentRuntime && runtimeRunner is not null)
+        {
+            var runtimeSteps = plan.Steps.Select(planStep =>
+            {
+                var agent = agentList.First(x => x.Name == planStep.AgentName);
+                if (agent is not AgentBase runtimeAgent)
+                    throw new InvalidOperationException($"Agent '{agent.Name}' does not expose a Runtime definition.");
+                var meta = agent.Metadata;
+                return new RuntimePlanStep
+                {
+                    Id = planStep.Id,
+                    DependsOn = planStep.DependsOn,
+                    ContentType = meta.ContentType ?? "plain",
+                    CreateRequest = runtimeArtifacts =>
+                    {
+                        var dependencyArtifacts = planStep.DependsOn
+                            .Select(dependencyId => runtimeArtifacts.TryGetValue(dependencyId, out var artifact)
+                                ? new AgentArtifact
+                                {
+                                    Id = $"{artifact.RunId}:{artifact.StepId}",
+                                    RunId = artifact.RunId,
+                                    StepId = artifact.StepId,
+                                    ContentType = artifact.ContentType,
+                                    Summary = artifact.Summary,
+                                    Content = artifact.Content,
+                                    EstimatedTokens = artifact.EstimatedTokens
+                                }
+                                : null)
+                            .Where(artifact => artifact is not null)
+                            .ToList();
+                        var agentRequest = CreateAgentRequest(
+                            runtimeRequest,
+                            planStep,
+                            agent,
+                            meta,
+                            sharedContext,
+                            dependencyArtifacts,
+                            llmContext,
+                            requestedMaxTokens,
+                            requestedTemperature,
+                            maxIterations,
+                            userMessage,
+                            runStore);
+                        return runtimeAgent.CreateRuntimeRequest(
+                            agentRequest,
+                            enableDynamicToolExposure,
+                            cancellationToken);
+                    }
+                };
+            }).ToArray();
+
+            await foreach (var runtimeEvent in runtimeRunner.RunPlanAsync(new RuntimePlanRequest
+            {
+                Context = new RunContext
+                {
+                    RunId = runtimeRequest.RunId,
+                    UserId = sharedContext.UserId,
+                    WorkId = workId,
+                    SessionId = sessionId,
+                    CancellationToken = cancellationToken
+                },
+                Steps = runtimeSteps,
+                // AgentApplication persists the projected stream with the run's global sequence.
+                PublishEvents = false
+            }, cancellationToken))
+            {
+                if (runtimeEvent.Type == "step_completed" && runtimeEvent.Payload is AgentResponse stepResponse)
+                {
+                    await QueueCharacterRefreshAsync(
+                        runtimeRequest,
+                        runtimeEvent.StepId,
+                        sharedContext.UserId,
+                        stepResponse);
+                }
+
+                if (runtimeEvent.Chunk is not null)
+                {
+                    yield return runtimeEvent.Chunk;
+                    continue;
+                }
+
+                yield return new AgentStreamChunk
+                {
+                    RunId = runtimeEvent.RunId,
+                    StepId = runtimeEvent.StepId,
+                    Sequence = runtimeEvent.Sequence,
+                    Type = "meta",
+                    ContentType = "system",
+                    Content = JsonHelper.Serialize(new { stage = runtimeEvent.Type })
+                };
+            }
+            yield break;
+        }
+
         // 步骤4：按计划顺序逐个执行 Agent，并按 DependsOn 注入前置 Artifact
         var artifactsByStep = new Dictionary<string, AgentArtifact>(StringComparer.OrdinalIgnoreCase);
         var executedAgentCount = 0;
@@ -211,43 +308,19 @@ public sealed class CreationOrchestrator(
                 .Select(dependencyId => artifactsByStep.TryGetValue(dependencyId, out var artifact) ? artifact : null)
                 .Where(artifact => artifact is not null)
                 .ToList();
-            var systemPrompt = _promptComposer.Compose(agent.BuildPromptProfile());
-            var resolvedMaxTokens = ResolveMaxTokens(
-                meta.DefaultParameters.MaxTokens,
-                requestedMaxTokens,
-                llmContext.MaxOutputTokens);
-            var fixedRequestTokens = EstimateConservativeTokens(agentHistory)
-                + EstimateConservativeTokens(systemPrompt)
-                + EstimateConservativeTokens(userMessage);
-            var dependencyTokenBudget = Math.Max(
-                0,
-                llmContext.ContextWindow - resolvedMaxTokens - fixedRequestTokens - 8);
-            var chainMessage = _artifactContextBuilder.Build(
-                userMessage,
+            var request = CreateAgentRequest(
+                runtimeRequest,
+                planStep,
+                agent,
+                meta,
+                sharedContext,
                 dependencyArtifacts,
-                dependencyTokenBudget);
-
-            var request = new AgentRequest
-            {
-                RunId = runtimeRequest.RunId,
-                StepId = planStep.Id,
-                UserMessage = chainMessage,
-                SystemPrompt = systemPrompt,
-                Model = llmContext.Model,
-                MaxIterations = ResolveMaxIterations(maxIterations),
-                Temperature = requestedTemperature ?? meta.DefaultParameters.Temperature,
-                TopP = meta.DefaultParameters.TopP,
-                FrequencyPenalty = meta.DefaultParameters.FrequencyPenalty,
-                PresencePenalty = meta.DefaultParameters.PresencePenalty,
-                MaxTokens = resolvedMaxTokens,
-                ContextWindowTokens = llmContext.ContextWindow,
-                ConversationHistory = agentHistory,
-                WorkId = workId,
-                UserId = sharedContext.UserId,
-                SkillName = runtimeRequest.SkillName,
-                EnableAutoToolDispatch = runtimeRequest.EnableAutoToolDispatch,
-                Journal = runStore
-            };
+                llmContext,
+                requestedMaxTokens,
+                requestedTemperature,
+                maxIterations,
+                userMessage,
+                runStore);
 
             // 通过流式枚举器逐块输出 Agent 执行结果
             var stepStopwatch = Stopwatch.StartNew();
@@ -325,6 +398,11 @@ public sealed class CreationOrchestrator(
                     artifact.EstimatedTokens,
                     CancellationToken.None);
             }
+            await QueueCharacterRefreshAsync(
+                runtimeRequest,
+                planStep.Id,
+                sharedContext.UserId,
+                finalResponse);
         }
 
         if (executedAgentCount == 0)
@@ -421,6 +499,99 @@ public sealed class CreationOrchestrator(
             candidates.Add(configuredMaxTokens);
 
         return candidates.Count == 0 ? 2048 : candidates.Min();
+    }
+
+    private async Task QueueCharacterRefreshAsync(
+        AgentRuntimeRequest runtimeRequest,
+        string stepId,
+        string userId,
+        AgentResponse response)
+    {
+        if (characterRuntimeQueue is null || response?.StopReason != "completed")
+            return;
+
+        var chapterResult = response.ToolResults?.LastOrDefault(result =>
+            result.Success && string.Equals(result.ToolName, "save_chapter_content", StringComparison.Ordinal));
+        if (chapterResult?.ExtraData is null ||
+            !chapterResult.ExtraData.TryGetValue("chapterId", out var chapterId) ||
+            !chapterResult.ExtraData.TryGetValue("content", out var chapterContent) ||
+            string.IsNullOrWhiteSpace(chapterContent))
+        {
+            return;
+        }
+
+        await characterRuntimeQueue.EnqueueAsync(new CharacterStateRefreshRequest
+        {
+            UserId = userId,
+            WorkId = runtimeRequest.WorkId,
+            SourceRunId = runtimeRequest.RunId,
+            SourceChapterId = chapterId,
+            SourceArtifactId = $"{runtimeRequest.RunId}:{stepId}",
+            ChapterContent = chapterContent
+        }, CancellationToken.None);
+    }
+
+    private AgentRequest CreateAgentRequest(
+        AgentRuntimeRequest runtimeRequest,
+        AgentPlanStep planStep,
+        INovelAgent agent,
+        AgentMetadata meta,
+        AgentContext sharedContext,
+        IReadOnlyList<AgentArtifact> dependencyArtifacts,
+        IOpenAIContext resolvedLlmContext,
+        int? requestedMaxTokens,
+        double? requestedTemperature,
+        int maxIterations,
+        string userMessage,
+        IAgentRunStore journal)
+    {
+        var agentHistory = DeriveAgentConversationHistory(sharedContext.ConversationHistory, meta);
+        var descriptor = (agent as IAgentDefinition)?.Descriptor;
+        var systemPrompt = _promptCompiler.Compile(new PromptCompileRequest
+        {
+            ProfileKey = descriptor?.PromptProfileKey ?? $"novel.{agent.Name}",
+            // 当前请求已作为 L0 UserMessage 传入，避免再复制进 System Prompt 浪费上下文预算。
+            TaskObjective = string.Empty,
+            Capabilities = descriptor?.ToolGroups ?? Array.Empty<string>(),
+            FallbackProfile = agent.BuildPromptProfile()
+        });
+        var resolvedMaxTokens = ResolveMaxTokens(
+            meta.DefaultParameters.MaxTokens,
+            requestedMaxTokens,
+            resolvedLlmContext.MaxOutputTokens);
+        var fixedRequestTokens = EstimateConservativeTokens(agentHistory)
+            + EstimateConservativeTokens(systemPrompt)
+            + EstimateConservativeTokens(userMessage);
+        var dependencyTokenBudget = Math.Max(
+            0,
+            resolvedLlmContext.ContextWindow - resolvedMaxTokens - fixedRequestTokens - 8);
+        var chainMessage = _artifactContextBuilder.Build(
+            userMessage,
+            dependencyArtifacts,
+            dependencyTokenBudget);
+
+        return new AgentRequest
+        {
+            RunId = runtimeRequest.RunId,
+            StepId = planStep.Id,
+            UserMessage = chainMessage,
+            SystemPrompt = systemPrompt,
+            Model = resolvedLlmContext.Model,
+            MaxIterations = ResolveMaxIterations(maxIterations),
+            Temperature = requestedTemperature ?? meta.DefaultParameters.Temperature,
+            TopP = meta.DefaultParameters.TopP,
+            FrequencyPenalty = meta.DefaultParameters.FrequencyPenalty,
+            PresencePenalty = meta.DefaultParameters.PresencePenalty,
+            MaxTokens = resolvedMaxTokens,
+            ContextWindowTokens = resolvedLlmContext.ContextWindow,
+            ConversationHistory = agentHistory,
+            WorkId = runtimeRequest.WorkId,
+            SessionId = runtimeRequest.SessionId,
+            UserId = sharedContext.UserId,
+            SkillName = runtimeRequest.SkillName,
+            EnableAutoToolDispatch = runtimeRequest.EnableAutoToolDispatch,
+            Journal = journal
+        };
     }
 
     // 这里不追求 tokenizer 精度，而是以 ASCII/中文统一 1.5 token/char 的最坏情况估算。

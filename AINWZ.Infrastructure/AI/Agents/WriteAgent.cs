@@ -10,8 +10,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 写作Agent：负责章节正文的创作、续写、润色和扩写
 // 核心能力：文学性创作，严格遵循已有设定，管理伏笔埋设与回收、时间线维护
-public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<WriteAgent> logger)
-    : AgentBase(llm, tools, logger), IWriteAgent
+public sealed class WriteAgent(IChatCompatible llm, IToolCapable tools, ILogger<WriteAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), IWriteAgent
 {
     public override string Name => "write";
 

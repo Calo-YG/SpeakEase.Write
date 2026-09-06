@@ -2,7 +2,7 @@
 
 ## Status
 
-In Progress
+Accepted — Runtime Phase 1 Implemented（2026-09-06）
 
 ## Date
 
@@ -485,20 +485,32 @@ SSE 断开只代表投影连接关闭，不自动判定 Run 成功。Runtime 必
 
 ## 11. 当前实现对照
 
-本次执行已完成以下基础能力：
+截至 2026-09-04，已完成以下能力：
 
 - `IAgentLoop`、`AgentEvent`、`AgentLoopOptions` 和 AgentLoop 预算边界；
 - `AgentRun`、`AgentRunEvent`、`AgentArtifact`、`AgentToolCall` 数据模型，其中 Run 去重和事件持久化已接入 Chat；
-- `PlanResolver` 线性 Plan 校验，以及多 Agent 之间的结构化 Artifact 传递；
+- `AgentRuntimeRunner.RunPlanAsync` 已接管完整 Plan；`LinearStepScheduler` 校验 Step、依赖和环，并以运行级单调序列驱动 Step 生命周期；
+- 多 Agent 通过受预算约束的结构化 Artifact 传递依赖，分配摘要预算前会保留所有依赖标题；
 - `MemoryFact`、会话摘要覆盖范围、版本化 Snapshot 和项目事实读取/Upsert；
-- Tool/Skill 兼容入口、`LegacySkillResolverAdapter`、取消/超时/最大 Tool 次数处理；
+- Tool/Skill 兼容入口、受控目录 Skill Catalog、`SKILL.md` 正文解析、取消/超时/最大 Tool 次数处理；
 - Chat 重试的 `IdempotencyKey`/`ClientMessageId` 去重和最终响应持久化；
-- `IToolExecutionJournal`、ToolCall 执行租约、完成结果 Replay 和并发唯一键竞争处理；
-- 记忆刷新后台队列按会话合并最新请求，回滚时同步裁剪未来轮次事实；
-- SSE Chunk 统一携带 RunId、StepId 和运行级单调 Sequence，断流取消和超时会持久化 Run 终态。
+- `IToolExecutionJournal`、ToolCall 执行租约、完成结果 Replay 和并发唯一键竞争处理；幂等范围为 `(RunId, StepId, ToolCallId)`；
+- Checkpoint 使用版本并发 Token 与重试保护，旧版本不能覆盖新版本；
+- 记忆刷新使用进程内合并队列，回滚时同步裁剪未来轮次事实，最终失败标记 Snapshot 为 `stale`；
+- SSE Chunk 统一携带 RunId、StepId 和运行级单调 Sequence，断流、Plan 取消和超时会生成并持久化终态；
+- `CreationRuntimeFacade` 已支持 `legacy | agent-loop` 双模式；开发环境进入 `RuntimeHost/Runner`，生产环境默认保持兼容模式；
+- Chat 与 StreamChat 已共用规范化、Run、事件、终态和消息持久化链路；
+- `PromptCompiler` 已进入生产编排路径；当前用户输入只保留在 L0，不重复写入 System Prompt；
+- 上下文已按 L0-L4 组装，并按 L4 → L2 → 完整 L1 轮次的顺序裁剪；同时间戳消息使用稳定次序；
+- 章节保存成功后会发布人物刷新请求，后台受约束提取器从正文生成带证据的状态提案；
+- 人物 Event 与 Snapshot 使用事务 CAS，冲突后重读并 rebase；已确认 Snapshot 和 `plotHooks` 通过独立 `[Character Runtime]` L3 层进入后续写作上下文；
+- Tool 代码和契约全部保留，新 Runtime 每个 Step 默认最多向模型暴露 12 个 Tool，高风险 Tool 默认不暴露。
 
-仍需后续阶段完成的事项：
+保留到 Runtime Phase 2 的事项：
 
-- 将 `CreationOrchestrator` 进一步收敛为 `CreationRuntimeFacade`，把路由和上下文组装拆到独立组件；
+- 将路由与 Plan 编译完全移出兼容 `CreationOrchestrator`，使其最终只保留旧接口映射；
 - 将事实提取从当前显式 `[[fact:category:key=value]]` 兼容标记升级为受约束的事实提取器；
-- 增加未完成 Step 的运行恢复，以及取消、幂等冲突和数据库并发场景的集成测试。
+- 在现有 Checkpoint/Tool Replay 基础上增加对外的 interrupt/resume 命令端点；
+- 将 MemoryRefresh 从当前进程内合并队列升级为持久 Outbox/外部队列；当前实现不保证进程重启后继续未完成刷新；
+- 增加跨进程恢复、运行租约、数据库故障和真实 PostgreSQL 并发场景的集成测试；
+- 在兼容性与观测数据稳定后，将生产配置从 `legacy` 默认值切换为 `agent-loop`；开发环境当前已启用新链路。

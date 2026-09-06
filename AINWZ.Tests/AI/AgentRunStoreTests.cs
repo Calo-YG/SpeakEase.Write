@@ -102,7 +102,7 @@ public sealed class AgentRunStoreTests
         });
         var terminal = await db.AgentRuns.SingleAsync();
         terminal.UpdateBy = "previous-user";
-        terminal.UpdateAt = DateTime.Now.AddMinutes(-5);
+        terminal.UpdateAt = DateTime.UtcNow.AddMinutes(-5);
         await db.SaveChangesAsync();
         var failed = await db.AgentRuns.AsNoTracking().SingleAsync();
 
@@ -151,7 +151,7 @@ public sealed class AgentRunStoreTests
         await store.AppendEventAsync(first.RunId, "step-old", 1, "content", new { Content = "old" });
         var terminal = await db.AgentRuns.SingleAsync();
         terminal.UpdateBy = "previous-user";
-        terminal.UpdateAt = DateTime.Now.AddMinutes(-5);
+        terminal.UpdateAt = DateTime.UtcNow.AddMinutes(-5);
         await db.SaveChangesAsync();
         var failed = await db.AgentRuns.AsNoTracking().SingleAsync();
 
@@ -296,6 +296,34 @@ public sealed class AgentRunStoreTests
         Assert.False(conflictingLease.ShouldExecute);
         Assert.Equal("tool_call_identity_conflict", conflictingLease.ReplayResult.ErrorCode);
         Assert.True(secondSlotLease.ShouldExecute);
+        Assert.Equal(2, await db.AgentToolCalls.CountAsync());
+    }
+
+    [Fact]
+    public async Task ToolJournal_UsesIndependentExecutionSlotsForEachPlanStep()
+    {
+        await using var db = TestDb.Create();
+        var store = new AgentRunStore(
+            db,
+            new TestUserContext(),
+            new SequentialIdGenerator());
+        var run = await store.StartAsync("work-1", "session-1", "idem-multi-step", "client-tool");
+        var firstCall = new ToolCall
+        {
+            Id = "model-call-1",
+            Function = new FunctionCallDetail { Name = "save", Arguments = "{\"value\":1}" }
+        };
+        var secondCall = new ToolCall
+        {
+            Id = "model-call-2",
+            Function = new FunctionCallDetail { Name = "update", Arguments = "{\"value\":2}" }
+        };
+
+        var firstLease = await store.BeginAsync(run.RunId, "step-1", "0:0", firstCall);
+        var secondLease = await store.BeginAsync(run.RunId, "step-2", "0:0", secondCall);
+
+        Assert.True(firstLease.ShouldExecute);
+        Assert.True(secondLease.ShouldExecute);
         Assert.Equal(2, await db.AgentToolCalls.CountAsync());
     }
 

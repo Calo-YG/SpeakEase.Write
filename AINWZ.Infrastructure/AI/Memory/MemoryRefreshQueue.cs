@@ -99,6 +99,7 @@ public sealed class MemoryRefreshQueue(
                         request.SessionId,
                         request.TurnNumber,
                         request.RunId);
+                    await MarkStaleAsync(request);
                 }
             }
         }
@@ -112,6 +113,26 @@ public sealed class MemoryRefreshQueue(
         }
 
         await base.StopAsync(cancellationToken);
+    }
+
+    private async Task MarkStaleAsync(MemoryRefreshRequest request)
+    {
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var handler = scope.ServiceProvider.GetService<IMemoryRefreshFailureHandler>();
+            if (handler is not null)
+                await handler.MarkStaleAsync(request, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to mark memory refresh as stale: WorkId={WorkId}, SessionId={SessionId}, Turn={Turn}",
+                request.WorkId,
+                request.SessionId,
+                request.TurnNumber);
+        }
     }
 
     private readonly record struct MemoryRefreshKey(

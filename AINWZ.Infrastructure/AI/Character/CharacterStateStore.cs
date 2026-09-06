@@ -75,6 +75,28 @@ public sealed class CharacterStateStore(
         return entity is null ? null : ToSnapshotData(entity);
     }
 
+    public async Task<IReadOnlyList<CharacterStateSnapshotData>> GetWorkSnapshotsAsync(
+        string userId,
+        string workId,
+        CancellationToken cancellationToken = default)
+        => await _db.CharacterStateSnapshots
+            .AsNoTracking()
+            .Where(x => x.UserId == userId && x.WorkId == workId && x.Status == "confirmed")
+            .OrderBy(x => x.CharacterId)
+            .Take(64)
+            .Select(x => new CharacterStateSnapshotData
+            {
+                UserId = x.UserId,
+                Id = x.Id,
+                WorkId = x.WorkId,
+                CharacterId = x.CharacterId,
+                BasedOnEventId = x.BasedOnEventId,
+                StateJson = x.StateJson,
+                Version = x.Version,
+                Status = x.Status
+            })
+            .ToListAsync(cancellationToken);
+
     public async Task SaveSnapshotAsync(CharacterStateSnapshotData snapshot, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -85,7 +107,7 @@ public sealed class CharacterStateStore(
         if (entity is not null && entity.Version >= snapshot.Version)
             return;
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         if (entity is null)
         {
             entity = new CharacterStateSnapshotEntity
@@ -120,7 +142,7 @@ public sealed class CharacterStateStore(
         if (existing is not null)
             return existing.Id;
 
-        var now = DateTime.Now;
+        var now = DateTime.UtcNow;
         var entity = new CharacterStateEventEntity
         {
             Id = _idGenerator.NextIdString(),
@@ -145,6 +167,78 @@ public sealed class CharacterStateStore(
         return entity.Id;
     }
 
+    public async Task<bool> TryCommitStateChangeAsync(
+        CharacterStateEventData stateEvent,
+        CharacterStateSnapshotData snapshot,
+        long expectedVersion,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(stateEvent);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var userId = ResolveUserId(stateEvent.UserId);
+        var existingEvent = await _db.CharacterStateEvents.AsNoTracking().FirstOrDefaultAsync(x =>
+            x.UserId == userId && x.WorkId == stateEvent.WorkId && x.CharacterId == stateEvent.CharacterId &&
+            x.SourceRunId == stateEvent.SourceRunId && x.SourceEventKey == stateEvent.SourceEventKey,
+            cancellationToken);
+        if (existingEvent is not null)
+            return true;
+
+        var now = DateTime.UtcNow;
+        var eventId = _idGenerator.NextIdString();
+        var eventEntity = CreateEventEntity(stateEvent, userId, eventId, now);
+        if (!_db.Database.IsRelational())
+        {
+            var snapshotEntity = await _db.CharacterStateSnapshots.FirstOrDefaultAsync(x =>
+                x.UserId == userId && x.WorkId == snapshot.WorkId && x.CharacterId == snapshot.CharacterId,
+                cancellationToken);
+            if (snapshotEntity is null || snapshotEntity.Version != expectedVersion)
+                return false;
+
+            ApplySnapshot(snapshotEntity, snapshot, eventId, userId, now);
+            _db.CharacterStateEvents.Add(eventEntity);
+            await _db.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+
+        await using var transaction = await _db.Database.BeginTransactionAsync(cancellationToken);
+        var affected = await _db.CharacterStateSnapshots
+            .Where(x => x.UserId == userId && x.WorkId == snapshot.WorkId &&
+                        x.CharacterId == snapshot.CharacterId && x.Version == expectedVersion)
+            .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.BasedOnEventId, eventId)
+                    .SetProperty(x => x.StateJson, snapshot.StateJson ?? string.Empty)
+                    .SetProperty(x => x.Version, snapshot.Version)
+                    .SetProperty(x => x.Status, snapshot.Status ?? "confirmed")
+                    .SetProperty(x => x.UpdateBy, userId)
+                    .SetProperty(x => x.UpdateAt, now),
+                cancellationToken);
+        if (affected != 1)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return false;
+        }
+
+        _db.CharacterStateEvents.Add(eventEntity);
+        try
+        {
+            await _db.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return true;
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _db.Detach(eventEntity);
+            var wonBySameEvent = await _db.CharacterStateEvents.AsNoTracking().AnyAsync(x =>
+                x.UserId == userId && x.WorkId == stateEvent.WorkId && x.CharacterId == stateEvent.CharacterId &&
+                x.SourceRunId == stateEvent.SourceRunId && x.SourceEventKey == stateEvent.SourceEventKey,
+                cancellationToken);
+            if (wonBySameEvent)
+                return true;
+            throw;
+        }
+    }
+
     public async Task SaveGrowthProposalAsync(CharacterGrowthProposalData proposal, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(proposal);
@@ -160,9 +254,9 @@ public sealed class CharacterStateStore(
             Severity = proposal.Severity ?? "normal",
             Status = proposal.Status ?? "needs_review",
             CreateBy = userId,
-            CreateAt = DateTime.Now,
+            CreateAt = DateTime.UtcNow,
             UpdateBy = userId,
-            UpdateAt = DateTime.Now
+            UpdateAt = DateTime.UtcNow
         };
         _db.CharacterGrowthProposals.Add(entity);
         await _db.SaveChangesAsync(cancellationToken);
@@ -180,6 +274,46 @@ public sealed class CharacterStateStore(
             Version = entity.Version,
             Status = entity.Status
         };
+
+    private static CharacterStateEventEntity CreateEventEntity(
+        CharacterStateEventData stateEvent,
+        string userId,
+        string eventId,
+        DateTime now)
+        => new()
+        {
+            Id = eventId,
+            UserId = userId,
+            WorkId = stateEvent.WorkId,
+            CharacterId = stateEvent.CharacterId,
+            SourceRunId = stateEvent.SourceRunId,
+            SourceChapterId = stateEvent.SourceChapterId ?? string.Empty,
+            SourceEventKey = stateEvent.SourceEventKey ?? string.Empty,
+            EventType = stateEvent.EventType ?? string.Empty,
+            EvidenceJson = stateEvent.EvidenceJson ?? string.Empty,
+            ChangesJson = stateEvent.ChangesJson ?? string.Empty,
+            Confidence = stateEvent.Confidence,
+            Version = stateEvent.Version,
+            CreateBy = userId,
+            CreateAt = now,
+            UpdateBy = userId,
+            UpdateAt = now
+        };
+
+    private static void ApplySnapshot(
+        CharacterStateSnapshotEntity entity,
+        CharacterStateSnapshotData snapshot,
+        string eventId,
+        string userId,
+        DateTime now)
+    {
+        entity.BasedOnEventId = eventId;
+        entity.StateJson = snapshot.StateJson ?? string.Empty;
+        entity.Version = snapshot.Version;
+        entity.Status = snapshot.Status ?? "confirmed";
+        entity.UpdateBy = userId;
+        entity.UpdateAt = now;
+    }
 
     private string ResolveUserId(string userId)
         => string.IsNullOrWhiteSpace(userId) ? _userContext.UserId : userId;

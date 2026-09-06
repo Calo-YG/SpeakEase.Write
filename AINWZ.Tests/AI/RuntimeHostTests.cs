@@ -84,6 +84,48 @@ public sealed class RuntimeHostTests
         Assert.Empty(sink.Events);
     }
 
+    [Fact]
+    public void Runner_RejectsRunContextThatDoesNotMatchLoopRequest()
+    {
+        var runner = new AgentRuntimeRunner(new RuntimeHost(new FakeAgentLoop(Array.Empty<AgentEvent>())));
+        var request = CreateRequest();
+        request = new RuntimeRunRequest
+        {
+            LoopRequest = request.LoopRequest,
+            Context = new RunContext { RunId = "another-run", StepId = "step-1" }
+        };
+
+        Assert.Throws<InvalidOperationException>(() => runner.RunAsync(request));
+    }
+
+    [Fact]
+    public async Task RunAsync_RequestCancellation_PersistsCancelledTerminalBeforeRethrowing()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var sink = new CapturingEventSink();
+        var host = new RuntimeHost(new CancellingAgentLoop(), sink);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            CollectAsync(host.RunAsync(CreateRequest(), cancellation.Token)));
+
+        Assert.Equal(RuntimeState.Cancelled, host.State);
+        Assert.Equal("run_cancelled", sink.Events[^1].Type);
+    }
+
+    [Fact]
+    public async Task RunAsync_InternalCancellation_EmitsTimedOutTerminal()
+    {
+        var sink = new CapturingEventSink();
+        var host = new RuntimeHost(new CancellingAgentLoop(), sink);
+
+        var events = await CollectAsync(host.RunAsync(CreateRequest()));
+
+        Assert.Equal(RuntimeState.TimedOut, host.State);
+        Assert.Equal("run_timed_out", events[^1].Type);
+        Assert.Equal("timed_out", Assert.IsType<AgentResponse>(events[^1].Payload).StopReason);
+    }
+
     private static RuntimeRunRequest CreateRequest()
     {
         return new RuntimeRunRequest
@@ -116,6 +158,20 @@ public sealed class RuntimeHostTests
                 await Task.Yield();
                 yield return item;
             }
+        }
+    }
+
+    private sealed class CancellingAgentLoop : IAgentLoop
+    {
+        public async IAsyncEnumerable<AgentEvent> RunAsync(
+            AgentLoopRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            await Task.Yield();
+            throw new OperationCanceledException(cancellationToken);
+#pragma warning disable CS0162
+            yield break;
+#pragma warning restore CS0162
         }
     }
 

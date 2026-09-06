@@ -2,7 +2,7 @@
 
 ## 状态
 
-Draft（用于评审，不代表已批准实施）
+Accepted — Runtime Phase 1 Implemented（2026-09-06）
 
 ## 目标
 
@@ -1006,6 +1006,49 @@ SkillFindTool
 - 图谱展示可以由关系事实重建，低层图谱 Tool 不参与普通写作决策；
 - 重试和恢复不会重复执行有副作用的 Tool；
 - 旧 API、SSE、Skill 和历史 Run 仍可通过兼容层执行。
+
+## 十三、2026-09-04 实施状态与边界
+
+当前实现已经形成可运行的 `AgentRuntime + AgentLoop` 核心链路：
+
+```mermaid
+flowchart LR
+    Chat[现有 Chat API / SSE] --> Facade[CreationRuntimeFacade]
+    Facade --> Plan[PlanCompiler]
+    Plan --> Runner[AgentRuntimeRunner.RunPlanAsync]
+    Runner --> Scheduler[LinearStepScheduler]
+    Scheduler --> Host[RuntimeHost]
+    Host --> Loop[AgentLoop]
+    Loop --> Tool[兼容 Tool + Journal]
+    Loop --> Skill[受控 Skill Catalog]
+    Runner --> State[(Checkpoint / Event / Artifact)]
+    Tool --> CharacterQueue[章节完成事件]
+    CharacterQueue --> CharacterRuntime[Character Runtime CAS]
+    CharacterRuntime --> CharacterContext[Character Runtime L3]
+    CharacterContext --> Loop
+```
+
+已经完成：
+
+- Runner 统一调度完整 Plan，校验依赖与环，使用运行级单调事件序列，并保存 Step Checkpoint 和 Artifact；
+- Tool 名称、Schema、返回值与 Guard 保持不变，Tool 幂等键按 `(RunId, StepId, ToolCallId)` 隔离；
+- Descriptor 驱动最小 Tool 暴露，空能力组 fail-closed，`MaxTools=0` 不暴露任何 Tool，高风险能力默认关闭；
+- PromptCompiler 进入真实执行路径，Agent Profile 只描述身份、目标、质量标准和能力，不复制当前用户输入，也不规定固定 Tool 顺序；
+- Skill Catalog 从 ContentRoot 下的 `wwwroot/skills/**/SKILL.md` 加载，Runtime Resolver 注入正文而不是仅注入描述；
+- 章节 Artifact 触发后台人物提案抽取，证据必须出现在正文中；Event 与 Snapshot 事务 CAS，冲突后 rebase；
+- 已确认人物快照和剧情钩子通过 `[Character Runtime]` L3 动态上下文反馈给下一轮 Agent；
+- MemoryRefresh 与 Chat 提交解耦，失败重试并标记 `stale`；Snapshot、历史消息和 Checkpoint 都有版本或稳定顺序保护；
+- 现有 API、SSE 类型、Tool/Skill 入口和历史数据库表保持兼容，迁移只扩展 ToolCall 唯一索引。
+
+明确保留到下一阶段：
+
+- MemoryRefresh 当前是进程内合并队列，不是 durable outbox；进程重启可能丢失尚未处理的刷新请求；
+- Checkpoint 和 Tool Replay 已具备内部恢复基础，但尚无外部 `interrupt/resume` API、跨实例运行租约和自动接管；
+- Scheduler 当前按依赖顺序串行执行受约束 DAG，不并行调度无副作用 Step；
+- 生产配置仍默认 `legacy` 以便灰度回滚，开发环境启用 `agent-loop`；切换生产默认值需要兼容性与运行指标验收；
+- 真实 PostgreSQL 的多实例故障注入、进程崩溃恢复和 durable queue 集成测试尚待补充。
+
+这些边界是显式阶段划分，不代表上述能力已经由当前实现提供。
 
 ## 参考项目
 

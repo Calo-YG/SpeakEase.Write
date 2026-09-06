@@ -9,8 +9,8 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 
 // 文风审查Agent：专精于识别和消除"AI生成文本"的痕迹，逐段审查写作文本
 // 核心能力：按五个维度（用词/心理/对话/环境/句式）扫描AI味问题，输出结构化审查报告
-public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogger<CritiqueAgent> logger)
-    : AgentBase(llm, tools, logger), ICritiqueAgent
+public sealed class CritiqueAgent(IChatCompatible llm, IToolCapable tools, ILogger<CritiqueAgent> logger, ISkilCapable skills = null)
+    : AgentBase(llm, tools, logger, skills), ICritiqueAgent
 {
     public override string Name => "critique";
 

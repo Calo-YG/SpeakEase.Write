@@ -10,6 +10,7 @@ using SpeakEase.AI.Lib.Models;
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.AI.Lib.Runtime;
 using SpeakEase.Write.Application.Abstractions.AI;
+using SpeakEase.Write.Application.Abstractions.Story;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Agents;
 using SpeakEase.Write.Infrastructure.AI.Contract;
@@ -59,6 +60,56 @@ public sealed class CreationRuntimeFacadeTests
     }
 
     [Fact]
+    public async Task RuntimeAgent_DynamicExposure_DoesNotLeakToolsRegisteredByAnotherAgent()
+    {
+        var llm = new RuntimeModeLlm();
+        var tools = new ToolCapable(new ServiceCollection().BuildServiceProvider());
+        var first = new ToolScopedAgent("first", "get_first", llm, tools);
+        var second = new ToolScopedAgent("second", "get_second", llm, tools);
+        first.RegisterTools(tools);
+
+        await foreach (var _ in second.ExecuteRuntimeStreamAsync(new AgentRequest
+        {
+            RunId = "run-1",
+            StepId = "step-1",
+            UserMessage = "request",
+            Model = "test",
+            MaxIterations = 2,
+            MaxTokens = 128,
+            ContextWindowTokens = 4_096
+        }, new AgentRuntimeRunner(new RuntimeHost(new AgentLoop())), true, CancellationToken.None))
+        {
+        }
+
+        Assert.Equal(new[] { "get_second" }, llm.LastStreamToolNames);
+    }
+
+    [Fact]
+    public async Task RuntimeAgent_PreservesExplicitSkillResolution()
+    {
+        var llm = new RuntimeModeLlm();
+        var tools = new ToolCapable(new ServiceCollection().BuildServiceProvider());
+        var agent = new RuntimeBackedAgent(llm, tools, new StaticSkills());
+
+        await foreach (var _ in agent.ExecuteRuntimeStreamAsync(new AgentRequest
+        {
+            RunId = "run-1",
+            StepId = "step-1",
+            UserMessage = "request",
+            SkillName = "story-skill",
+            Model = "test",
+            MaxIterations = 2,
+            MaxTokens = 128,
+            ContextWindowTokens = 4_096
+        }, new AgentRuntimeRunner(new RuntimeHost(new AgentLoop())), false, CancellationToken.None))
+        {
+        }
+
+        Assert.Contains(llm.LastStreamMessages.OfType<SystemMessage>(), x =>
+            x.Content.Contains("[Resolved Skill: story-skill]") && x.Content.Contains("skill description"));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_ProjectsRunMetadataWithGlobalSequence()
     {
         var orchestrator = new CreationOrchestrator(
@@ -95,6 +146,36 @@ public sealed class CreationRuntimeFacadeTests
         Assert.Equal(
             Enumerable.Range(1, chunks.Count).Select(x => (long)x),
             chunks.Select(x => x.Sequence));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CompletedChapterArtifact_QueuesCharacterRefresh()
+    {
+        var queue = new CapturingCharacterRuntimeQueue();
+        var routerLlm = new PipelineRouterLlm();
+        var orchestrator = new CreationOrchestrator(
+            new CreationRouter(NullLogger<CreationRouter>.Instance),
+            new TestOpenAIContext(),
+            routerLlm,
+            new StaticContextBuilder(),
+            new INovelAgent[] { new ChapterSavingAgent() },
+            NullLogger<CreationOrchestrator>.Instance,
+            characterRuntimeQueue: queue);
+
+        await foreach (var _ in orchestrator.ExecuteAsync(new AgentRuntimeRequest
+        {
+            RunId = "run-1",
+            WorkId = "work-1",
+            SessionId = "session-1",
+            UserMessage = "写一章"
+        }))
+        {
+        }
+
+        var refresh = Assert.Single(queue.Requests);
+        Assert.Equal("chapter-1", refresh.SourceChapterId);
+        Assert.Equal("run-1", refresh.SourceRunId);
+        Assert.Contains("章节正文", refresh.ChapterContent);
     }
 
     private sealed class StaticContextBuilder : ICreationAgentContext
@@ -178,8 +259,62 @@ public sealed class CreationRuntimeFacadeTests
         }
     }
 
-    private sealed class RuntimeBackedAgent(IChatCompatible llm, IToolCapable tools)
-        : AgentBase(llm, tools, NullLogger<RuntimeBackedAgent>.Instance)
+    private sealed class ChapterSavingAgent : INovelAgent
+    {
+        public string Name => "write";
+        public string DisplayName => "write";
+        public string RouteDescription => "write";
+        public AgentMetadata Metadata { get; } = new()
+        {
+            ContentType = "chapter",
+            DefaultParameters = new AgentParameters(0.7, MaxTokens: 2048)
+        };
+        public string BuildPrompt() => "write";
+        public void RegisterTools(IToolCapable toolCapable) { }
+
+        public async IAsyncEnumerable<AgentStreamChunk> ExecuteStreamAsync(
+            AgentRequest request,
+            [EnumeratorCancellation] CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            yield return new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = new AgentResponse
+                {
+                    Content = "章节正文",
+                    StopReason = "completed",
+                    ToolResults = new List<ToolResult>
+                    {
+                        new()
+                        {
+                            Success = true,
+                            ToolName = "save_chapter_content",
+                            ExtraData = new Dictionary<string, string>
+                            {
+                                ["chapterId"] = "chapter-1",
+                                ["content"] = "章节正文"
+                            }
+                        }
+                    }
+                }
+            };
+        }
+    }
+
+    private sealed class CapturingCharacterRuntimeQueue : ICharacterRuntimeQueue
+    {
+        public List<CharacterStateRefreshRequest> Requests { get; } = new();
+
+        public ValueTask EnqueueAsync(CharacterStateRefreshRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RuntimeBackedAgent(IChatCompatible llm, IToolCapable tools, ISkilCapable skills = null)
+        : AgentBase(llm, tools, NullLogger<RuntimeBackedAgent>.Instance, skills)
     {
         public override string Name => "write";
         public override string DisplayName => "write";
@@ -217,6 +352,8 @@ public sealed class CreationRuntimeFacadeTests
     private sealed class RuntimeModeLlm : IChatCompatible
     {
         public int LastStreamToolCount { get; private set; }
+        public IReadOnlyList<string> LastStreamToolNames { get; private set; } = Array.Empty<string>();
+        public IReadOnlyList<ChatMessage> LastStreamMessages { get; private set; } = Array.Empty<ChatMessage>();
 
         public Task<LLMTurnResult> ChatAsync(
             LLMTurnContext context,
@@ -237,6 +374,8 @@ public sealed class CreationRuntimeFacadeTests
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             LastStreamToolCount = tools.Count;
+            LastStreamToolNames = tools.Select(x => x.Function.Name).ToArray();
+            LastStreamMessages = messages.ToArray();
             await Task.Yield();
             yield return new LLMTurnChunk
             {
@@ -251,6 +390,44 @@ public sealed class CreationRuntimeFacadeTests
                     Content = "runtime answer",
                     Model = context.Model,
                     Success = true
+                }
+            };
+        }
+    }
+
+    private sealed class StaticSkills : ISkilCapable
+    {
+        public IReadOnlyList<SkillDefinition> Skills { get; } = new[]
+        {
+            new SkillDefinition { Name = "story-skill", Description = "skill description", Path = "SKILL.md" }
+        };
+
+        public void RegiSkill(SkillDefinition skill) => throw new NotSupportedException();
+        public string BuildSkillPropmt() => string.Empty;
+    }
+
+    private sealed class ToolScopedAgent(
+        string name,
+        string toolName,
+        IChatCompatible llm,
+        IToolCapable tools) : AgentBase(llm, tools, NullLogger<ToolScopedAgent>.Instance)
+    {
+        public override string Name => name;
+        public override string DisplayName => name;
+        public override string BuildPrompt() => name;
+
+        protected override IEnumerable<ToolDefinition> GetToolDefinitions()
+        {
+            yield return new ToolDefinition
+            {
+                Function = new FunctionDefinition
+                {
+                    Name = toolName,
+                    Parameters = new FunctionParameters
+                    {
+                        Type = "object",
+                        Properties = new Dictionary<string, ParameterSchema>()
+                    }
                 }
             };
         }

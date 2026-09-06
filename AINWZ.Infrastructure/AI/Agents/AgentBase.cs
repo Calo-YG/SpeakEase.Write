@@ -12,32 +12,49 @@ namespace SpeakEase.Write.Infrastructure.AI.Agents;
 public abstract class AgentBase(
     IChatCompatible llm,
     IToolCapable tools,
-    ILogger logger) : INovelAgent, IAgentDefinition
+    ILogger logger,
+    ISkilCapable skills = null) : INovelAgent, IAgentDefinition
 {
     protected readonly IChatCompatible Llm = llm;
     protected readonly IToolCapable Tools = tools;
     protected readonly ILogger Logger = logger;
 
     private readonly AgentLoop _agentLoop = new();
+    private readonly ISkillResolver _skillResolver = skills is null ? null : new LegacySkillResolverAdapter(skills);
     private bool _toolsRegistered;
 
     public abstract string Name { get; }
     public abstract string DisplayName { get; }
     public abstract string BuildPrompt();
 
-    public virtual AgentDescriptor Descriptor => new()
+    public virtual AgentDescriptor Descriptor
     {
-        Name = Name,
-        DisplayName = DisplayName,
-        Domain = $"novel.{Name}",
-        OutputKind = Metadata.ContentType,
-        PromptProfileKey = $"novel.{Name}",
-        PolicyProfileKey = "default",
-        ToolGroups = Array.Empty<string>(),
-        MemoryScopes = Metadata.NeedsProjectMemory
-            ? new[] { "session", "project" }
-            : new[] { "session" }
-    };
+        get
+        {
+            var definitions = GetToolDefinitions().ToArray();
+            return new AgentDescriptor
+            {
+                Name = Name,
+                DisplayName = DisplayName,
+                Domain = $"novel.{Name}",
+                OutputKind = Metadata.ContentType,
+                PromptProfileKey = $"novel.{Name}",
+                PolicyProfileKey = "default",
+                ToolGroups = definitions
+                    .Select(ToolRegistry.Describe)
+                    .Select(x => x.Group)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToArray(),
+                PreferredTools = definitions
+                    .Select(x => x.Function?.Name)
+                    .Where(x => !string.IsNullOrWhiteSpace(x))
+                    .ToArray(),
+                MemoryScopes = Metadata.NeedsProjectMemory
+                    ? new[] { "session", "project" }
+                    : new[] { "session" }
+            };
+        }
+    }
 
     public virtual PromptProfile BuildPromptProfile() => new()
     {
@@ -96,6 +113,7 @@ public abstract class AgentBase(
             AgentName = Name,
             Llm = Llm,
             Tools = Tools,
+            SkillResolver = _skillResolver,
             Journal = request.Journal,
             Request = request
         }, cancellationToken))
@@ -122,11 +140,45 @@ public abstract class AgentBase(
             yield break;
         }
 
+        var runtimeRequest = CreateRuntimeRequest(request, enableDynamicToolExposure, cancellationToken);
+        await foreach (var runtimeEvent in runner.RunAsync(runtimeRequest, cancellationToken))
+        {
+            if (runtimeEvent.Chunk is not null)
+                yield return runtimeEvent.Chunk;
+        }
+    }
+
+    public RuntimeRunRequest CreateRuntimeRequest(
+        AgentRequest request,
+        bool enableDynamicToolExposure,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
         RegisterTools(Tools);
         var exposedTools = enableDynamicToolExposure ? SelectExposedTools() : Tools;
-        await foreach (var runtimeEvent in runner.RunAsync(new RuntimeRunRequest
+        var runtimeOptions = new AgentRuntimeOptions
         {
-            PublishEvents = false,
+            LoopOptions = new AgentLoopOptions
+            {
+                MaxIterations = request.MaxIterations,
+                MaxOutputTokens = request.MaxTokens ?? 2_048,
+                ContextWindowTokens = request.ContextWindowTokens > 0 ? request.ContextWindowTokens : 32_000
+            }
+        };
+        return new RuntimeRunRequest
+        {
+            PublishEvents = true,
+            Options = runtimeOptions,
+            Context = new RunContext
+            {
+                RunId = request.RunId,
+                StepId = request.StepId,
+                UserId = request.UserId,
+                WorkId = request.WorkId,
+                SessionId = request.SessionId,
+                Options = runtimeOptions,
+                CancellationToken = cancellationToken
+            },
             LoopRequest = new AgentLoopRequest
             {
                 RunId = request.RunId,
@@ -134,20 +186,18 @@ public abstract class AgentBase(
                 AgentName = Name,
                 Llm = Llm,
                 Tools = exposedTools,
+                SkillResolver = _skillResolver,
+                Options = runtimeOptions.LoopOptions,
                 Journal = request.Journal,
                 Request = request
             }
-        }, cancellationToken))
-        {
-            if (runtimeEvent.Chunk is not null)
-                yield return runtimeEvent.Chunk;
-        }
+        };
     }
 
     private IToolCapable SelectExposedTools()
     {
         var registry = new ToolRegistry();
-        foreach (var tool in Tools.Tools)
+        foreach (var tool in GetToolDefinitions())
             registry.Register(tool);
 
         var selected = new ToolExposurePolicy(registry).Select(new ToolExposureContext
@@ -155,36 +205,12 @@ public abstract class AgentBase(
             AgentName = Name,
             Phase = "run",
             AllowedGroups = Descriptor.ToolGroups,
-            PreferredTools = GetPreferredToolNames(Name),
+            PreferredTools = Descriptor.PreferredTools,
             HasExplicitConsent = false,
             MaxTools = 12
         });
         return new ExposedToolCapable(Tools, selected);
     }
-
-    private static IReadOnlyList<string> GetPreferredToolNames(string agentName)
-        => agentName switch
-        {
-            "write" => new[]
-            {
-                "get_work_info", "get_outline", "get_recent_chapters", "get_writing_rules",
-                "get_character", "get_world_setting", "get_foreshadowing", "get_timeline_events",
-                "get_relationships", "save_chapter_content", "update_chapter_summary", "create_timeline_event"
-            },
-            "world" => new[]
-            {
-                "get_work_info", "get_world_setting", "search_world_setting", "get_power_system",
-                "get_world_rules", "get_factions", "get_geography", "get_historical_events",
-                "save_world_setting", "create_power_system", "create_world_rule", "create_historical_event"
-            },
-            "outline" => new[]
-            {
-                "get_work_info", "get_outline", "search_outline", "get_character_list",
-                "get_world_setting", "get_foreshadowing", "get_timeline_events", "create_outline",
-                "create_outline_node", "create_chapter_outline", "create_foreshadowing", "create_timeline_event"
-            },
-            _ => Array.Empty<string>()
-        };
 
     private static string ValidateRequest(AgentRequest request)
     {

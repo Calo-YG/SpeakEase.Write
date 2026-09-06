@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using SpeakEase.Write.Domain.Entities.Story;
 
 namespace SpeakEase.Write.Application.Abstractions.Persistence;
@@ -18,6 +19,8 @@ public interface ICharacterDbContext
     DbSet<CharacterStateSnapshotEntity> CharacterStateSnapshots { get; }
     DbSet<CharacterGrowthProposalEntity> CharacterGrowthProposals { get; }
     DbSet<RelationshipStateEventEntity> RelationshipStateEvents { get; }
+
+    DatabaseFacade Database { get; }
 
     void Detach(object entity);
 

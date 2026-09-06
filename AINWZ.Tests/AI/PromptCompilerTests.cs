@@ -46,4 +46,26 @@ public sealed class PromptCompilerTests
         Assert.Contains("回答用户问题", prompt);
         Assert.DoesNotContain("missing", prompt);
     }
+
+    [Fact]
+    public void Compile_UsesRequestFallbackProfileWhenCatalogHasNoEntry()
+    {
+        var compiler = new PromptCompiler(new PromptProfileCatalog());
+
+        var prompt = compiler.Compile(new PromptCompileRequest
+        {
+            ProfileKey = "novel.write",
+            TaskObjective = "完成当前章节",
+            FallbackProfile = new PromptProfile
+            {
+                Identity = "章节写作助手",
+                QualityCriteria = new[] { "保持人物一致性" },
+                OutputContract = "输出正文"
+            }
+        });
+
+        Assert.Contains("章节写作助手", prompt);
+        Assert.Contains("保持人物一致性", prompt);
+        Assert.Contains("完成当前章节", prompt);
+    }
 }

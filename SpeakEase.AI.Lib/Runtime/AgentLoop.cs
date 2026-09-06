@@ -366,6 +366,9 @@ public sealed class AgentLoop : IAgentLoop
         List<ChatMessage> current = null;
         foreach (var message in history)
         {
+            if (message is SystemMessage)
+                continue;
+
             if (message is UserMessage || current is null)
             {
                 current = new List<ChatMessage>();
@@ -391,6 +394,8 @@ public sealed class AgentLoop : IAgentLoop
             return false;
 
         var inputBudget = contextWindowTokens - reservedOutputTokens;
+        RemoveLayerIfOverBudget(messages, tools, imageContentTokenBudget, inputBudget, "[Retrieved Context]");
+        RemoveLayerIfOverBudget(messages, tools, imageContentTokenBudget, inputBudget, "[Session Memory]");
         while (EstimateRequestTokens(messages, tools, imageContentTokenBudget) > inputBudget && historyGroups.Count > 0)
         {
             var oldestTurn = historyGroups[0];
@@ -406,6 +411,22 @@ public sealed class AgentLoop : IAgentLoop
         }
 
         return EstimateRequestTokens(messages, tools, imageContentTokenBudget) <= inputBudget;
+    }
+
+    private static void RemoveLayerIfOverBudget(
+        List<ChatMessage> messages,
+        IReadOnlyList<ToolDefinition> tools,
+        int imageContentTokenBudget,
+        int inputBudget,
+        string heading)
+    {
+        if (EstimateRequestTokens(messages, tools, imageContentTokenBudget) <= inputBudget)
+            return;
+
+        var layer = messages.OfType<SystemMessage>().FirstOrDefault(x =>
+            x.Content?.StartsWith(heading, StringComparison.Ordinal) == true);
+        if (layer is not null)
+            messages.Remove(layer);
     }
 
     private static int EstimateRequestTokens(

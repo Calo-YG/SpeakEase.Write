@@ -10,5 +10,6 @@ public sealed class AgentDescriptor
     public string PromptProfileKey { get; init; } = string.Empty;
     public string PolicyProfileKey { get; init; } = string.Empty;
     public IReadOnlyList<string> ToolGroups { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> PreferredTools { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> MemoryScopes { get; init; } = Array.Empty<string>();
 }

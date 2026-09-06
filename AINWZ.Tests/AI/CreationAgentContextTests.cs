@@ -1,6 +1,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+
 using SpeakEase.AI.Lib.OpenAIModel;
 using SpeakEase.Write.Application.Abstractions.AI;
+using SpeakEase.Write.Application.Abstractions.Story;
 using SpeakEase.Write.Domain.Entities.AI;
 using SpeakEase.Write.Infrastructure.AI.Context;
 using SpeakEase.Write.Infrastructure.AI.Memory;
@@ -148,5 +151,122 @@ public sealed class CreationAgentContextTests
             contextWindowTokens: 4);
 
         Assert.InRange(context.InputTokenCount, 0, 3);
+    }
+
+    [Fact]
+    public async Task BuildContextAsync_OrdersUserBeforeAssistantWhenTimestampsTie()
+    {
+        await using var db = TestDb.Create();
+        db.AICreationSessions.Add(new AICreationSessionEntity
+        {
+            Id = "session-order",
+            WorkId = "work-1",
+            UserId = "user-1",
+            Status = "active"
+        });
+        var timestamp = DateTime.UtcNow;
+        db.AICreationMessages.Add(new AICreationMessageEntity
+        {
+            Id = "assistant-first",
+            SessionId = "session-order",
+            Role = "assistant",
+            Content = "answer",
+            TurnNumber = 1,
+            CreatedAt = timestamp
+        });
+        db.AICreationMessages.Add(new AICreationMessageEntity
+        {
+            Id = "user-second",
+            SessionId = "session-order",
+            Role = "user",
+            Content = "question",
+            TurnNumber = 1,
+            CreatedAt = timestamp
+        });
+        await db.SaveChangesAsync();
+        var contextBuilder = new CreationAgentContext(
+            new FakeMemoryProvider(),
+            new TestUserContext(),
+            db,
+            new SequentialIdGenerator());
+
+        var context = await contextBuilder.BuildContextAsync(
+            "work-1", "session-order", "general", "test-model",
+            includeMemory: false, filterHistory: false, contextWindowTokens: 32_000);
+
+        Assert.IsType<UserMessage>(context.ConversationHistory[0]);
+        Assert.IsType<AssistantMessage>(context.ConversationHistory[1]);
+    }
+
+    [Fact]
+    public async Task BuildContextAsync_IncludesConfirmedCharacterRuntimeStateForWork()
+    {
+        await using var db = TestDb.Create();
+        db.AICreationSessions.Add(new AICreationSessionEntity
+        {
+            Id = "session-character",
+            WorkId = "work-1",
+            UserId = "user-1",
+            Status = "active"
+        });
+        await db.SaveChangesAsync();
+        var characterStore = new Mock<ICharacterStateStore>();
+        characterStore
+            .Setup(x => x.GetWorkSnapshotsAsync("user-1", "work-1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new[]
+            {
+                new CharacterStateSnapshotData
+                {
+                    CharacterId = "character-1",
+                    WorkId = "work-1",
+                    UserId = "user-1",
+                    Version = 4,
+                    Status = "confirmed",
+                    StateJson = "{\"personality\":\"克制\",\"plotHooks\":[\"隐瞒旧伤\"]}"
+                }
+            });
+        var contextBuilder = new CreationAgentContext(
+            new FakeMemoryProvider(),
+            new TestUserContext(),
+            db,
+            new SequentialIdGenerator(),
+            characterStateStore: characterStore.Object);
+
+        var context = await contextBuilder.BuildContextAsync(
+            "work-1", "session-character", "write", "test-model",
+            includeMemory: true, filterHistory: true, contextWindowTokens: 32_000);
+
+        var runtimeMessage = Assert.Single(
+            context.ConversationHistory.OfType<SystemMessage>(),
+            x => x.Content.Contains("[Character Runtime]"));
+        Assert.Contains("character-1", runtimeMessage.Content);
+        Assert.Contains("隐瞒旧伤", runtimeMessage.Content);
+    }
+
+    [Fact]
+    public async Task BuildContextAsync_WritesUtcAssemblyAuditTimestamp()
+    {
+        await using var db = TestDb.Create();
+        db.AICreationSessions.Add(new AICreationSessionEntity
+        {
+            Id = "session-audit",
+            WorkId = "work-1",
+            UserId = "user-1",
+            Status = "active"
+        });
+        await db.SaveChangesAsync();
+        var contextBuilder = new CreationAgentContext(
+            new FakeMemoryProvider(),
+            new TestUserContext(),
+            db,
+            new SequentialIdGenerator());
+
+        await contextBuilder.BuildContextAsync(
+            "work-1", "session-audit", "general", "test-model",
+            includeMemory: false, filterHistory: true, contextWindowTokens: 32_000);
+
+        var audit = Assert.Single(db.ContextAssemblyLogs);
+        Assert.Equal(DateTimeKind.Utc, audit.CreateAt.Kind);
+        Assert.Equal(DateTimeKind.Utc, audit.UpdateAt.Kind);
     }
 }

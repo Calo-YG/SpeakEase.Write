@@ -62,12 +62,23 @@ public interface ICharacterStateStore
         string characterId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<CharacterStateSnapshotData>> GetWorkSnapshotsAsync(
+        string userId,
+        string workId,
+        CancellationToken cancellationToken = default);
+
     Task SaveSnapshotAsync(
         CharacterStateSnapshotData snapshot,
         CancellationToken cancellationToken = default);
 
     Task<string> AppendEventAsync(
         CharacterStateEventData stateEvent,
+        CancellationToken cancellationToken = default);
+
+    Task<bool> TryCommitStateChangeAsync(
+        CharacterStateEventData stateEvent,
+        CharacterStateSnapshotData snapshot,
+        long expectedVersion,
         CancellationToken cancellationToken = default);
 
     Task SaveGrowthProposalAsync(

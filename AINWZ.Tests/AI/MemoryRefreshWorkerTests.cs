@@ -31,6 +31,27 @@ public sealed class MemoryRefreshWorkerTests
         Assert.Contains("successful", provider.SuccessfulSessions);
     }
 
+    [Fact]
+    public async Task Worker_MarksMemoryStaleAfterRetriesAreExhausted()
+    {
+        var provider = new FailFirstRequestMemoryProvider();
+        await using var services = new ServiceCollection()
+            .AddSingleton<ApplicationMemoryProvider>(provider)
+            .AddSingleton<IMemoryRefreshFailureHandler>(provider)
+            .BuildServiceProvider();
+        var worker = new MemoryRefreshQueue(
+            services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<MemoryRefreshQueue>.Instance);
+
+        await worker.StartAsync(CancellationToken.None);
+        await worker.EnqueueAsync(Request("failed"));
+        await WaitUntilAsync(() => provider.StaleSessions.Contains("failed"));
+        await worker.StopAsync(CancellationToken.None);
+
+        Assert.Equal(3, provider.FailedAttempts);
+        Assert.Contains("failed", provider.StaleSessions);
+    }
+
     private static MemoryRefreshRequest Request(string sessionId)
         => new()
         {
@@ -47,10 +68,11 @@ public sealed class MemoryRefreshWorkerTests
         Assert.True(predicate());
     }
 
-    private sealed class FailFirstRequestMemoryProvider : ApplicationMemoryProvider
+    private sealed class FailFirstRequestMemoryProvider : ApplicationMemoryProvider, IMemoryRefreshFailureHandler
     {
         public int FailedAttempts;
         public List<string> SuccessfulSessions { get; } = new();
+        public List<string> StaleSessions { get; } = new();
 
         public Task RefreshAfterTurnAsync(string userId, string workId, string sessionId, int turnNumber, CancellationToken cancellationToken = default)
         {
@@ -81,5 +103,12 @@ public sealed class MemoryRefreshWorkerTests
             => Task.CompletedTask;
         public Task InvalidateAsync(string userId, string workId, CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        public Task MarkStaleAsync(MemoryRefreshRequest request, CancellationToken cancellationToken = default)
+        {
+            lock (StaleSessions)
+                StaleSessions.Add(request.SessionId);
+            return Task.CompletedTask;
+        }
     }
 }

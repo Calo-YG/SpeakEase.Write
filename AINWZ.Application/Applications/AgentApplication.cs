@@ -95,13 +95,29 @@ public sealed class AgentApplication(
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(state.ErrorMessage))
+        if (state.FinalResponse is null)
         {
-            await CompleteRunAsync(run.RunId, state.FinalResponse ?? new AgentResponse
+            state.ErrorMessage = string.IsNullOrWhiteSpace(state.ErrorMessage)
+                ? "AI execution ended without a terminal response."
+                : state.ErrorMessage;
+            state.FinalResponse = new AgentResponse
             {
                 Content = string.Empty,
                 StopReason = "llm_error"
-            }, CancellationToken.None);
+            };
+            var terminal = new AgentStreamChunk
+            {
+                Type = "done",
+                FinalResponse = state.FinalResponse
+            };
+            AlignRunEventMetadata(run.RunId, terminal, ++eventSequence);
+            await AppendRunEventAsync(run.RunId, terminal, eventSequence, CancellationToken.None);
+            yield return terminal;
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ErrorMessage))
+        {
+            await CompleteRunAsync(run.RunId, state.FinalResponse, CancellationToken.None);
             yield break;
         }
 
